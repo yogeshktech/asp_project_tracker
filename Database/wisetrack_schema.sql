@@ -51,9 +51,13 @@ DROP TABLE IF EXISTS budget_allocations CASCADE;
 DROP TABLE IF EXISTS budget_versions CASCADE;
 DROP TABLE IF EXISTS budgets CASCADE;
 DROP TABLE IF EXISTS cost_centers CASCADE;
+DROP TABLE IF EXISTS milestone_templates CASCADE;
+DROP TABLE IF EXISTS variance_explanations CASCADE;
 DROP TABLE IF EXISTS project_permissions CASCADE;
 DROP TABLE IF EXISTS project_users CASCADE;
 DROP TABLE IF EXISTS projects CASCADE;
+DROP TABLE IF EXISTS properties CASCADE;
+DROP TABLE IF EXISTS project_types CASCADE;
 DROP TABLE IF EXISTS resorts CASCADE;
 DROP TABLE IF EXISTS role_permissions CASCADE;
 DROP TABLE IF EXISTS user_roles CASCADE;
@@ -71,6 +75,7 @@ CREATE TABLE users (
     full_name       VARCHAR(200) NOT NULL,
     phone           VARCHAR(50),
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    is_internal     BOOLEAN NOT NULL DEFAULT TRUE,
     last_login_at   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ
@@ -116,24 +121,67 @@ CREATE TABLE resorts (
     updated_at TIMESTAMPTZ
 );
 
+CREATE TABLE properties (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    resort_id   BIGINT NOT NULL REFERENCES resorts(id) ON DELETE CASCADE,
+    name        VARCHAR(200) NOT NULL,
+    code        VARCHAR(50),
+    description TEXT,
+    location    VARCHAR(300),
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ
+);
+
+CREATE TABLE project_types (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name        VARCHAR(150) NOT NULL UNIQUE,
+    description VARCHAR(500),
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE projects (
-    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    resort_id          BIGINT NOT NULL REFERENCES resorts(id),
-    parent_project_id  BIGINT REFERENCES projects(id),
-    owner_id           BIGINT REFERENCES users(id),
-    name               VARCHAR(250) NOT NULL,
-    code               VARCHAR(50),
-    description        TEXT,
-    status             VARCHAR(50) NOT NULL DEFAULT 'Draft',
-    start_date         DATE,
-    end_date           DATE,
-    profile_notes      TEXT,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at         TIMESTAMPTZ
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    resort_id           BIGINT NOT NULL REFERENCES resorts(id),
+    parent_project_id   BIGINT REFERENCES projects(id),
+    owner_id            BIGINT REFERENCES users(id),
+    project_type_id     BIGINT REFERENCES project_types(id),
+    property_id         BIGINT REFERENCES properties(id),
+    client_name         VARCHAR(200),
+    sponsor             VARCHAR(200),
+    currency            VARCHAR(10) NOT NULL DEFAULT 'INR',
+    allow_external_view BOOLEAN NOT NULL DEFAULT FALSE,
+    name                VARCHAR(250) NOT NULL,
+    code                VARCHAR(50),
+    description         TEXT,
+    status              VARCHAR(50) NOT NULL DEFAULT 'Draft',
+    start_date          DATE,
+    end_date            DATE,
+    profile_notes       TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ
 );
 
 CREATE INDEX ix_projects_resort ON projects(resort_id);
 CREATE INDEX ix_projects_parent ON projects(parent_project_id);
+
+CREATE TABLE variance_explanations (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id   BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    variance_type VARCHAR(50) NOT NULL,
+    explanation  TEXT NOT NULL,
+    created_by   BIGINT REFERENCES users(id),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE milestone_templates (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name            VARCHAR(200) NOT NULL,
+    project_type_id BIGINT REFERENCES project_types(id),
+    template_json   TEXT NOT NULL DEFAULT '[]',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 CREATE TABLE project_users (
     project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -547,6 +595,13 @@ INSERT INTO units (code, name) VALUES
     ('CUM', 'Cubic Meter'),
     ('KG', 'Kilogram'),
     ('LS', 'Lump Sum');
+
+INSERT INTO project_types (name, description) VALUES
+    ('MEP', 'Mechanical Electrical Plumbing'),
+    ('Civil', 'Civil works'),
+    ('New Development', 'New development project'),
+    ('Major Renovation', 'Major renovation project')
+ON CONFLICT (name) DO NOTHING;
 
 -- =============================================================================
 -- Admin User Account (Password: Admin@123)
