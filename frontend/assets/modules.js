@@ -1665,7 +1665,30 @@
   async function viewBoq(id) {
     try {
       const b = await WisetrackAPI.getBoq(id);
-      openModal('BOQ #' + id, `<pre style="white-space:pre-wrap;font-size:12px">${esc(JSON.stringify(b, null, 2))}</pre>`);
+      const versions = b.versions || b.Versions || [];
+      const latest = versions.slice().sort((a, c) => (c.versionNo || c.VersionNo || 0) - (a.versionNo || a.VersionNo || 0))[0];
+      const items = latest?.items || latest?.Items || b.items || b.Items || [];
+      openModal(`BOQ — ${esc(b.title || b.name || '#' + id)}`, `
+        <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span class="badge blue">${esc(b.status || 'Draft')}</span>
+          <span class="badge gray">Version ${latest?.versionNo || latest?.VersionNo || versions.length || 1}</span>
+          ${latest?.remarks || latest?.Remarks ? `<small style="color:var(--text-muted)">${esc(latest.remarks || latest.Remarks)}</small>` : ''}
+        </div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th><th>Remarks</th></tr></thead>
+          <tbody>
+            ${items.length ? items.map(it => `
+              <tr>
+                <td>${it.lineNo ?? it.LineNo ?? it.id ?? '—'}</td>
+                <td>${esc(it.description || it.Description || it.itemName || '—')}</td>
+                <td>${it.quantity ?? it.Quantity ?? 0}</td>
+                <td>₹${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-IN')}</td>
+                <td><strong>₹${Number(it.amount ?? it.Amount ?? 0).toLocaleString('en-IN')}</strong></td>
+                <td>${esc(it.remarks || it.Remarks || '—')}</td>
+              </tr>`).join('') : `<tr><td colspan="6">No line items</td></tr>`}
+          </tbody>
+        </table></div>
+      `);
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -1760,7 +1783,7 @@
       const exBatches = await Promise.all(scopeIds.map(id => WisetrackAPI.getExceptions(id).catch(() => [])));
       const ex = exBatches.flat();
       $('#excList').innerHTML = ex.length
-        ? `<ul>${ex.map(x => `<li><strong>${esc(x.title || '')}</strong> — ${esc(x.message || x.type || JSON.stringify(x))}</li>`).join('')}</ul>`
+        ? `<ul>${ex.map(x => `<li><strong>${esc(x.title || x.Title || 'Exception')}</strong> — ${esc(x.message || x.Message || x.type || x.Type || 'Needs attention')}</li>`).join('')}</ul>`
         : '<p style="color:var(--text-muted);font-size:12.5px;">🟢 Zero active blockers or exceptions flagged for this package.</p>';
       
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
@@ -1905,25 +1928,77 @@
   }
 
   // ---------- NOTIFICATIONS ----------
+  function formatTriggerLabel(type) {
+    const map = {
+      BudgetRagAmber: 'Budget CC ≥80% (Amber)',
+      BudgetRagRed: 'Budget CC ≥100% (Red)',
+      IssueHighPriority: 'High / Critical issue',
+      MilestoneOverdue: 'Milestone overdue',
+      TaskInactive7Days: 'Task inactive 7 days',
+      Budget: 'Budget threshold'
+    };
+    return map[type] || type || '—';
+  }
+
   async function pageNotifications() {
     const el = root();
     el.innerHTML = pageHead('Notifications & Escalation Rules', '/api/notifications',
       `<button class="btn" onclick="WTPages.openEscRuleModal()">+ Escalation Rule</button>
        <button class="btn primary" onclick="WTPages.openNotifyModal()">+ Send Notification</button>`)
-      + `<div id="inboxList" class="card">Loading inbox...</div>`
-      + tableWrap(['ID', 'Rule', 'Details'], 'escBody');
+      + `<div class="card" style="margin-bottom:16px"><h3 class="card-title" style="margin-bottom:10px">Inbox</h3><div id="inboxList">Loading inbox...</div></div>`
+      + tableWrap(['ID', 'Rule', 'Trigger', 'Delay (hrs)', 'Target Role', 'Status', 'Created'], 'escBody');
     try {
-      const inbox = await WisetrackAPI.getInbox();
+      const [inbox, rules, roles] = await Promise.all([
+        WisetrackAPI.getInbox().catch(() => []),
+        WisetrackAPI.getEscalationRules().catch(() => []),
+        WisetrackAPI.getRoles().catch(() => [])
+      ]);
+      const roleName = (id) => {
+        const r = (roles || []).find(x => Number(x.id) === Number(id));
+        return r ? (r.name || r.title) : (id ? `#${id}` : '—');
+      };
+
       const rows = Array.isArray(inbox) ? inbox : (inbox?.items || []);
-      $('#inboxList').innerHTML = rows.length ? rows.map(n => `
-        <div style="padding:10px 0;border-bottom:1px solid var(--border-light)">
-          <strong>${esc(n.title || n.subject || 'Notification')}</strong>
-          <p style="margin:4px 0;color:var(--text-muted)">${esc(n.message || n.body || '')}</p>
-          <button class="btn sm" onclick="WisetrackAPI.markRead(${n.id || n.recipientId}).then(()=>showToast('Marked read'))">Mark read</button>
-        </div>`).join('') : 'Inbox empty';
-      const rules = await WisetrackAPI.getEscalationRules();
-      $('#escBody').innerHTML = (rules || []).map(r => `<tr><td>${r.id}</td><td>${esc(r.name || r.ruleName || 'Rule')}</td><td><code>${esc(JSON.stringify(r))}</code></td></tr>`).join('') || emptyRow(3, 'No rules');
-    } catch (e) { showToast(e.message, 'danger'); }
+      $('#inboxList').innerHTML = rows.length ? rows.map(n => {
+        const note = n.notification || n;
+        const title = note.title || note.subject || 'Notification';
+        const body = note.body || note.message || '';
+        const type = note.type || '';
+        const when = note.createdAt ? new Date(note.createdAt).toLocaleString() : '';
+        const unread = n.isRead === false;
+        const rid = n.id || n.recipientId;
+        return `
+        <div style="padding:12px 0;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+          <div style="min-width:0;flex:1">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+              ${unread ? '<span class="badge amber">Unread</span>' : '<span class="badge green">Read</span>'}
+              ${type ? `<span class="badge blue">${esc(type)}</span>` : ''}
+              <strong>${esc(title)}</strong>
+            </div>
+            <p style="margin:0;color:var(--text-muted);font-size:12.5px;line-height:1.5">${esc(body)}</p>
+            ${when ? `<small style="color:var(--text-muted)">${esc(when)}</small>` : ''}
+          </div>
+          ${unread && rid ? `<button class="btn sm" onclick="WisetrackAPI.markRead(${rid}).then(()=>{showToast('Marked read');WTPages.refreshNotifications&&WTPages.refreshNotifications()})">Mark read</button>` : ''}
+        </div>`;
+      }).join('') : '<p style="color:var(--text-muted);margin:0">Inbox empty</p>';
+
+      $('#escBody').innerHTML = (rules || []).length ? rules.map(r => `
+        <tr>
+          <td>${r.id}</td>
+          <td><strong>${esc(r.name || r.ruleName || 'Rule')}</strong></td>
+          <td>${esc(formatTriggerLabel(r.triggerType))}</td>
+          <td>${r.delayHours ?? 0}</td>
+          <td>${esc(roleName(r.targetRoleId))}</td>
+          <td><span class="badge ${r.isActive === false ? 'gray' : 'green'}">${r.isActive === false ? 'Inactive' : 'Active'}</span></td>
+          <td>${r.createdAt ? esc(new Date(r.createdAt).toLocaleString()) : '—'}</td>
+        </tr>`).join('') : emptyRow(7, 'No escalation rules');
+
+      if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
+    } catch (e) {
+      $('#inboxList').innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`;
+      $('#escBody').innerHTML = errRow(7, e);
+      showToast(e.message, 'danger');
+    }
   }
 
   async function openNotifyModal() {
@@ -1957,12 +2032,26 @@
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
-  function openEscRuleModal() {
+  async function openEscRuleModal() {
+    let roles = [];
+    try { roles = await WisetrackAPI.getRoles(); } catch { /* optional */ }
     openModal('Escalation Rule', `
       <form onsubmit="WTPages.saveEscRule(event)">
         <div class="form-grid">
-          <div class="field full"><label>Name *</label><input id="erName" required></div>
-          <div class="field full"><label>Condition / Notes</label><input id="erCond" placeholder="budget>=80"></div>
+          <div class="field full"><label>Name *</label><input id="erName" required placeholder="e.g. Budget CC ≥80% → Finance"></div>
+          <div class="field"><label>Trigger *</label>
+            <select id="erTrigger">
+              <option value="BudgetRagAmber">Budget CC ≥80% (Amber)</option>
+              <option value="BudgetRagRed">Budget CC ≥100% (Red)</option>
+              <option value="IssueHighPriority">High / Critical issue</option>
+              <option value="MilestoneOverdue">Milestone overdue</option>
+              <option value="TaskInactive7Days">Task inactive 7 days</option>
+            </select>
+          </div>
+          <div class="field"><label>Delay (hours)</label><input id="erDelay" type="number" min="0" value="0"></div>
+          <div class="field full"><label>Target Role</label>
+            <select id="erRole">${(roles || []).map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('') || '<option value="">—</option>'}</select>
+          </div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -1971,7 +2060,12 @@
   async function saveEscRule(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createEscalationRule({ name: $('#erName').value.trim(), triggerType: $('#erCond').value.trim() || 'Budget', delayHours: 24 });
+      await WisetrackAPI.createEscalationRule({
+        name: $('#erName').value.trim(),
+        triggerType: $('#erTrigger').value || 'BudgetRagAmber',
+        delayHours: Number($('#erDelay').value) || 0,
+        targetRoleId: Number($('#erRole').value) || null
+      });
       closeModal(); showToast('Rule saved'); await pageNotifications();
     } catch (err) { showToast(err.message, 'danger'); }
   }
@@ -1981,10 +2075,10 @@
     const el = root();
     el.innerHTML = pageHead('Executive Reports & Exports (PM-28)', '/api/reports',
       `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>
-       <button class="btn" onclick="WTPages.loadPortfolio()"><i class="fa-solid fa-chart-pie"></i> View Portfolio JSON</button>
+       <button class="btn" onclick="WTPages.loadPortfolio()"><i class="fa-solid fa-chart-pie"></i> View Portfolio</button>
        <button class="btn primary" onclick="WTPages.openReportModal()">+ Report Config</button>`)
       + tableWrap(['ID', 'Name', 'Type', 'Actions'], 'reportsBody')
-      + `<div class="card" id="reportOut" style="margin-top:12px"><em>Select "Custom Export & Send" to customize columns and dispatch to internal team only, or view raw portfolio data below.</em></div>`;
+      + `<div class="card" id="reportOut" style="margin-top:12px"><em>Select "Custom Export & Send" to customize columns and send to internal team only, or click View Portfolio for a live status table.</em></div>`;
     try {
       const list = await WisetrackAPI.getReports();
       const rows = Array.isArray(list) ? list : (list?.items || list?.data || []);
@@ -1998,7 +2092,35 @@
   async function loadPortfolio() {
     try {
       const p = await WisetrackAPI.getPortfolioReport();
-      $('#reportOut').innerHTML = `<pre style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(p, null, 2))}</pre>`;
+      const projects = p?.projects || p?.Projects || (Array.isArray(p) ? p : []);
+      if (!projects.length) {
+        $('#reportOut').innerHTML = '<p style="color:var(--text-muted);margin:0">No portfolio projects found for your access.</p>';
+        return;
+      }
+      $('#reportOut').innerHTML = `
+        <h3 class="card-title" style="margin-bottom:10px">Portfolio status</h3>
+        <div class="table-wrap"><table class="table">
+          <thead><tr>
+            <th>Project</th><th>Status</th><th>Next Milestone</th><th>Schedule Risk</th><th>Budget RAG</th><th>Open Issues</th>
+          </tr></thead>
+          <tbody>
+            ${projects.map(row => {
+              const rag = row.budgetRag || row.BudgetRag || 'Green';
+              const risk = row.scheduleRisk || row.ScheduleRisk || '—';
+              const ragCls = rag === 'Red' ? 'red' : rag === 'Amber' ? 'amber' : 'green';
+              const riskCls = risk === 'High' ? 'red' : risk === 'Medium' ? 'amber' : 'green';
+              return `<tr>
+                <td><strong>${esc(row.name || row.Name)}</strong><small style="display:block;color:var(--text-muted)">#${row.projectId || row.ProjectId || ''}</small></td>
+                <td><span class="badge blue">${esc(row.status || row.Status || '—')}</span></td>
+                <td>${esc(row.nextMilestone || row.NextMilestone || '—')}</td>
+                <td><span class="badge ${riskCls}">${esc(risk)}</span></td>
+                <td><span class="badge ${ragCls}">${esc(rag)}</span></td>
+                <td>${row.openIssues ?? row.OpenIssues ?? 0}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>`;
+      if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -2439,6 +2561,7 @@
     openMilestoneModal, saveMilestone, openTaskModal, saveTask, openTaskUpdateModal, saveTaskUpdate,
     openIssueModal, saveIssue, commentIssue, escalateIssue,
     openNotifyModal, saveNotify, openEscRuleModal, saveEscRule,
+    refreshNotifications: () => pageNotifications(),
     loadPortfolio, openReportModal, saveReport,
     openReportExportModal: (t) => typeof openReportExportModal === 'function' && openReportExportModal(t),
     openCreateSubTaskModal: (p) => typeof openCreateSubTaskModal === 'function' && openCreateSubTaskModal(p),
