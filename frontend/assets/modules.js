@@ -2124,9 +2124,8 @@
       `<a class="btn primary" href="login.html"><i class="fa-solid fa-right-to-bracket"></i> Start at Login</a>
        <a class="btn" href="dashboard.html"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>`
     ) + `
-      <!-- Quick start -->
       <div class="card" style="margin-bottom:18px;border-left:5px solid #1d4ed8;">
-        <h3 class="card-title" style="margin-bottom:8px;">0. Quick start — pehle ye karo</h3>
+        <h3 class="card-title" style="margin-bottom:8px;">0. Quick start — do this first</h3>
         <ol class="flow-howto">
           <li>
             <div class="h-title">Login</div>
@@ -2134,20 +2133,19 @@
               (PM: <code>pm@wisetrack.local</code>, Site: <code>site@wisetrack.local</code>, Finance: <code>finance@wisetrack.local</code>).</div>
           </li>
           <li>
-            <div class="h-title">Topbar me Resort select karo</div>
-            <div class="h-body">Example: <b>Grand Palm Luxury Resort & Spa (GPLR)</b>. Iske baad saare modules usi resort context me chalenge.</div>
+            <div class="h-title">Select a Resort in the top bar</div>
+            <div class="h-body">Example: <b>Grand Palm Luxury Resort & Spa (GPLR)</b>. All modules then run in that resort context.</div>
           </li>
           <li>
-            <div class="h-title">Har module pe Project dropdown select karo</div>
-            <div class="h-body">Tasks / Milestones / BOQ / Budget pe <b>MEP sub-project</b> (<code>PRJ-GPLR-01-MEP</code>) prefer karo — wahan seeded data hai. Parent select karne pe children roll-up dikhega.</div>
+            <div class="h-title">Select a Project in each module dropdown</div>
+            <div class="h-body">On Tasks / Milestones / BOQ / Budget, prefer the <b>MEP sub-project</b> (<code>PRJ-GPLR-01-MEP</code>) — seeded demo data lives there. Selecting a parent rolls up child project data.</div>
           </li>
         </ol>
       </div>
 
-      <!-- Visual master flow -->
       <div class="card" style="margin-bottom:18px;">
-        <h3 class="card-title">Master lifecycle flowchart (poora app is order me chalao)</h3>
-        <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 8px;">Click any box → us module pe jao.</p>
+        <h3 class="card-title">Master lifecycle flowchart (run the app in this order)</h3>
+        <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 8px;">Click any box to open that module.</p>
         <div class="flow-rail">
           <a class="flow-node" href="users.html"><div class="fn" style="background:#1d4ed8">1</div><div class="ft">Users & Roles</div><div class="fs">PM-02 / PM-03</div></a>
           <span class="flow-arrow">➜</span>
@@ -2180,7 +2178,6 @@
         </div>
       </div>
 
-      <!-- Hierarchy -->
       <div class="grid g2" style="margin-bottom:18px;">
         <div class="card">
           <h3 class="card-title">Project hierarchy (requirement rule)</h3>
@@ -2198,116 +2195,114 @@
             <div class="fh-box" style="background:#f8fafc;">Milestone → Task → Sub-task → Daily %</div>
           </div>
           <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0;">
-            Har Sub-Project alag project hai <b>aur</b> Parent ke liye Cost Center maana jata hai (PM-07).
+            Each Sub-Project is a separate project <b>and</b> is treated as a Cost Center under the Parent (PM-07).
           </p>
         </div>
 
         <div class="card">
           <h3 class="card-title">Daily execution loop (site)</h3>
           <div class="flow-loop">
-            <div style="font-size:12.5px;font-weight:800;margin-bottom:8px;color:#5b21b6;">Har din ye cycle chalao</div>
+            <div style="font-size:12.5px;font-weight:800;margin-bottom:8px;color:#5b21b6;">Run this cycle every day</div>
             <div class="flow-rail" style="margin:0;">
               <div class="flow-node" style="cursor:default;"><div class="ft">Open Task</div><div class="fs">planning.html</div></div>
               <span class="flow-arrow">➜</span>
               <div class="flow-node" style="cursor:default;"><div class="ft">Update Sub-task</div><div class="fs">Status + Remark + Attach</div></div>
               <span class="flow-arrow">➜</span>
-              <div class="flow-node" style="cursor:default;"><div class="ft">PM rolls % </div><div class="fs">Only owner changes %</div></div>
+              <div class="flow-node" style="cursor:default;"><div class="ft">PM rolls %</div><div class="fs">Only owner changes %</div></div>
               <span class="flow-arrow">➜</span>
               <div class="flow-node" style="cursor:default;"><div class="ft">Exception check</div><div class="fs">No progress 7 days</div></div>
             </div>
             <p style="font-size:12px;margin:10px 0 0;color:#5b21b6;">
-              Optional: Excel se bulk status upload (<a href="daily-report.html">Daily Report</a>). High issue → auto mail stakeholders.
+              Optional: bulk status upload from Excel (<a href="daily-report.html">Daily Report</a>). High-priority issues auto-email stakeholders.
             </p>
           </div>
           <div style="margin-top:12px;font-size:12.5px;line-height:1.6;">
-            <b>Sub-task kaise banega?</b> Tasks & Planning → <code>+ Sub-Task</code> (main task pe).<br>
-            <b>Update kaise?</b> Site: Status dropdown + optional text + attachment + Remark.
-            Main task % sirf Task Owner / PM change karega.
+            <b>How are sub-tasks created?</b> Tasks & Planning → <code>+ Sub-Task</code> (on the main task).<br>
+            <b>How are updates captured?</b> Site team: Status dropdown + optional text + attachment + Remark.
+            Main-task % completion can be changed only by the Task Owner / PM.
           </div>
         </div>
       </div>
 
-      <!-- Detailed how-to -->
       <div class="card" style="margin-bottom:18px;">
-        <h3 class="card-title">Step-by-step — poora application kaise chalana hai</h3>
+        <h3 class="card-title">Step-by-step — how to run the full application</h3>
         <ol class="flow-howto">
           <li>
             <div class="h-title">1) Access control setup (Admin)</div>
             <div class="h-body">
-              <a href="roles.html">Roles & Permissions</a> me modules ke rights set karo →
-              <a href="users.html">Users</a> create / assign roles →
-              baad me <a href="project-detail.html">Project Workspace</a> se project-wise team + module view/edit (PM-03) do.
-              External owner ko sirf authorized projects dikhao (PM-04). Har material action <a href="audit-logs.html">Audit Logs</a> me record hota hai (PM-05).
+              Set module rights in <a href="roles.html">Roles & Permissions</a> →
+              create users and assign roles in <a href="users.html">Users</a> →
+              then assign project-wise team + module view/edit in <a href="project-detail.html">Project Workspace</a> (PM-03).
+              External owners see only authorized projects (PM-04). Material actions are recorded in <a href="audit-logs.html">Audit Logs</a> (PM-05).
             </div>
           </li>
           <li>
             <div class="h-title">2) Resort → Property → Parent → Sub-projects</div>
             <div class="h-body">
-              <a href="resorts.html">Resorts</a> pe resort + property banao →
-              <a href="projects.html">Projects</a> pe Parent (MEP / Civil / New Development / Major Renovation types) →
-              uske under Sub-Projects. Har package alag schedule, owner, budget rakho (PM-01, PM-06).
+              Create resort + property in <a href="resorts.html">Resorts</a> →
+              create Parent projects in <a href="projects.html">Projects</a> (types: MEP / Civil / New Development / Major Renovation) →
+              add Sub-Projects underneath. Each package keeps its own schedule, owner, and budget (PM-01, PM-06).
             </div>
           </li>
           <li>
             <div class="h-title">3) Item master → BOQ → versions</div>
             <div class="h-body">
               <a href="items.html">Item Master</a>: code, unit, purchase price, brand, image, category (PM-12) →
-              <a href="boq.html">BOQ</a>: master se select ya flexible Excel/JSON import (PM-10/11) →
-              baseline version lock + revisions (PM-13/14). Qty / price / remark / attachment line pe.
+              <a href="boq.html">BOQ</a>: pick from master or flexible Excel/JSON import (PM-10/11) →
+              lock baseline version and track revisions (PM-13/14). Lines support qty, price, remark, and attachments.
             </div>
           </li>
           <li>
             <div class="h-title">4) Budget baseline + cost centers + 80% RAG</div>
             <div class="h-body">
-              <a href="budget.html">Budgets</a>: approved amount distribute across CCs (sub-projects as CC on parent) →
-              revisions with reason (PM-08) →
-              <a href="costs.html">Purchases & Actuals</a> enter karo (PM-21) →
-              jab CC spend ≥ 80% allocated → RAG Amber/Red + escalation mail (<a href="notifications.html">Notifications</a>) (PM-07, PM-20).
-              Variance reason <a href="projects.html">variance explanations</a> me likho (PM-24).
+              <a href="budget.html">Budgets</a>: distribute approved amount across CCs (sub-projects act as CCs on the parent) →
+              revise with reasons (PM-08) →
+              enter costs in <a href="costs.html">Purchases & Actuals</a> (PM-21) →
+              when CC spend ≥ 80% of allocation → RAG Amber/Red + escalation mail via <a href="notifications.html">Notifications</a> (PM-07, PM-20).
+              Record variance reasons on the project (PM-24).
             </div>
           </li>
           <li>
             <div class="h-title">5) Plan: milestones → tasks → sub-tasks</div>
             <div class="h-body">
-              <a href="milestones.html">Milestones</a>: handover date se backward (procure → ship → install → commission → handover) (PM-15…18) →
-              <a href="planning.html">Tasks & Planning</a>: owner, dates, dependency → Sub-tasks create →
-              roz <a href="daily-report.html">Daily Report</a> se % / status / remark / attachment.
-              Exception radar 7-day inactive flag karega (PM-19).
+              <a href="milestones.html">Milestones</a>: plan backward from handover (procure → ship → install → commission → handover) (PM-15…18) →
+              <a href="planning.html">Tasks & Planning</a>: owner, dates, dependencies → create sub-tasks →
+              update daily % / status / remark / attachments in <a href="daily-report.html">Daily Report</a>.
+              Exception radar flags items with no progress for 7 days (PM-19).
             </div>
           </li>
           <li>
             <div class="h-title">6) Issues / incidents</div>
             <div class="h-body">
               <a href="issues.html">Issues</a>: What / Where / When / Reported By / Impact / Priority.
-              HIGH/CRITICAL → escalation mail high-priority stakeholders ko. Comment + attachment support.
+              HIGH/CRITICAL triggers escalation email to high-priority stakeholders. Comments and attachments supported.
             </div>
           </li>
           <li>
             <div class="h-title">7) Dashboards & reports (internal only)</div>
             <div class="h-body">
-              <a href="dashboard.html">Dashboard</a> portfolio health (PM-25/26) →
-              <a href="reports.html">Reports</a>: monthly / daily / portfolio / completion; columns choose karo;
-              recipients sirf internal emails (PM-28/29). External ko app se report mat bhejo.
+              <a href="dashboard.html">Dashboard</a> for portfolio health (PM-25/26) →
+              <a href="reports.html">Reports</a>: monthly / daily / portfolio / completion; choose columns;
+              recipients must be internal emails only (PM-28/29). Do not send reports to external users from the app.
             </div>
           </li>
           <li>
             <div class="h-title">8) Closure gate (mandatory)</div>
             <div class="h-body">
-              <a href="inventory.html">Inventory & Closure</a>: leftover inventory update →
-              signed Project Completion / Handover PDF upload →
-              <b>sirf Project Manager</b> project close kare (PM-30). Bina inventory + signed PCR ke close block.
+              <a href="inventory.html">Inventory & Closure</a>: update leftover inventory →
+              upload signed Project Completion / Handover PDF →
+              <b>only the Project Manager</b> may close the project (PM-30). Close is blocked without inventory + signed PCR.
             </div>
           </li>
         </ol>
       </div>
 
-      <!-- Stage cards compact -->
       <div class="grid g2" style="margin-bottom:18px;">
         <div class="card" style="border-left:5px solid #dc2626;">
-          <h3 class="card-title">80% RAG rule (yaad rakhna)</h3>
+          <h3 class="card-title">80% RAG rule (remember this)</h3>
           <p style="font-size:12.5px;line-height:1.6;color:var(--text-muted);margin:0;">
-            Cost Center allocated amount ka <b>≥80%</b> purchase/actual hone pe Amber flag;
-            ≥100% pe Red. Escalation matrix se Finance + PM ko mail.
+            When purchase/actual spend on a Cost Center reaches <b>≥80%</b> of allocation → Amber flag;
+            ≥100% → Red. Escalation matrix emails Finance + PM.
             Check: Budgets page + Notifications inbox.
           </p>
         </div>
@@ -2322,11 +2317,10 @@
         </div>
       </div>
 
-      <!-- Role matrix -->
       <div class="card" style="margin-top:8px;">
         <div class="card-header">
           <div>
-            <h3 class="card-title">Kaun kya karega (role matrix)</h3>
+            <h3 class="card-title">Who does what (role matrix)</h3>
             <div class="card-subtitle">PM-02 / PM-03 — module access & field masking</div>
           </div>
           <a href="users.html" class="btn sm">Users ➔</a>
@@ -2336,7 +2330,7 @@
             <thead>
               <tr>
                 <th>ROLE</th>
-                <th>FLOW ME JOB</th>
+                <th>JOB IN THE FLOW</th>
                 <th>MODULES</th>
                 <th>RESTRICTION</th>
               </tr>
