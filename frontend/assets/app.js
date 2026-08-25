@@ -65,20 +65,27 @@ function closeModal() {
   if (modal) modal.classList.remove('show');
 }
 
-// Get Data from LocalStorage
+// Get Data from LocalStorage (static WISETRACK_DATA is optional — live API pages may omit data.js)
+function getStaticData(key) {
+  if (typeof WISETRACK_DATA !== 'undefined' && WISETRACK_DATA && Array.isArray(WISETRACK_DATA[key])) {
+    return WISETRACK_DATA[key];
+  }
+  return [];
+}
+
 function getResorts() {
   const data = localStorage.getItem('WISETRACK_RESORTS');
-  return data ? JSON.parse(data) : WISETRACK_DATA.resorts;
+  return data ? JSON.parse(data) : getStaticData('resorts');
 }
 
 function getProjects() {
   const data = localStorage.getItem('WISETRACK_PROJECTS');
-  return data ? JSON.parse(data) : WISETRACK_DATA.projects;
+  return data ? JSON.parse(data) : getStaticData('projects');
 }
 
 function getUsers() {
   const data = localStorage.getItem('WISETRACK_USERS');
-  return data ? JSON.parse(data) : WISETRACK_DATA.users;
+  return data ? JSON.parse(data) : getStaticData('users');
 }
 
 function getSelectedResortId() {
@@ -117,12 +124,13 @@ function onRoleChange(roleName) {
   const roleBadges = document.querySelectorAll('.current-role-label');
   roleBadges.forEach(el => el.textContent = roleName);
   
-  // Update header and avatar
-  const user = WISETRACK_DATA.users.find(u => u.role.toLowerCase().includes(roleName.toLowerCase())) || WISETRACK_DATA.users[0];
-  const avatarEls = document.querySelectorAll('.avatar');
-  avatarEls.forEach(el => el.textContent = user.avatar);
-  const nameEls = document.querySelectorAll('.user-name');
-  nameEls.forEach(el => el.textContent = user.name);
+  // Update header and avatar (static demo users only when data.js is loaded)
+  const demoUsers = typeof WISETRACK_DATA !== 'undefined' ? (WISETRACK_DATA.users || []) : [];
+  const user = demoUsers.find(u => (u.role || '').toLowerCase().includes(roleName.toLowerCase())) || demoUsers[0];
+  if (user) {
+    document.querySelectorAll('.avatar').forEach(el => { el.textContent = user.avatar || 'U'; });
+    document.querySelectorAll('.user-name').forEach(el => { el.textContent = user.name || roleName; });
+  }
 }
 
 // --- MODAL BUILDERS ---

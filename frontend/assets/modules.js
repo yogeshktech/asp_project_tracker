@@ -52,7 +52,12 @@
   async function loadProjectsList() {
     const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
     const apiProjects = await WisetrackAPI.getProjects(resortId || undefined).catch(() => []);
-    const localProjects = typeof getProjects === 'function' ? getProjects() : [];
+    let localProjects = [];
+    try {
+      localProjects = typeof getProjects === 'function' ? getProjects() : [];
+    } catch (_) {
+      localProjects = [];
+    }
     const seen = new Set();
     const all = [];
     [...(apiProjects || []), ...(localProjects || [])].forEach(p => {
@@ -1213,7 +1218,10 @@
           </div>
         </div>`;
 
-    const localProjects = (typeof getProjects === 'function' ? getProjects() : []);
+    const localProjects = (() => {
+      try { return typeof getProjects === 'function' ? getProjects() : []; }
+      catch (_) { return []; }
+    })();
     let apiProjects = [];
     try {
       apiProjects = await WisetrackAPI.getProjects().catch(() => []);
