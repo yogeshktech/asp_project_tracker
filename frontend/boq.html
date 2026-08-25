@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BOQ — WISETRACK</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+  <script src="assets/api.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="appSidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="appTopbar"></header>
+    <div class="content" id="apiPageRoot">
+      <div class="card" style="padding:24px;text-align:center;color:var(--text-muted)">
+        <i class="fa-solid fa-spinner fa-spin" style="font-size:22px;margin-bottom:8px"></i>
+        <div>Loading BOQ...</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal">
+  <div class="modalbox">
+    <div class="modalhead"><h3 id="modalTitle">Modal</h3><button class="close-btn" onclick="closeModal()">✕</button></div>
+    <div class="modalbody" id="modalBody"></div>
+    <div class="modalfoot" id="modalFoot"></div>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script src="assets/layout.js"></script>
+<script src="assets/live.js"></script>
+<script src="assets/modules.js"></script>
+</body>
+</html>

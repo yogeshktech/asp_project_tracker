@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — WISETRACK Project Control</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer">
+  <script src="assets/api.js"></script>
+</head>
+<body>
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-badge">W</div>
+      <div>
+        <h2 style="font-size: 19px; font-weight: 800; color:#0f172a; margin:0;">WISETRACK</h2>
+        <div style="font-size: 11px; font-weight:700; color: #64748b; text-transform:uppercase; letter-spacing:0.8px;">Engineering Project Control</div>
+      </div>
+    </div>
+
+    <div class="auth-title">Sign In to Wisetrack</div>
+    <p class="auth-desc">Connected to ASP.NET API at <code id="apiBaseLabel">...</code></p>
+
+    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:18px;">
+      <div style="font-size:11px; font-weight:700; color:#475569; margin-bottom:6px; text-transform:uppercase;">Seeded Admin Account:</div>
+      <div style="font-size:12px; color:#334155;">
+        Email: <strong>admin@wisetrack.local</strong><br>
+        Password: <strong>Admin@123</strong>
+      </div>
+    </div>
+
+    <form onsubmit="handleLogin(event)">
+      <div class="field" style="margin-bottom:14px;">
+        <label>Corporate Email / Username</label>
+        <input type="email" id="loginEmail" value="admin@wisetrack.local" required placeholder="admin@wisetrack.local">
+      </div>
+
+      <div class="field" style="margin-bottom:14px;">
+        <label>Password</label>
+        <input type="password" id="loginPass" value="Admin@123" required placeholder="••••••••">
+      </div>
+
+      <div id="loginError" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:12.5px;"></div>
+
+      <button type="submit" class="btn primary lg" id="loginBtn" style="width:100%;">
+        Sign In to Workspace ➔
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+document.getElementById('apiBaseLabel').textContent = API_BASE;
+
+function showToast(message, type = 'success') {
+  let toast = document.getElementById('toast');
+  toast.innerHTML = message;
+  toast.className = `toast show ${type}`;
+  setTimeout(() => toast.classList.remove('show'), 2800);
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPass').value;
+  const errBox = document.getElementById('loginError');
+  const btn = document.getElementById('loginBtn');
+  errBox.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+
+  try {
+    const data = await WisetrackAPI.login(email, password);
+    localStorage.setItem('WISETRACK_ROLE', (data.roles && data.roles[0]) || 'Admin');
+    showToast('Login successful — loading dashboard...', 'success');
+    setTimeout(() => { window.location.href = 'dashboard.html'; }, 400);
+  } catch (err) {
+    errBox.style.display = 'block';
+    errBox.textContent = 'API login failed: ' + err.message +
+      ' | Check: 1) Backend running (dotnet run) 2) DB seeded 3) Open frontend via http://localhost:5189/app/login.html';
+    btn.disabled = false;
+    btn.textContent = 'Sign In to Workspace ➔';
+  }
+}
+</script>
+</body>
+</html>
