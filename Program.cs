@@ -73,15 +73,16 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await DbSeeder.SeedAsync(db);
+        await DatabaseBootstrap.EnsureSchemaAndSeedAsync(db, app.Environment, logger);
     }
     catch (Exception ex)
     {
-        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-        logger.LogWarning(ex, "Database seed skipped. Run Database/wisetrack_schema.sql in DBeaver first.");
+        logger.LogError(ex,
+            "Database bootstrap failed. Ensure PostgreSQL is reachable and run Database/wisetrack_schema.sql if needed.");
     }
 }
 
