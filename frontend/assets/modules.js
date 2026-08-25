@@ -49,41 +49,85 @@
     return `<tr><td colspan="${colspan}">${esc(msg)}</td></tr>`;
   }
 
-  async function selectedProjectId() {
-    const stored = localStorage.getItem('WISETRACK_SELECTED_PROJECT');
-    if (stored) return String(stored);
-    const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT');
+  async function loadProjectsList() {
+    const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
     const apiProjects = await WisetrackAPI.getProjects(resortId || undefined).catch(() => []);
     const localProjects = typeof getProjects === 'function' ? getProjects() : [];
-    const all = [...(apiProjects || []), ...(localProjects || [])];
-    if (all.length > 0) {
-      const pid = String(all[0].id);
-      localStorage.setItem('WISETRACK_SELECTED_PROJECT', pid);
-      return pid;
+    const seen = new Set();
+    const all = [];
+    [...(apiProjects || []), ...(localProjects || [])].forEach(p => {
+      const id = String(p.id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        all.push(p);
+      }
+    });
+    return all;
+  }
+
+  function pickDefaultProject(projects) {
+    if (!projects?.length) return null;
+    return projects.find(p => /MEP/i.test(p.code || '') || /MEP/i.test(p.name || ''))
+      || projects.find(p => p.parentProjectId && String(p.status || '').toLowerCase() === 'active')
+      || projects.find(p => String(p.status || '').toLowerCase() === 'active')
+      || projects[0];
+  }
+
+  async function selectedProjectId() {
+    const projects = await loadProjectsList();
+    if (!projects.length) {
+      localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
+      return null;
     }
-    return null;
+    const stored = localStorage.getItem('WISETRACK_SELECTED_PROJECT');
+    if (stored && projects.some(p => String(p.id) === String(stored))) {
+      return String(stored);
+    }
+    const prefer = pickDefaultProject(projects);
+    const pid = String(prefer.id);
+    localStorage.setItem('WISETRACK_SELECTED_PROJECT', pid);
+    return pid;
+  }
+
+  /** Selected project + descendant project ids (parent roll-up for tasks/milestones). */
+  async function projectScopeIds(pid) {
+    const projects = await loadProjectsList();
+    const root = Number(pid);
+    const ids = new Set([root]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const p of projects) {
+        const id = Number(p.id);
+        const parent = Number(p.parentProjectId || 0);
+        if (parent && ids.has(parent) && !ids.has(id)) {
+          ids.add(id);
+          grew = true;
+        }
+      }
+    }
+    return [...ids];
+  }
+
+  function progressOf(row) {
+    const v = row?.completionPercent ?? row?.percentComplete ?? row?.progressPercent ?? row?.progress;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
   }
 
   async function projectPickerHtml(selectId = 'ctxProjectId') {
-    const apiProjects = await WisetrackAPI.getProjects().catch(() => []);
-    const localProjects = typeof getProjects === 'function' ? getProjects() : [];
-    
-    // Combine uniquely by ID
-    const seen = new Set();
-    const allProjects = [];
-    [...(apiProjects || []), ...(localProjects || [])].forEach(p => {
-      const pId = String(p.id);
-      if (!seen.has(pId)) {
-        seen.add(pId);
-        allProjects.push(p);
-      }
-    });
-
-    const cur = localStorage.getItem('WISETRACK_SELECTED_PROJECT') || '';
-    const opts = allProjects.map(p =>
-      `<option value="${p.id}" ${String(p.id) === String(cur) ? 'selected' : ''}>${esc(p.name || p.title)} (${esc(p.code || '#' + p.id)})</option>`
-    ).join('') || '<option value="">No projects</option>';
-    return `<select id="${selectId}" class="resort-select" style="min-width:220px;padding:8px;border:1px solid var(--border-color);border-radius:6px;" onchange="localStorage.setItem('WISETRACK_SELECTED_PROJECT',this.value);location.reload()">${opts}</select>`;
+    const allProjects = await loadProjectsList();
+    let cur = localStorage.getItem('WISETRACK_SELECTED_PROJECT') || '';
+    if (!cur || !allProjects.some(p => String(p.id) === String(cur))) {
+      const prefer = pickDefaultProject(allProjects);
+      cur = prefer ? String(prefer.id) : '';
+      if (cur) localStorage.setItem('WISETRACK_SELECTED_PROJECT', cur);
+    }
+    const opts = allProjects.map(p => {
+      const lvl = p.parentProjectId ? (p.level || 'Sub') : 'Parent';
+      return `<option value="${p.id}" ${String(p.id) === String(cur) ? 'selected' : ''}>${esc(p.name || p.title)} · ${esc(p.code || '#' + p.id)} (${esc(lvl)})</option>`;
+    }).join('') || '<option value="">No projects</option>';
+    return `<select id="${selectId}" class="resort-select" style="min-width:260px;padding:8px;border:1px solid var(--border-color);border-radius:6px;" onchange="localStorage.setItem('WISETRACK_SELECTED_PROJECT',this.value);location.reload()">${opts}</select>`;
   }
 
   // ---------- ROLES & PERMISSIONS ----------
@@ -1372,7 +1416,11 @@
         <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>`)
       + tableWrap(['ID', 'Name', 'Approved', 'Currency', 'RAG%', 'Actions'], 'budgetBody')
       + tableWrap(['ID', 'Code', 'Name', 'Project', 'Actions'], 'ccBody');
-    if (!pid) return;
+    if (!pid) {
+      $('#budgetBody').innerHTML = emptyRow(6, 'No project available.');
+      $('#ccBody').innerHTML = emptyRow(5, 'No project available.');
+      return;
+    }
     try {
       const [budgets, ccs] = await Promise.all([WisetrackAPI.getBudgets(pid), WisetrackAPI.getCostCenters(pid)]);
       $('#budgetBody').innerHTML = (budgets || []).map(b => `
@@ -1385,7 +1433,11 @@
         <tr><td>${c.id}</td><td>${esc(c.code)}</td><td>${esc(c.name)}</td><td>${c.projectId || '—'}</td>
         <td><button class="btn sm danger" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button></td></tr>`
       ).join('') || emptyRow(5, 'No cost centers');
-    } catch (e) { showToast(e.message, 'danger'); }
+    } catch (e) {
+      $('#budgetBody').innerHTML = errRow(6, e);
+      $('#ccBody').innerHTML = errRow(5, e);
+      showToast(e.message, 'danger');
+    }
   }
 
   async function openBudgetModal() {
@@ -1459,7 +1511,11 @@
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
       + tableWrap(['ID', 'Type', 'Amount', 'Date', 'Notes'], 'costsBody');
-    if (!pid) return;
+    if (!pid) {
+      $('#varianceBox').innerHTML = 'No project available.';
+      $('#costsBody').innerHTML = emptyRow(5, 'No project available.');
+      return;
+    }
     try {
       const [purchases, actuals, variance] = await Promise.all([
         WisetrackAPI.getPurchases(pid), WisetrackAPI.getActuals(pid), WisetrackAPI.getVariance(pid)
@@ -1545,10 +1601,15 @@
       ` <button class="btn" onclick="WTPages.boqFromMaster()">From Master Items</button>
         <button class="btn primary" onclick="WTPages.boqImport()">Import BOQ JSON</button>`)
       + tableWrap(['ID', 'Title', 'Status', 'Actions'], 'boqBody');
-    if (!pid) return;
+    if (!pid) {
+      $('#boqBody').innerHTML = emptyRow(4, 'No project available.');
+      return;
+    }
     try {
-      const list = await WisetrackAPI.getBoqs(pid);
-      $('#boqBody').innerHTML = (list || []).length ? list.map(b => `
+      const scopeIds = await projectScopeIds(pid);
+      const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id).catch(() => [])));
+      const list = batches.flat();
+      $('#boqBody').innerHTML = list.length ? list.map(b => `
         <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || '—')}</td>
         <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button></td></tr>`
       ).join('') : emptyRow(4, 'No BOQ — import or create from master');
@@ -1618,22 +1679,41 @@
             <button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
       + tableWrap(['ID', 'Title & Package', 'Status', 'Progress', 'Actions'], 'tasksBody')
-      + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList"></div></div>`;
+      + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
     
-    if (!pid) return;
+    if (!pid) {
+      $('#tasksBody').innerHTML = emptyRow(5, 'No project available. Create / open a project first.');
+      $('#excList').innerHTML = '<p style="color:var(--text-muted);font-size:12.5px;">Select a project to view exceptions.</p>';
+      return;
+    }
     try {
+      const scopeIds = await projectScopeIds(pid);
+      const projects = await loadProjectsList();
+      const nameOf = (id) => {
+        const p = projects.find(x => Number(x.id) === Number(id));
+        return p ? (p.code || p.name || `#${id}`) : `#${id}`;
+      };
+
       if (kind === 'milestones') {
-        const ms = await WisetrackAPI.getMilestones(pid);
-        $('#tasksBody').innerHTML = (ms || []).map(m => `
-          <tr><td>${m.id}</td><td>${esc(m.name || m.title)}</td><td>${esc(m.status || '—')}</td>
-          <td>${m.progressPercent ?? m.percentComplete ?? '—'}%</td><td>—</td></tr>`
-        ).join('') || emptyRow(5, 'No milestones');
+        const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getMilestones(id).catch(() => [])));
+        const ms = batches.flatMap((rows, i) => (rows || []).map(m => ({ ...m, _projectId: scopeIds[i] })));
+        $('#tasksBody').innerHTML = ms.length ? ms.map(m => {
+          const pct = progressOf(m);
+          return `
+          <tr>
+            <td>${m.id}</td>
+            <td><strong>${esc(m.name || m.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(nameOf(m._projectId || pid))}</small></td>
+            <td>${esc(m.status || '—')}</td>
+            <td>${pct}%</td><td>—</td>
+          </tr>`;
+        }).join('') : emptyRow(5, 'No milestones for this project (or its sub-projects)');
       } else {
-        const tasks = await WisetrackAPI.getTasks(pid);
+        const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => [])));
+        const tasks = batches.flatMap((rows, i) => (rows || []).map(t => ({ ...t, _projectId: scopeIds[i] })));
         let comp = 0, prog = 0, del = 0, crit = 0;
         
-        $('#tasksBody').innerHTML = (tasks || []).map(t => {
-          const pct = t.percentComplete ?? t.progressPercent ?? 0;
+        $('#tasksBody').innerHTML = tasks.length ? tasks.map(t => {
+          const pct = progressOf(t);
           const status = (t.status || 'In Progress').toLowerCase();
           if (pct >= 100 || status.includes('complete')) comp++;
           else if (status.includes('delay')) del++;
@@ -1643,7 +1723,7 @@
           return `
             <tr>
               <td><code>TASK-${t.id}</code></td>
-              <td><strong>${esc(t.title || t.name)}</strong><small style="display:block;color:var(--text-muted);">${esc(t.description || 'General Package Task')}</small></td>
+              <td><strong>${esc(t.title || t.name)}</strong><small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small></td>
               <td><span class="badge ${pct>=100 ? 'green' : pct>50 ? 'blue' : 'amber'}">${esc(t.status || 'In Progress')}</span></td>
               <td>
                 <div style="display:flex;align-items:center;gap:6px;">
@@ -1655,27 +1735,32 @@
                 <button class="btn sm" onclick="${kind === 'daily' ? `openAddDailyReportModal('${esc(t.title || t.name)}')` : `WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
               </td>
             </tr>`;
-        }).join('') || emptyRow(5, 'No tasks');
+        }).join('') : emptyRow(5, 'No tasks for this project (or its sub-projects)');
 
-        // Render Visual Pie & Bar Charts for Daily Report
         if (kind === 'daily') {
           if (typeof renderDailyReportCharts === 'function') {
             renderDailyReportCharts('dailyVisualCharts', {
-              completedCount: comp || 8,
-              inProgressCount: prog || 22,
-              delayedCount: del || 3,
-              criticalCount: crit || 1
+              completedCount: comp,
+              inProgressCount: prog,
+              delayedCount: del,
+              criticalCount: crit
             });
           }
         }
       }
 
-      const ex = await WisetrackAPI.getExceptions(pid);
-      $('#excList').innerHTML = (ex || []).length ? `<ul>${ex.map(x => `<li>${esc(x.title || x.message || JSON.stringify(x))}</li>`).join('')}</ul>` : '<p style="color:var(--text-muted);font-size:12.5px;">🟢 Zero active blockers or exceptions flagged for this package.</p>';
+      const exBatches = await Promise.all(scopeIds.map(id => WisetrackAPI.getExceptions(id).catch(() => [])));
+      const ex = exBatches.flat();
+      $('#excList').innerHTML = ex.length
+        ? `<ul>${ex.map(x => `<li><strong>${esc(x.title || '')}</strong> — ${esc(x.message || x.type || JSON.stringify(x))}</li>`).join('')}</ul>`
+        : '<p style="color:var(--text-muted);font-size:12.5px;">🟢 Zero active blockers or exceptions flagged for this package.</p>';
       
-      // Re-trigger table search, sort & pagination
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
-    } catch (e) { showToast(e.message, 'danger'); }
+    } catch (e) {
+      $('#tasksBody').innerHTML = errRow(5, e);
+      $('#excList').innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`;
+      showToast(e.message, 'danger');
+    }
   }
 
   async function openMilestoneModal() {
@@ -1752,10 +1837,15 @@
     el.innerHTML = pageHead('Issues & Escalation', '/api/issues', picker +
       ` <button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>`)
       + tableWrap(['ID', 'Title', 'Priority', 'Status', 'Actions'], 'issuesBody');
-    if (!pid) return;
+    if (!pid) {
+      $('#issuesBody').innerHTML = emptyRow(5, 'No project available. Create / open a project first.');
+      return;
+    }
     try {
-      const issues = await WisetrackAPI.getIssues(pid);
-      $('#issuesBody').innerHTML = (issues || []).length ? issues.map(i => `
+      const scopeIds = await projectScopeIds(pid);
+      const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getIssues(id).catch(() => [])));
+      const issues = batches.flat();
+      $('#issuesBody').innerHTML = issues.length ? issues.map(i => `
         <tr>
           <td>${i.id}</td><td>${esc(i.title || i.description)}</td>
           <td>${esc(i.priorityName || i.priority || '—')}</td><td>${esc(i.status || '—')}</td>
@@ -1889,10 +1979,11 @@
       + `<div class="card" id="reportOut" style="margin-top:12px"><em>Select "Custom Export & Send" to customize columns and dispatch to internal team only, or view raw portfolio data below.</em></div>`;
     try {
       const list = await WisetrackAPI.getReports();
-      $('#reportsBody').innerHTML = (list || []).map(r => `
+      const rows = Array.isArray(list) ? list : (list?.items || list?.data || []);
+      $('#reportsBody').innerHTML = rows.length ? rows.map(r => `
         <tr><td>${r.id}</td><td>${esc(r.name || r.title)}</td><td>${esc(r.reportType || r.type || '—')}</td>
         <td><button class="btn sm primary" onclick="openReportExportModal('${esc(r.reportType || 'portfolio').toLowerCase()}')">Export ➔</button></td></tr>`
-      ).join('') || emptyRow(4, 'No saved report configs');
+      ).join('') : emptyRow(4, 'No saved report configs');
     } catch (e) { $('#reportsBody').innerHTML = errRow(4, e); }
   }
 
@@ -1931,12 +2022,17 @@
       ` <button class="btn" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>
         <button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>`)
       + tableWrap(['ID', 'Item', 'Qty', 'Action'], 'invBody');
-    if (!pid) return;
+    if (!pid) {
+      $('#invBody').innerHTML = emptyRow(4, 'No project available.');
+      return;
+    }
     try {
-      const inv = await WisetrackAPI.getInventory(pid);
-      $('#invBody').innerHTML = (inv || []).length ? inv.map(i => `
+      const scopeIds = await projectScopeIds(pid);
+      const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getInventory(id).catch(() => [])));
+      const inv = batches.flat();
+      $('#invBody').innerHTML = inv.length ? inv.map(i => `
         <tr><td>${i.id}</td><td>${esc(i.itemName || i.name || i.description)}</td>
-        <td>${i.quantity ?? i.leftoverQty ?? '—'}</td><td>${esc(i.action || i.disposition || '—')}</td></tr>`
+        <td>${i.quantity ?? i.leftoverQty ?? '—'}</td><td>${esc(i.action || i.disposition || i.remarks || '—')}</td></tr>`
       ).join('') : emptyRow(4, 'No inventory rows');
     } catch (e) { $('#invBody').innerHTML = errRow(4, e); }
   }
@@ -2273,38 +2369,48 @@
 
   // ---------- ROUTER ----------
   async function boot() {
-    if (typeof requireAuth === 'function' && !requireAuth()) return;
-    if (typeof wtApplyLayout === 'function') wtApplyLayout();
-    if (typeof applyLoggedInUser === 'function') applyLoggedInUser();
-    if (typeof fillResortSelector === 'function') await fillResortSelector();
+    try {
+      if (typeof requireAuth === 'function' && !requireAuth()) return;
+      if (typeof wtApplyLayout === 'function') wtApplyLayout();
+      if (typeof applyLoggedInUser === 'function') applyLoggedInUser();
+      if (typeof fillResortSelector === 'function') await fillResortSelector();
 
-    const page = (location.pathname.split('/').pop() || '').toLowerCase();
-    const map = {
-      'dashboard.html': () => pageDashboard(),
-      'index.html': () => pageDashboard(),
-      '': () => pageDashboard(),
-      'roles.html': () => pageRoles(),
-      'users.html': () => pageUsers(),
-      'resorts.html': () => pageResorts(),
-      'projects.html': () => pageProjects(),
-      'project-detail.html': () => pageProjectDetail(),
-      'items.html': () => pageItems(),
-      'budget.html': () => pageBudget(),
-      'costs.html': () => pageCosts(),
-      'boq.html': () => pageBoq(),
-      'planning.html': () => pageTasks('planning'),
-      'milestones.html': () => pageTasks('milestones'),
-      'daily-report.html': () => pageTasks('daily'),
-      'issues.html': () => pageIssues(),
-      'notifications.html': () => pageNotifications(),
-      'reports.html': () => pageReports(),
-      'inventory.html': () => pageInventory(),
-      'audit-logs.html': () => pageAudit(),
-      'settings.html': () => pageSettings(),
-      'workflow.html': () => pageWorkflow()
-    };
-    const fn = map[page];
-    if (fn) await fn();
+      const page = (location.pathname.split('/').pop() || '').toLowerCase();
+      const map = {
+        'dashboard.html': () => pageDashboard(),
+        'index.html': () => pageDashboard(),
+        '': () => pageDashboard(),
+        'roles.html': () => pageRoles(),
+        'users.html': () => pageUsers(),
+        'resorts.html': () => pageResorts(),
+        'projects.html': () => pageProjects(),
+        'project-detail.html': () => pageProjectDetail(),
+        'items.html': () => pageItems(),
+        'budget.html': () => pageBudget(),
+        'costs.html': () => pageCosts(),
+        'boq.html': () => pageBoq(),
+        'planning.html': () => pageTasks('planning'),
+        'milestones.html': () => pageTasks('milestones'),
+        'daily-report.html': () => pageTasks('daily'),
+        'issues.html': () => pageIssues(),
+        'notifications.html': () => pageNotifications(),
+        'reports.html': () => pageReports(),
+        'inventory.html': () => pageInventory(),
+        'audit-logs.html': () => pageAudit(),
+        'settings.html': () => pageSettings(),
+        'workflow.html': () => pageWorkflow()
+      };
+      const fn = map[page];
+      if (fn) await fn();
+    } catch (err) {
+      const el = root();
+      el.innerHTML = `<div class="card" style="padding:24px;color:#991b1b">
+        <h2 style="margin:0 0 8px">Page failed to load</h2>
+        <p style="margin:0">${esc(err.message || err)}</p>
+        <p style="margin:12px 0 0;font-size:12px;color:var(--text-muted)">Check login token / API, then refresh. Stale project selection is cleared on next load.</p>
+      </div>`;
+      console.error(err);
+    }
   }
 
   window.WTPages = {

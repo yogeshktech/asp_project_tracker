@@ -1,13 +1,21 @@
 // WISETRACK API LAYER — connects frontend to live ASP.NET Core backend
 const API_BASE = (function () {
-  const { hostname, origin } = window.location;
-  if (hostname === 'demo-project-tracker.workarya.com') {
-    return `${origin}/api`;
-  }
+  const { hostname, origin, protocol } = window.location;
   const customBase = localStorage.getItem('WISETRACK_API_BASE');
   if (customBase) return customBase.replace(/\/+$/, '');
 
-  // Live backend API endpoint
+  // Prefer same-origin API when app is served by the ASP.NET host (/app/...)
+  if (protocol === 'http:' || protocol === 'https:') {
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === 'demo-project-tracker.workarya.com' ||
+      location.pathname.includes('/app')
+    ) {
+      return `${origin}/api`;
+    }
+  }
+
   return 'https://demo-project-tracker.workarya.com/api';
 })();
 
@@ -15,7 +23,7 @@ const WisetrackAPI = {
   _token: () => localStorage.getItem('WISETRACK_TOKEN') || '',
 
   _headers(json = true) {
-    const h = {};
+    const h = {};   
     const token = this._token();
     if (token) h['Authorization'] = `Bearer ${token}`;
     if (json) h['Content-Type'] = 'application/json';
