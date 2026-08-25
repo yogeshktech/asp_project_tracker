@@ -85,12 +85,14 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(options =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-else
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Wisetrack API v1");
+    options.RoutePrefix = "swagger";
+});
+
+if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
@@ -105,6 +107,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 var frontendPath = Path.Combine(app.Environment.ContentRootPath, "frontend");
+if (!Directory.Exists(frontendPath))
+{
+    var altPath = Path.Combine(AppContext.BaseDirectory, "frontend");
+    if (Directory.Exists(altPath)) frontendPath = altPath;
+}
 if (Directory.Exists(frontendPath))
 {
     var frontendFiles = new PhysicalFileProvider(frontendPath);

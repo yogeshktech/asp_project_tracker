@@ -92,7 +92,7 @@ async function loadResortsPage() {
       </tr>
     `).join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" style="color:#dc2626;">API failed: ${esc(err.message)}. Is backend running on :5189?</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="color:#dc2626;">API failed: ${esc(err.message)}. Is backend API service running?</td></tr>`;
   }
 }
 

@@ -80,7 +80,7 @@ async function handleLogin(e) {
   } catch (err) {
     errBox.style.display = 'block';
     errBox.textContent = 'API login failed: ' + err.message +
-      ' | Check: 1) Backend running (dotnet run) 2) DB seeded 3) Open frontend via http://localhost:5189/app/login.html';
+      ' | Ensure live API server and database are running and credentials are valid.';
     btn.disabled = false;
     btn.textContent = 'Sign In to Workspace ➔';
   }
