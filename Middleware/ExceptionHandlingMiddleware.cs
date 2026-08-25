@@ -22,13 +22,15 @@ public class ExceptionHandlingMiddleware
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "Business rule failed");
-            await Write(context, HttpStatusCode.BadRequest, ex.Message);
+            _logger.LogWarning(ex, "Business rule or DB operation failed");
+            var msg = ex.InnerException != null ? $"{ex.Message} (Detail: {ex.InnerException.Message})" : ex.Message;
+            await Write(context, HttpStatusCode.BadRequest, msg);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled error");
-            await Write(context, HttpStatusCode.InternalServerError, "An unexpected error occurred.");
+            var msg = ex.InnerException != null ? $"{ex.Message} (Detail: {ex.InnerException.Message})" : ex.Message;
+            await Write(context, HttpStatusCode.InternalServerError, msg);
         }
     }
 
