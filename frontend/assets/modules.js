@@ -357,6 +357,34 @@
     const checks = roles.map(r =>
       `<label class="check-list-item"><input type="checkbox" class="user-role" value="${r.id}" ${roleNames.has(r.name) ? 'checked' : ''}> <span class="perm-name">${esc(r.name)}</span></label>`
     ).join('');
+    const modules = ['Projects', 'Budgets', 'Costs', 'BOQ', 'Tasks', 'Issues', 'Reports', 'Closure'];
+    let projects = [];
+    let perms = [];
+    try {
+      projects = await WisetrackAPI.getProjects();
+      if (id) perms = await WisetrackAPI.getUserProjectPermissions(id).catch(() => []);
+    } catch (_) { /* optional */ }
+    const permOn = (pid, mod, field) => (perms || []).some(p =>
+      Number(p.projectId || p.ProjectId) === Number(pid) &&
+      String(p.module || p.Module) === mod &&
+      (field === 'edit' ? (p.canEdit || p.CanEdit) : (p.canView || p.CanView)));
+    const permTable = projects.length ? `
+      <div class="field full" style="overflow:auto">
+        <label>Project &amp; module rights (View / Edit) — PM-03</label>
+        <table class="table" style="font-size:11px">
+          <thead><tr><th>Project</th>${modules.map(m => `<th>${esc(m)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${projects.map(p => `<tr>
+              <td>${esc(p.code || p.name)}</td>
+              ${modules.map(m => `<td style="white-space:nowrap">
+                <label><input type="checkbox" class="perm-view" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'view') ? 'checked' : ''}> V</label>
+                <label><input type="checkbox" class="perm-edit" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'edit') ? 'checked' : ''}> E</label>
+              </td>`).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <small style="color:var(--text-muted)">Unchecked projects stay hidden. External users should only get View on authorized projects.</small>
+      </div>` : '';
     openModal(id ? 'Edit User' : 'Create User', `
       <form onsubmit="WTPages.saveUser(event, ${id || 'null'})">
         <div class="form-grid">
@@ -367,6 +395,7 @@
           <div class="field"><label>Internal</label><select id="uInternal"><option value="true" ${u.isInternal ? 'selected' : ''}>Yes</option><option value="false" ${!u.isInternal ? 'selected' : ''}>No</option></select></div>
           ${id ? `<div class="field"><label>Active</label><select id="uActive"><option value="true" ${u.isActive ? 'selected' : ''}>Active</option><option value="false" ${!u.isActive ? 'selected' : ''}>Inactive</option></select></div>` : ''}
           <div class="field full"><label>Roles</label><div class="check-list">${checks}</div></div>
+          ${permTable}
         </div>
         <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -375,7 +404,19 @@
   async function saveUser(e, id) {
     e.preventDefault();
     const roleIds = [...document.querySelectorAll('.user-role:checked')].map(x => Number(x.value));
+    const permRows = [...document.querySelectorAll('.perm-view, .perm-edit')];
+    const permMap = {};
+    permRows.forEach(el => {
+      const key = `${el.dataset.project}|${el.dataset.module}`;
+      if (!permMap[key]) permMap[key] = { projectId: Number(el.dataset.project), module: el.dataset.module, canView: false, canEdit: false };
+      if (el.classList.contains('perm-view') && el.checked) permMap[key].canView = true;
+      if (el.classList.contains('perm-edit') && el.checked) {
+        permMap[key].canEdit = true;
+        permMap[key].canView = true;
+      }
+    });
     try {
+      let userId = id;
       if (id) {
         await WisetrackAPI.updateUser(id, {
           fullName: $('#uName').value.trim(),
@@ -385,19 +426,30 @@
           roleIds
         });
       } else {
-        await WisetrackAPI.createUser({
+        const created = await WisetrackAPI.createUser({
           fullName: $('#uName').value.trim(),
           email: $('#uEmail').value.trim(),
           password: $('#uPass').value,
           phone: $('#uPhone').value.trim(),
           isInternal: $('#uInternal').value === 'true',
           roleIds,
-          projectIds: []
+          projectIds: Object.values(permMap).filter(p => p.canView).map(p => p.projectId)
         });
+        userId = created.id || created.Id;
       }
-      closeModal();
-      showToast('User saved');
-      await refreshUsers();
+      if (userId) {
+        for (const p of Object.values(permMap)) {
+          if (!p.canView && !p.canEdit) continue;
+          await WisetrackAPI.setProjectPermission({
+            userId,
+            projectId: p.projectId,
+            module: p.module,
+            canView: p.canView,
+            canEdit: p.canEdit
+          });
+        }
+      }
+      closeModal(); showToast('User saved'); await pageUsers();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -1353,7 +1405,7 @@
         <tr>
           <td>${it.id}</td><td><code>${esc(it.itemCode || it.code || '')}</code></td>
           <td>${esc(it.name)}</td><td>₹${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-IN')}</td>
-          <td>${esc(it.brandName || '—')}</td><td>${esc(it.unitName || '—')}</td>
+          <td>${esc(it.brand?.name || it.brandName || '—')}</td><td>${esc(it.unit?.name || it.unitName || it.unit?.code || '—')}</td>
           <td class="table-actions">
             <button class="btn sm" onclick="WTPages.openItemModal(${it.id})"><i class="fa-solid fa-pen"></i></button>
             <button class="btn sm danger" onclick="WTPages.deleteItem(${it.id})"><i class="fa-solid fa-trash"></i></button>
@@ -1378,6 +1430,8 @@
           <div class="field"><label>Unit</label><select id="itUnit"><option value="">—</option>${units.map(u => `<option value="${u.id}" ${it.unitId == u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Brand</label><select id="itBrand"><option value="">—</option>${brands.map(b => `<option value="${b.id}" ${it.brandId == b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Category</label><select id="itCat"><option value="">—</option>${cats.map(c => `<option value="${c.id}" ${it.categoryId == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+          <div class="field full"><label>Description</label><textarea id="itDesc">${esc(it.description || '')}</textarea></div>
+          <div class="field full"><label>Image URL</label><input id="itImg" value="${esc(it.imageUrl || '')}" placeholder="/uploads/... or https://..."></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -1391,7 +1445,9 @@
       unitPrice: Number($('#itPrice').value),
       unitId: $('#itUnit').value ? Number($('#itUnit').value) : null,
       brandId: $('#itBrand').value ? Number($('#itBrand').value) : null,
-      categoryId: $('#itCat').value ? Number($('#itCat').value) : null
+      categoryId: $('#itCat').value ? Number($('#itCat').value) : null,
+      description: $('#itDesc')?.value.trim() || null,
+      imageUrl: $('#itImg')?.value.trim() || null
     };
     try {
       if (id) await WisetrackAPI.updateItem(id, payload);
@@ -1607,7 +1663,7 @@
     const pid = await selectedProjectId();
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq', picker +
       ` <button class="btn" onclick="WTPages.boqFromMaster()">From Master Items</button>
-        <button class="btn primary" onclick="WTPages.boqImport()">Import BOQ JSON</button>`)
+        <button class="btn primary" onclick="WTPages.boqImport()">Import vendor file (CSV)</button>`)
       + tableWrap(['ID', 'Title', 'Status', 'Actions'], 'boqBody');
     if (!pid) {
       $('#boqBody').innerHTML = emptyRow(4, 'No project available.');
@@ -1637,27 +1693,64 @@
 
   async function boqImport() {
     const pid = await selectedProjectId();
-    openModal('Import BOQ', `
+    openModal('Import BOQ (flexible vendor file)', `
       <form onsubmit="WTPages.saveBoqImport(event)">
         <input type="hidden" id="boqProj" value="${pid}">
         <div class="field"><label>Title *</label><input id="boqTitle" value="Imported BOQ" required></div>
-        <div class="field"><label>Items JSON array</label>
-          <textarea id="boqJson" rows="8">[{"itemCode":"ITM-1","description":"Sample","quantity":10,"unitPrice":100}]</textarea>
+        <div class="field"><label>CSV / TSV from 3rd party (any column names)</label>
+          <input type="file" id="boqFile" accept=".csv,.txt,.tsv">
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Import</button></div>
+        <div class="field"><label>Or paste rows</label>
+          <textarea id="boqJson" rows="8" placeholder="Item Code,Description,Qty,Rate&#10;ITM-1,Cable tray,10,1500"></textarea>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted)">Recognizes description/qty/rate aliases. Validation errors can be downloaded before commit.</p>
+        <div class="modalfoot" style="padding:0;margin-top:12px">
+          <button type="button" class="btn" onclick="WTPages.saveBoqImport(event, false)">Validate only</button>
+          <button class="btn primary" type="submit">Validate &amp; Import</button>
+        </div>
       </form>`);
   }
 
-  async function saveBoqImport(e) {
+  async function saveBoqImport(e, commitFlag) {
     e.preventDefault();
     try {
-      const lines = JSON.parse($('#boqJson').value);
-      await WisetrackAPI.importBoq({
+      let text = ($('#boqJson').value || '').trim();
+      const file = $('#boqFile')?.files?.[0];
+      if (file) text = await file.text();
+      let lines;
+      if (text.startsWith('[')) {
+        lines = JSON.parse(text);
+      } else {
+        const rows = typeof wtParseFlexibleTable === 'function' ? wtParseFlexibleTable(text) : [];
+        lines = rows.map((r, i) => ({
+          itemCode: (typeof wtPick === 'function' ? wtPick(r, ['itemcode', 'code', 'item', 'sku']) : r.itemcode) || null,
+          description: (typeof wtPick === 'function' ? wtPick(r, ['description', 'desc', 'particulars', 'name', 'itemdescription']) : r.description) || '',
+          quantity: Number((typeof wtPick === 'function' ? wtPick(r, ['quantity', 'qty', 'qnty', 'nos']) : r.quantity) || 0),
+          unitPrice: Number((typeof wtPick === 'function' ? wtPick(r, ['unitprice', 'price', 'rate', 'unitrate', 'purchaseprice']) : r.unitprice) || 0),
+          unit: (typeof wtPick === 'function' ? wtPick(r, ['unit', 'uom']) : r.unit) || null,
+          brand: (typeof wtPick === 'function' ? wtPick(r, ['brand', 'make']) : r.brand) || null,
+          remarks: (typeof wtPick === 'function' ? wtPick(r, ['remarks', 'remark', 'notes']) : r.remarks) || null,
+          lineNo: i + 1
+        }));
+      }
+      const commit = commitFlag !== false;
+      const result = await WisetrackAPI.importBoq({
         projectId: Number($('#boqProj').value),
         title: $('#boqTitle').value.trim(),
-        commit: true,
+        commit,
         lines
       });
+      if (!result.isValid && (result.errors || []).length) {
+        const csv = 'Row,Field,Message\n' + result.errors.map(er =>
+          `${er.row || er.Row},"${er.field || er.Field}","${er.message || er.Message}"`).join('\n');
+        if (typeof wtDownloadText === 'function') wtDownloadText('boq-validation-errors.csv', csv);
+        showToast(`${result.errorCount || result.errors.length} validation errors — report downloaded`, 'danger');
+        return;
+      }
+      if (!commit) {
+        showToast('Validation passed. Click Import to commit.');
+        return;
+      }
       closeModal(); showToast('Imported'); await pageBoq();
     } catch (err) { showToast(err.message, 'danger'); }
   }
@@ -1701,9 +1794,10 @@
     
     el.innerHTML = pageHead(title, '/api/tasks', picker +
       (kind === 'milestones'
-        ? ` <button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>`
+        ? ` <button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates</button>
+            <button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>`
         : kind === 'daily'
-        ? ` <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel</button>
+        ? ` <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
         : ` <button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub-Task</button>
             <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>
@@ -1792,12 +1886,12 @@
                 </div>
               </td>
               <td class="table-actions">
-                <button class="btn sm" onclick="${kind === 'daily' ? `openAddDailyReportModal('${esc(t.title || t.name)}')` : `event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
+                <button class="btn sm" onclick="${kind === 'daily' ? `event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id})` : `event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
                 ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-plus"></i> Sub-Task</button>` : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
               </td>
             </tr>`;
-          const subRows = kind === 'planning' ? subs.map(s => {
+          const subRows = (kind === 'planning' || kind === 'daily') ? subs.map(s => {
             const spct = progressOf(s);
             const due = s.dueDate || s.DueDate;
             const dueLabel = due ? String(due).slice(0, 10) : 'No due date';
@@ -1857,6 +1951,8 @@
         <input type="hidden" id="mProj" value="${pid}">
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="mName" required></div>
+          <div class="field full"><label>Description</label><textarea id="mDesc" placeholder="Optional notes / backward-plan step"></textarea></div>
+          <div class="field"><label>Start Date</label><input id="mStart" type="date"></div>
           <div class="field"><label>Target Date</label><input id="mDate" type="date"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -1866,8 +1962,64 @@
   async function saveMilestone(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createMilestone({ projectId: Number($('#mProj').value), name: $('#mName').value.trim(), dueDate: $('#mDate').value || null });
+      await WisetrackAPI.createMilestone({
+        projectId: Number($('#mProj').value),
+        name: $('#mName').value.trim(),
+        description: $('#mDesc')?.value.trim() || null,
+        startDate: $('#mStart')?.value || null,
+        dueDate: $('#mDate').value || null
+      });
       closeModal(); showToast('Milestone created'); await pageTasks('milestones');
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function openMilestoneTemplateModal() {
+    const pid = await selectedProjectId();
+    let templates = [];
+    try { templates = await WisetrackAPI.getTemplates(); } catch { templates = []; }
+    openModal('Milestone templates', `
+      <div class="form-grid">
+        <div class="field full">
+          <label>Clone saved template into this project</label>
+          <select id="msTpl">${(templates || []).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('') || '<option value="">None saved yet</option>'}</select>
+        </div>
+        <div class="field full">
+          <label>Or paste names from Excel / MSP export (one per line)</label>
+          <textarea id="msTplNames" rows="5" placeholder="Procurement&#10;Manufacture&#10;Shipment&#10;Installation&#10;Commissioning&#10;Handover"></textarea>
+        </div>
+        <div class="field"><label>Save as template name</label><input id="msTplName" placeholder="MEP handover pack"></div>
+      </div>
+      <div class="modalfoot" style="padding:0;margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn" onclick="WTPages.cloneMilestoneTemplate()">Clone into project</button>
+        <button type="button" class="btn primary" onclick="WTPages.saveMilestoneTemplate()">Save template</button>
+      </div>`);
+    window._wtMsTplProject = pid;
+  }
+
+  async function saveMilestoneTemplate() {
+    const name = ($('#msTplName')?.value || '').trim();
+    const names = ($('#msTplNames')?.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    if (!name || !names.length) { showToast('Enter a template name and at least one milestone line.', 'danger'); return; }
+    try {
+      await WisetrackAPI.saveTemplate({ name, templateJson: JSON.stringify(names) });
+      showToast('Template saved');
+      closeModal();
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function cloneMilestoneTemplate() {
+    const templateId = Number($('#msTpl')?.value);
+    const pid = window._wtMsTplProject;
+    const pasted = ($('#msTplNames')?.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    try {
+      if (pasted.length && !templateId) {
+        const saved = await WisetrackAPI.saveTemplate({ name: `Import ${new Date().toISOString().slice(0, 10)}`, templateJson: JSON.stringify(pasted) });
+        await WisetrackAPI.cloneTemplate({ templateId: saved.id || saved.Id, projectId: pid });
+      } else {
+        if (!templateId) { showToast('Select a template or paste names.', 'danger'); return; }
+        await WisetrackAPI.cloneTemplate({ templateId, projectId: pid });
+      }
+      closeModal(); showToast('Milestones cloned'); await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -1982,6 +2134,10 @@
       return `<option value="${s}" ${match ? 'selected' : ''}>${label}</option>`;
     }).join('');
 
+    const canPct = isSub
+      ? (selectedSub?.canEditPercent ?? selectedSub?.CanEditPercent ?? selectedTask?.canEditPercent ?? true)
+      : (selectedTask?.canEditPercent ?? selectedTask?.CanEditPercent ?? true);
+
     openModal(isSub ? 'Update Sub-Task' : 'Update Task', `
       <form onsubmit="WTPages.saveTaskUpdate(event)">
         <div class="form-grid">
@@ -1998,16 +2154,24 @@
             <input id="tuLabel" value="${esc(title)}" readonly>
           </div>
           <div class="field">
-            <label>% Complete *</label>
-            <input id="tuPct" type="number" min="0" max="100" value="${Number.isFinite(pct) ? pct : 0}" required>
+            <label>% Complete ${canPct ? '*' : '(owner only)'}</label>
+            <input id="tuPct" type="number" min="0" max="100" value="${Number.isFinite(pct) ? pct : 0}" ${canPct ? 'required' : 'disabled'}>
           </div>
           <div class="field">
             <label>Status</label>
             <select id="tuStatus">${statusOpts}</select>
           </div>
           <div class="field full">
-            <label>Remark</label>
-            <input id="tuRem" placeholder="What changed today?">
+            <label>Optional text (not mandatory)</label>
+            <input id="tuNotes" placeholder="Extra note if needed">
+          </div>
+          <div class="field full">
+            <label>Remark / delay reason</label>
+            <input id="tuRem" placeholder="Site issues, delay reasons...">
+          </div>
+          <div class="field full">
+            <label>Attachment</label>
+            <input id="tuFile" type="file">
           </div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px">
@@ -2040,13 +2204,20 @@
       return;
     }
     try {
-      await WisetrackAPI.addTaskUpdate({
+      const payload = {
         taskId,
         subTaskId,
-        completionPercent: Number($('#tuPct').value),
         status: $('#tuStatus')?.value || null,
-        remarks: ($('#tuRem').value || '').trim()
-      });
+        remarks: [($('#tuRem').value || '').trim(), ($('#tuNotes')?.value || '').trim()].filter(Boolean).join(' | ') || null
+      };
+      const pctEl = $('#tuPct');
+      if (pctEl && !pctEl.disabled) payload.completionPercent = Number(pctEl.value);
+      const file = $('#tuFile')?.files?.[0];
+      if (file) {
+        const uploaded = await WisetrackAPI.uploadFile(file, 'Tasks', taskId);
+        payload.attachmentPath = uploaded.filePath || uploaded.FilePath;
+      }
+      await WisetrackAPI.addTaskUpdate(payload);
       closeModal(); showToast(subTaskId ? 'Sub-task updated' : 'Task updated'); await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
   }
@@ -2056,11 +2227,11 @@
     const el = root();
     const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Issues & Escalation', '/api/issues', picker +
+    el.innerHTML = pageHead('Issues & Escalation', 'What / Where / When / Impact — high-priority mail to stakeholders', picker +
       ` <button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>`)
-      + tableWrap(['ID', 'Title', 'Priority', 'Status', 'Actions'], 'issuesBody');
+      + tableWrap(['ID', 'What', 'Where', 'When', 'Impact', 'Reported By', 'Priority', 'Status', 'Actions'], 'issuesBody');
     if (!pid) {
-      $('#issuesBody').innerHTML = emptyRow(5, 'No project available. Create / open a project first.');
+      $('#issuesBody').innerHTML = emptyRow(9, 'No project available. Create / open a project first.');
       return;
     }
     try {
@@ -2069,42 +2240,58 @@
       const issues = batches.flat();
       $('#issuesBody').innerHTML = issues.length ? issues.map(i => `
         <tr>
-          <td>${i.id}</td><td>${esc(i.title || i.description)}</td>
-          <td>${esc(i.priorityName || i.priority || '—')}</td><td>${esc(i.status || '—')}</td>
+          <td>${i.id}</td>
+          <td>${esc(i.what || i.title || i.description || '—')}</td>
+          <td>${esc(i.location || '—')}</td>
+          <td>${esc((i.occurredAt || '').toString().slice(0, 16) || '—')}</td>
+          <td>${esc(i.impact || '—')}</td>
+          <td>${esc(i.reporter?.fullName || i.reporterName || '—')}</td>
+          <td>${esc(i.priority?.name || i.priorityName || i.priority || '—')}</td>
+          <td>${esc(i.status || '—')}</td>
           <td class="table-actions">
             <button class="btn sm" onclick="WTPages.commentIssue(${i.id})">Comment</button>
             <button class="btn sm danger" onclick="WTPages.escalateIssue(${i.id})">Escalate</button>
           </td>
-        </tr>`).join('') : emptyRow(5, 'No issues');
-    } catch (e) { $('#issuesBody').innerHTML = errRow(5, e); }
+        </tr>`).join('') : emptyRow(9, 'No issues');
+    } catch (e) { $('#issuesBody').innerHTML = errRow(9, e); }
   }
 
   async function openIssueModal() {
     const pid = await selectedProjectId();
     let priorities = [];
     try { priorities = await WisetrackAPI.getIssuePriorities(); } catch { /* optional */ }
-    openModal('Log Issue', `
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    openModal('Log Issue / Incident', `
       <form onsubmit="WTPages.saveIssue(event)">
         <input type="hidden" id="iProj" value="${pid}">
         <div class="form-grid">
-          <div class="field full"><label>Title *</label><input id="iTitle" required></div>
+          <div class="field full"><label>What is the issue *</label><input id="iWhat" required placeholder="Short description of the incident"></div>
+          <div class="field"><label>Where is the issue *</label><input id="iWhere" required placeholder="Location / area"></div>
+          <div class="field"><label>When it happened *</label><input id="iWhen" type="datetime-local" value="${local}" required></div>
+          <div class="field full"><label>Impact *</label><textarea id="iImpact" required placeholder="Safety, schedule, cost, operations..."></textarea></div>
           <div class="field"><label>Priority</label><select id="iPri">${(priorities || []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="1">High</option>'}</select></div>
-          <div class="field full"><label>Description</label><textarea id="iDesc"></textarea></div>
+          <div class="field"><label>Reported By</label><input value="${esc(localStorage.getItem('WISETRACK_USER_NAME') || '')}" readonly></div>
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
+        <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0">High / Critical priority emails internal stakeholders automatically.</p>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save &amp; Notify</button></div>
       </form>`);
   }
 
   async function saveIssue(e) {
     e.preventDefault();
     try {
+      const what = $('#iWhat').value.trim();
       await WisetrackAPI.createIssue({
         projectId: Number($('#iProj').value),
-        title: $('#iTitle').value.trim(),
-        what: $('#iDesc').value.trim(),
+        title: what,
+        what,
+        location: $('#iWhere').value.trim(),
+        occurredAt: $('#iWhen').value ? new Date($('#iWhen').value).toISOString() : null,
+        impact: $('#iImpact').value.trim(),
         priorityId: Number($('#iPri').value) || null
       });
-      closeModal(); showToast('Issue logged'); await pageIssues();
+      closeModal(); showToast('Issue logged. High-priority mail is sent when applicable.'); await pageIssues();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2267,6 +2454,7 @@
     el.innerHTML = pageHead('Executive Reports & Exports (PM-28)', '/api/reports',
       `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>
        <button class="btn" onclick="WTPages.loadPortfolio()"><i class="fa-solid fa-chart-pie"></i> View Portfolio</button>
+       <button class="btn" onclick="WTPages.loadComparable()">Comparable projects</button>
        <button class="btn primary" onclick="WTPages.openReportModal()">+ Report Config</button>`)
       + tableWrap(['ID', 'Name', 'Type', 'Actions'], 'reportsBody')
       + `<div class="card" id="reportOut" style="margin-top:12px"><em>Select "Custom Export & Send" to customize columns and send to internal team only, or click View Portfolio for a live status table.</em></div>`;
@@ -2315,6 +2503,25 @@
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
+  async function loadComparable() {
+    try {
+      const rows = await WisetrackAPI.getComparableProjects({});
+      const list = Array.isArray(rows) ? rows : [];
+      $('#reportOut').innerHTML = list.length ? `
+        <h3 class="card-title">Comparable completed projects</h3>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Project</th><th>Type</th><th>Budget</th><th>Actual</th><th>Duration</th></tr></thead>
+          <tbody>${list.map(r => `<tr>
+            <td>${esc(r.name || r.Name)}</td>
+            <td>${esc(r.projectType || r.ProjectType || '—')}</td>
+            <td>₹${Number(r.approvedBudget || r.ApprovedBudget || 0).toLocaleString('en-IN')}</td>
+            <td>₹${Number(r.actualCost || r.ActualCost || 0).toLocaleString('en-IN')}</td>
+            <td>${r.durationDays ?? r.DurationDays ?? '—'} days</td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : '<p>No comparable closed projects yet.</p>';
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
   function openReportModal() {
     openModal('Create Report Config', `
       <form onsubmit="WTPages.saveReport(event)">
@@ -2339,7 +2546,7 @@
     const el = root();
     const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Inventory & Project Closure', '/api/closure', picker +
+    el.innerHTML = pageHead('Inventory & Project Closure', 'Leftover inventory + signed PCR required. Only Project Manager can close.', picker +
       ` <button class="btn" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>
         <button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>`)
       + tableWrap(['ID', 'Item', 'Qty', 'Action'], 'invBody');
@@ -2387,16 +2594,35 @@
 
   async function closeProject() {
     const pid = await selectedProjectId();
-    if (!confirm('Close this project? Requires PM rights & completion data.')) return;
+    openModal('Close project (PM only)', `
+      <form onsubmit="WTPages.saveCloseProject(event)">
+        <input type="hidden" id="clProj" value="${pid}">
+        <p style="font-size:12.5px;color:var(--text-muted)">Leftover inventory must already be recorded. Signed Project Completion Report is mandatory.</p>
+        <div class="form-grid">
+          <div class="field full"><label>Signed PCR / handover certificate *</label><input id="clFile" type="file" required></div>
+          <div class="field full"><label>Handover notes</label><textarea id="clNotes" placeholder="Punch list closed, warranties archived..."></textarea></div>
+        </div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn danger" type="submit">Close project</button></div>
+      </form>`);
+  }
+
+  async function saveCloseProject(e) {
+    e.preventDefault();
+    const pid = Number($('#clProj').value);
+    const file = $('#clFile')?.files?.[0];
+    if (!file) { showToast('Upload the signed completion report.', 'danger'); return; }
     try {
+      const uploaded = await WisetrackAPI.uploadFile(file, 'Closure', pid);
       await WisetrackAPI.closeProject({
         projectId: pid,
         isMandatoryComplete: true,
-        handoverNotes: 'Closed via UI',
-        signedDocumentPath: 'ui-signed.pdf'
+        handoverNotes: ($('#clNotes')?.value || '').trim(),
+        signedDocumentPath: uploaded.filePath || uploaded.FilePath
       });
+      closeModal();
       showToast('Project closed');
-    } catch (e) { showToast(e.message, 'danger'); }
+      await pageInventory();
+    } catch (err) { showToast(err.message, 'danger'); }
   }
 
   // ---------- AUDIT ----------
@@ -2749,17 +2975,18 @@
     openBudgetModal, saveBudget, reviseBudget, openCostCenterModal, saveCC, deleteCC,
     openPurchaseModal, savePurchase, openActualModal, saveActual,
     boqFromMaster, boqImport, saveBoqImport, viewBoq,
-    openMilestoneModal, saveMilestone, openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate,
+    openMilestoneModal, saveMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, cloneMilestoneTemplate,
+    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate,
     openCreateSubTaskModal: (p) => openCreateSubTaskModal(p),
     saveSubTask: (e) => handleCreateSubTask(e),
     refreshPlanning: () => pageTasks('planning'),
     openIssueModal, saveIssue, commentIssue, escalateIssue,
     openNotifyModal, saveNotify, openEscRuleModal, saveEscRule,
     refreshNotifications: () => pageNotifications(),
-    loadPortfolio, openReportModal, saveReport,
+    loadPortfolio, loadComparable, openReportModal, saveReport,
     openReportExportModal: (t) => typeof openReportExportModal === 'function' && openReportExportModal(t),
     openAddDailyReportModal: (s) => typeof openAddDailyReportModal === 'function' && openAddDailyReportModal(s),
-    openInventoryModal, saveInventory, closeProject,
+    openInventoryModal, saveInventory, closeProject, saveCloseProject,
     boot
   };
 

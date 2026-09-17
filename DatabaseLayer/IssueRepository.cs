@@ -21,11 +21,11 @@ public class IssueRepository : IIssueRepository
     public IssueRepository(AppDbContext db) => _db = db;
 
     public Task<List<Issue>> GetByProjectAsync(long projectId) =>
-        _db.Issues.Include(i => i.Priority).Include(i => i.Comments)
+        _db.Issues.Include(i => i.Priority).Include(i => i.Reporter).Include(i => i.Comments)
             .Where(i => i.ProjectId == projectId).AsNoTracking().ToListAsync();
 
     public Task<Issue?> GetAsync(long id) =>
-        _db.Issues.Include(i => i.Priority).Include(i => i.Comments).Include(i => i.Attachments)
+        _db.Issues.Include(i => i.Priority).Include(i => i.Reporter).Include(i => i.Comments).Include(i => i.Attachments)
             .FirstOrDefaultAsync(i => i.Id == id);
 
     public async Task<Issue> AddAsync(Issue issue)

@@ -189,6 +189,7 @@ public class TaskItemDto
     public string? Remarks { get; set; }
     public List<SubTaskItemDto> SubTasks { get; set; } = new();
     public bool CanDelete { get; set; }
+    public bool CanEditPercent { get; set; }
 }
 
 public class SubTaskItemDto
@@ -202,4 +203,12 @@ public class SubTaskItemDto
     public decimal CompletionPercent { get; set; }
     public string? Remarks { get; set; }
     public bool CanDelete { get; set; }
+    public bool CanEditPercent { get; set; }
+}
+
+public class TaskBulkImportResultDto
+{
+    public int Imported { get; set; }
+    public int Skipped { get; set; }
+    public List<string> Errors { get; set; } = new();
 }

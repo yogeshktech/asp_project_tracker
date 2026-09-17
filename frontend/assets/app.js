@@ -775,89 +775,234 @@ function handleLogIncident(e) {
 }
 
 // 7. Daily Site Report (DSR) & Sub-Task Update Modal (PM-18)
-function openAddDailyReportModal(subTaskName = '') {
+async function openAddDailyReportModal(taskId, subTaskId) {
+  if (window.WTPages && typeof WTPages.openTaskUpdateModal === 'function' && (taskId || subTaskId)) {
+    await WTPages.openTaskUpdateModal(taskId, subTaskId);
+    return;
+  }
+  let tasks = [];
+  try {
+    const loaded = typeof wtLoadLiveTasksAndOwners === 'function'
+      ? await wtLoadLiveTasksAndOwners()
+      : { tasks: [] };
+    tasks = loaded.tasks || [];
+  } catch (_) { tasks = []; }
+
+  const opts = [];
+  tasks.forEach(t => {
+    opts.push(`<option value="${t.id}">TASK-${t.id} · ${wtEscHtml(t.title || t.name)}</option>`);
+    const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t) : [];
+    subs.forEach(s => {
+      opts.push(`<option value="${t.id}:${s.id}">↳ SUB-${s.id} · ${wtEscHtml(s.title || s.name)}</option>`);
+    });
+  });
+
   const html = `
     <form onsubmit="handleSaveDailyUpdate(event)">
       <div class="form-grid">
         <div class="field full">
-          <label>Main Task / Sub-Task Selection *</label>
+          <label>Main Task / Sub-Task *</label>
           <select id="dsrSubTask" required>
-            <option value="GR-MEP-001-ELE-T2" ${subTaskName.includes('Riser') ? 'selected' : ''}>Block A Main Riser Cabling (GR-MEP-001-ELE-T2 · Shaft 2)</option>
-            <option value="GR-MEP-001-ELE-T1" ${subTaskName.includes('Substation') ? 'selected' : ''}>Substation LT Panel Installation (GR-MEP-001-ELE-T1)</option>
-            <option value="GR-CIV-001-A-WP2">External Masonry & Plastering (GR-CIV-001-A-WP2)</option>
-            <option value="GR-MEP-001-HVAC-T1">Chilled Water Piping & AHU Positioning (GR-MEP-001-HVAC-T1)</option>
+            ${opts.join('') || '<option value="">No tasks in this project</option>'}
           </select>
         </div>
         <div class="field">
-          <label>Yesterday % Completion</label>
-          <input type="text" id="dsrYesterday" value="64%" readonly style="background:#f1f5f9; font-weight:700;">
+          <label>% Completion (task-owner only)</label>
+          <input type="number" id="dsrToday" min="0" max="100">
         </div>
         <div class="field">
-          <label>Today % Completion (Task-Owner Controlled) *</label>
-          <input type="number" id="dsrToday" min="0" max="100" value="72" required>
-          <small style="color:#059669; font-size:11px;">🔒 Only Task Owner (Rahul Sharma) can authorize % revision</small>
-        </div>
-        <div class="field">
-          <label>Sub-Task Site Status Dropdown *</label>
+          <label>Sub-Task Site Status *</label>
           <select id="dsrStatus" required>
-            <option value="In Progress">🔵 In Progress / On Track</option>
-            <option value="Critical Hindrance">🔴 Critical Hindrance / Blocked</option>
-            <option value="Delayed">🟠 Delayed / Material Pending</option>
-            <option value="Completed">🟢 100% Completed</option>
+            <option value="InProgress">In Progress</option>
+            <option value="Delayed">Delayed</option>
+            <option value="NotStarted">Not Started</option>
+            <option value="Completed">Completed</option>
           </select>
         </div>
-        <div class="field">
-          <label>Site Manpower Deployed (Headcount)</label>
-          <input type="number" id="dsrLabor" placeholder="e.g. 14 Men" value="14">
+        <div class="field full">
+          <label>Optional text (not mandatory)</label>
+          <input id="dsrNotes" placeholder="Extra note if needed">
         </div>
         <div class="field full">
-          <label>Site Remarks / Delay Reason (Non-Mandatory Text Field)</label>
-          <textarea id="dsrRemark" placeholder="Enter reasons for delay, site issues, weather notes, or specific accomplishments..."></textarea>
+          <label>Remark / delay reason</label>
+          <textarea id="dsrRemark" placeholder="Reasons for delay or site issues"></textarea>
         </div>
         <div class="field full">
-          <label>Photo & Document Attachments (Site Evidence)</label>
-          <div style="border:1px dashed #cbd5e1; padding:14px; border-radius:6px; background:#f8fafc; text-align:center;">
-            <input type="file" id="dsrPhotos" multiple accept="image/*,.pdf" style="font-size:12px;">
-            <div style="margin-top:6px; color:#64748b; font-size:11px;">Upload geotagged site inspection photos or test reports</div>
-          </div>
+          <label>Attachment</label>
+          <input type="file" id="dsrPhotos">
         </div>
       </div>
       <div class="modalfoot" style="padding-left:0;padding-right:0;padding-bottom:0;margin-top:16px;">
-        <button type="button" class="btn sm" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Status from Excel</button>
+        <button type="button" class="btn sm" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload CSV from Excel</button>
         <div style="display:flex; gap:8px;">
           <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-          <button type="submit" class="btn primary"><i class="fa-solid fa-check"></i> Submit Daily Progress</button>
+          <button type="submit" class="btn primary">Submit Daily Progress</button>
         </div>
       </div>
     </form>
   `;
-  openModal("Daily Site Progress (DSR) & Sub-Task Update", html);
+  openModal('Daily Site Progress (DSR) & Sub-Task Update', html);
 }
 
-function handleSaveDailyUpdate(e) {
+async function handleSaveDailyUpdate(e) {
   e.preventDefault();
-  const subTask = document.getElementById('dsrSubTask').value;
-  const today = document.getElementById('dsrToday').value;
-  closeModal();
-  showToast(`Daily Site Progress for ${subTask} updated to ${today}%!`, 'success');
+  const raw = (document.getElementById('dsrSubTask')?.value || '').trim();
+  const [taskIdStr, subIdStr] = raw.split(':');
+  const taskId = Number(taskIdStr);
+  const subTaskId = Number(subIdStr) || null;
+  if (!taskId) {
+    showToast('Select a task or sub-task.', 'danger');
+    return;
+  }
+  const pctInput = document.getElementById('dsrToday');
+  const payload = {
+    taskId,
+    subTaskId,
+    status: document.getElementById('dsrStatus')?.value || null,
+    remarks: [
+      (document.getElementById('dsrRemark')?.value || '').trim(),
+      (document.getElementById('dsrNotes')?.value || '').trim()
+    ].filter(Boolean).join(' | ') || null
+  };
+  if (pctInput && !pctInput.disabled && pctInput.value !== '') {
+    payload.completionPercent = Number(pctInput.value);
+  }
+  const file = document.getElementById('dsrPhotos')?.files?.[0];
+  try {
+    if (file && typeof WisetrackAPI.uploadFile === 'function') {
+      const uploaded = await WisetrackAPI.uploadFile(file, 'Tasks', taskId);
+      payload.attachmentPath = uploaded.filePath || uploaded.FilePath;
+    }
+    await WisetrackAPI.addTaskUpdate(payload);
+    closeModal();
+    showToast('Daily site progress saved');
+    if (window.WTPages?.refreshPlanning) await WTPages.refreshPlanning();
+  } catch (err) {
+    showToast(err.message || 'Could not save daily update', 'danger');
+  }
 }
 
 function openExcelDsrImportModal() {
   closeModal();
-  openModal("Bulk Upload Daily Status from Excel", `
-    <div style="text-align:center; padding:16px 0;">
-      <div style="border:2px dashed #cbd5e1; padding:24px; border-radius:8px; background:#f8fafc; cursor:pointer;" onclick="closeModal(); showToast('Daily status excel imported for 34 sub-tasks!', 'success');">
-        <div style="font-size:32px; margin-bottom:8px;">📥</div>
-        <h4>Upload Standard Site Progress Excel (.xlsx)</h4>
-        <p style="color:#64748b; font-size:12px;">Site team can upload bulk daily progress sheets without manual entry.</p>
-        <button class="btn primary sm" style="margin-top:10px;">Select Excel File</button>
+  openModal('Bulk Upload Daily Status (CSV / Excel CSV)', `
+    <form onsubmit="handleExcelDsrImport(event)">
+      <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 12px">
+        Site team can upload a CSV exported from Excel. Columns are flexible:
+        <code>taskId, subTaskId, percent, status, remarks</code>
+      </p>
+      <div class="form-grid">
+        <div class="field full">
+          <label>CSV file</label>
+          <input type="file" id="dsrCsvFile" accept=".csv,.txt,.tsv">
+        </div>
+        <div class="field full">
+          <label>Or paste CSV / TSV</label>
+          <textarea id="dsrCsvText" rows="8" placeholder="taskId,subTaskId,percent,status,remarks&#10;7,5,40,InProgress,Shaft work"></textarea>
+        </div>
       </div>
-    </div>
-  `);
+      <div class="modalfoot" style="padding:0;margin-top:12px">
+        <button type="button" class="btn" onclick="wtDownloadDsrSample()">Download sample CSV</button>
+        <button class="btn primary" type="submit">Validate &amp; Import</button>
+      </div>
+    </form>`);
+}
+
+function wtDownloadDsrSample() {
+  wtDownloadText('site-daily-status-sample.csv', 'taskId,subTaskId,percent,status,remarks\n7,5,40,InProgress,Shaft work\n7,,55,InProgress,Main task note\n');
+}
+
+async function handleExcelDsrImport(e) {
+  e.preventDefault();
+  let text = (document.getElementById('dsrCsvText')?.value || '').trim();
+  const file = document.getElementById('dsrCsvFile')?.files?.[0];
+  try {
+    if (file) text = await file.text();
+    const rows = wtParseFlexibleTable(text);
+    if (!rows.length) {
+      showToast('No rows found. Use CSV from Excel.', 'danger');
+      return;
+    }
+    const pid = Number(localStorage.getItem('WISETRACK_SELECTED_PROJECT'));
+    if (!pid) {
+      showToast('Select a project first.', 'danger');
+      return;
+    }
+    const updates = rows.map(r => ({
+      taskId: Number(wtPick(r, ['taskid', 'task_id', 'task'])) || 0,
+      subTaskId: Number(wtPick(r, ['subtaskid', 'sub_task_id', 'subtask'])) || null,
+      completionPercent: wtPick(r, ['percent', 'completionpercent', '%', 'qtycomplete']) === ''
+        ? null
+        : Number(wtPick(r, ['percent', 'completionpercent', '%', 'qtycomplete'])),
+      status: wtPick(r, ['status', 'sitestatus']) || null,
+      remarks: wtPick(r, ['remarks', 'remark', 'notes', 'reason']) || null
+    })).filter(u => u.taskId);
+    if (!updates.length) {
+      showToast('Could not find taskId column. Check headers.', 'danger');
+      return;
+    }
+    const result = await WisetrackAPI.bulkImportUpdates({ projectId: pid, updates });
+    closeModal();
+    showToast(`Imported ${result.imported ?? result.Imported ?? 0}, skipped ${result.skipped ?? result.Skipped ?? 0}`);
+    if (window.WTPages?.refreshPlanning) await WTPages.refreshPlanning();
+  } catch (err) {
+    showToast(err.message || 'Import failed', 'danger');
+  }
 }
 
 function wtEscHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function wtDownloadText(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function wtNormHeader(h) {
+  return String(h || '').trim().toLowerCase().replace(/[^a-z0-9%]+/g, '');
+}
+
+function wtPick(row, aliases) {
+  for (const a of aliases) {
+    const key = wtNormHeader(a);
+    if (row[key] != null && row[key] !== '') return row[key];
+  }
+  return '';
+}
+
+function wtParseFlexibleTable(text) {
+  const raw = String(text || '').replace(/^\uFEFF/, '').trim();
+  if (!raw) return [];
+  const lines = raw.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return [];
+  const delim = (lines[0].includes('\t') && (lines[0].split('\t').length >= lines[0].split(',').length)) ? '\t' : ',';
+  const split = (line) => {
+    const out = [];
+    let cur = '', q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (q && line[i + 1] === '"') { cur += '"'; i++; }
+        else q = !q;
+      } else if (c === delim && !q) {
+        out.push(cur.trim());
+        cur = '';
+      } else cur += c;
+    }
+    out.push(cur.trim());
+    return out;
+  };
+  const headers = split(lines[0]).map(wtNormHeader);
+  return lines.slice(1).map(line => {
+    const cells = split(line);
+    const row = {};
+    headers.forEach((h, i) => { if (h) row[h] = cells[i] ?? ''; });
+    return row;
+  }).filter(r => Object.values(r).some(v => String(v).trim()));
 }
 
 function wtAsArray(value) {
@@ -1031,96 +1176,165 @@ async function handleCreateSubTask(e) {
 }
 
 // 9. On-Demand Report Generator with Column Customization & Internal-Only Email Dispatch (PM-28)
-function openReportExportModal(defaultType = 'portfolio') {
-  const users = getUsers();
-  // Filter ONLY internal users
-  const internalUsers = users.filter(u => u.isInternal !== false);
-
-  let internalOptions = '';
-  internalUsers.forEach(u => {
-    internalOptions += `<option value="${u.email}" selected>${u.name} (${u.email}) — ${u.role}</option>`;
-  });
+async function openReportExportModal(defaultType = 'portfolio') {
+  let users = [];
+  try {
+    users = await WisetrackAPI.getUsers();
+  } catch (_) {
+    users = typeof getUsers === 'function' ? getUsers() : [];
+  }
+  const internalUsers = (users || []).filter(u => u.isInternal !== false);
+  const internalOptions = internalUsers.map(u =>
+    `<option value="${u.id}" selected>${wtEscHtml(u.fullName || u.name)} (${wtEscHtml(u.email)}) — ${wtEscHtml((u.roles && u.roles[0]) || u.role || 'Internal')}</option>`
+  ).join('');
 
   const html = `
     <form onsubmit="handleExportAndSendReport(event)">
       <div class="form-grid">
         <div class="field full">
           <label>Select Report Type *</label>
-          <select id="repType" required onchange="updateReportColumns(this.value)">
-            <option value="portfolio" ${defaultType === 'portfolio' ? 'selected' : ''}>📊 All Projects Unified Status Report (Single Report View)</option>
-            <option value="daily" ${defaultType === 'daily' ? 'selected' : ''}>📝 Daily Site Progress & Cumulative Done Dossier</option>
-            <option value="financial" ${defaultType === 'financial' ? 'selected' : ''}>💰 Financial Budget vs Actual & 80% RAG Report</option>
-            <option value="handover" ${defaultType === 'handover' ? 'selected' : ''}>🔒 Project Handover & Completion Summary Report</option>
+          <select id="repType" required>
+            <option value="portfolio" ${defaultType === 'portfolio' ? 'selected' : ''}>All Projects Unified Status Report</option>
+            <option value="daily" ${defaultType === 'daily' ? 'selected' : ''}>Daily Site Progress &amp; Cumulative Done</option>
+            <option value="financial" ${defaultType === 'financial' ? 'selected' : ''}>Financial Budget vs Actual &amp; RAG</option>
+            <option value="handover" ${defaultType === 'handover' ? 'selected' : ''}>Project Handover &amp; Completion Summary</option>
           </select>
         </div>
-
         <div class="field full">
           <label>Scope of Site Updates</label>
           <div style="display:flex; gap:18px; align-items:center; background:#f8fafc; padding:10px; border-radius:6px; border:1px solid var(--border-color);">
             <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;">
-              <input type="radio" name="reportScope" value="daily" checked> Daily Site Update (Today's Progress)
+              <input type="radio" name="reportScope" value="daily" checked> Daily Site Update
             </label>
             <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer;">
-              <input type="radio" name="reportScope" value="cumulative"> Cumulative Progress (Until Date How Much is Done)
+              <input type="radio" name="reportScope" value="cumulative"> Cumulative (until date)
             </label>
           </div>
         </div>
-
         <div class="field full">
-          <label>Select Columns to Include in Exported Report (PM-28 Flexibility):</label>
+          <label>Columns to include:</label>
           <div id="reportColumnChecks" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">
-            <label><input type="checkbox" checked value="project"> Project / WBS Code</label>
-            <label><input type="checkbox" checked value="resort"> Resort Property</label>
-            <label><input type="checkbox" checked value="discipline"> Discipline / Category</label>
-            <label><input type="checkbox" checked value="owner"> Project Lead / PM</label>
-            <label><input type="checkbox" checked value="budget"> Approved Budget</label>
-            <label><input type="checkbox" checked value="spent"> Spent / Committed</label>
-            <label><input type="checkbox" checked value="progress"> % Completion (Daily & Cumulative)</label>
-            <label><input type="checkbox" checked value="rag"> 80% RAG Safety Status</label>
-            <label><input type="checkbox" checked value="issues"> Active Site Roadblocks</label>
-            <label><input type="checkbox" checked value="milestones"> Next Critical Gateway</label>
-            <label><input type="checkbox" checked value="labor"> Site Manpower Count</label>
-            <label><input type="checkbox" checked value="remarks"> Progress Remarks & Photos</label>
+            <label><input type="checkbox" checked value="project"> Project / WBS</label>
+            <label><input type="checkbox" checked value="status"> Status</label>
+            <label><input type="checkbox" checked value="owner"> Owner</label>
+            <label><input type="checkbox" checked value="budget"> Budget</label>
+            <label><input type="checkbox" checked value="rag"> RAG</label>
+            <label><input type="checkbox" checked value="progress"> % Complete</label>
+            <label><input type="checkbox" checked value="milestones"> Next milestone</label>
+            <label><input type="checkbox" checked value="issues"> Open issues</label>
           </div>
         </div>
-
         <div class="field full">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <label style="margin:0;">Send Report to Internal Team (PM-28 Security Restriction):</label>
-            <span class="badge green">🔒 Internal Emails Only</span>
+            <label style="margin:0;">Send to internal team only:</label>
+            <span class="badge green">Internal emails only</span>
           </div>
           <select id="reportRecipients" multiple style="min-height:90px; width:100%; border:1px solid var(--border-color); border-radius:6px; padding:6px; font-size:12px;">
-            ${internalOptions}
+            ${internalOptions || '<option disabled>No internal users</option>'}
           </select>
-          <div style="margin-top:6px; font-size:11px; color:#dc2626; background:#fef2f2; padding:6px 10px; border-radius:4px; border:1px solid #fecaca;">
-            🛡️ <strong>Enterprise Policy:</strong> External email addresses are strictly blocked from in-app dispatch. Only authorized internal personnel are selectable.
-          </div>
         </div>
       </div>
-
       <div class="modalfoot" style="padding-left:0;padding-right:0;padding-bottom:0;margin-top:16px;">
         <div style="display:flex; gap:8px;">
-          <button type="button" class="btn sm" onclick="showToast('Exporting custom PDF report...', 'info')"><i class="fa-solid fa-file-pdf"></i> Export Branded PDF</button>
-          <button type="button" class="btn sm" onclick="showToast('Exporting filtered Excel spreadsheet...', 'info')"><i class="fa-solid fa-file-excel"></i> Export Excel</button>
+          <button type="button" class="btn sm" onclick="handleReportPrint('pdf')">Print / PDF</button>
+          <button type="button" class="btn sm" onclick="handleReportPrint('csv')">Export CSV</button>
         </div>
         <div style="display:flex; gap:8px;">
           <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-          <button type="submit" class="btn primary"><i class="fa-solid fa-paper-plane"></i> Send to Selected Internal Team</button>
+          <button type="submit" class="btn primary">Send to selected internal team</button>
         </div>
       </div>
     </form>
   `;
-  openModal("On-Demand Report Generator & Dispatcher", html);
+  openModal('On-Demand Report Generator & Dispatcher', html);
 }
 
-function handleExportAndSendReport(e) {
+function wtSelectedReportColumns() {
+  return [...document.querySelectorAll('#reportColumnChecks input:checked')].map(x => x.value);
+}
+
+async function wtBuildPortfolioRows() {
+  const p = await WisetrackAPI.getPortfolioReport();
+  return p?.projects || p?.Projects || (Array.isArray(p) ? p : []);
+}
+
+function wtReportCsv(rows, cols) {
+  const headers = cols;
+  const lines = [headers.join(',')];
+  rows.forEach(row => {
+    const map = {
+      project: row.name || row.Name || '',
+      status: row.status || row.Status || '',
+      owner: row.ownerName || row.OwnerName || '',
+      budget: row.approvedBudget ?? row.ApprovedBudget ?? '',
+      rag: row.budgetRag || row.BudgetRag || '',
+      progress: row.progressPercent ?? row.ProgressPercent ?? '',
+      milestones: row.nextMilestone || row.NextMilestone || '',
+      issues: row.openIssues ?? row.OpenIssues ?? ''
+    };
+    lines.push(headers.map(h => `"${String(map[h] ?? '').replace(/"/g, '""')}"`).join(','));
+  });
+  return lines.join('\n');
+}
+
+async function handleReportPrint(kind) {
+  try {
+    const cols = wtSelectedReportColumns();
+    const rows = await wtBuildPortfolioRows();
+    if (kind === 'csv') {
+      wtDownloadText('wisetrack-portfolio.csv', wtReportCsv(rows, cols));
+      showToast('CSV downloaded');
+      return;
+    }
+    const w = window.open('', '_blank');
+    w.document.write(`<html><head><title>Wisetrack Report</title>
+      <style>body{font-family:Segoe UI,Arial;padding:28px;color:#0f172a}h1{color:#0f4c81}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #cbd5e1;padding:8px;font-size:12px}th{background:#0f4c81;color:#fff}</style></head>
+      <body><h1>Wisetrack</h1><p>Portfolio status — ${new Date().toLocaleDateString()}</p>
+      <table><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
+      ${rows.map(row => {
+        const map = {
+          project: row.name || row.Name || '',
+          status: row.status || row.Status || '',
+          owner: row.ownerName || row.OwnerName || '',
+          budget: row.approvedBudget ?? row.ApprovedBudget ?? '',
+          rag: row.budgetRag || row.BudgetRag || '',
+          progress: row.progressPercent ?? row.ProgressPercent ?? '',
+          milestones: row.nextMilestone || row.NextMilestone || '',
+          issues: row.openIssues ?? row.OpenIssues ?? ''
+        };
+        return `<tr>${cols.map(c => `<td>${String(map[c] ?? '')}</td>`).join('')}</tr>`;
+      }).join('')}</tbody></table></body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  } catch (err) {
+    showToast(err.message || 'Export failed', 'danger');
+  }
+}
+
+async function handleExportAndSendReport(e) {
   e.preventDefault();
   const select = document.getElementById('reportRecipients');
-  const count = select ? select.selectedOptions.length : 0;
-  closeModal();
-  showToast(`Report compiled and securely dispatched to ${count} internal team members!`, 'success');
+  const ids = select ? [...select.selectedOptions].map(o => Number(o.value)).filter(Boolean) : [];
+  const cols = wtSelectedReportColumns();
+  const type = document.getElementById('repType')?.value || 'portfolio';
+  const scope = document.querySelector('input[name="reportScope"]:checked')?.value || 'daily';
+  try {
+    await WisetrackAPI.createReport({
+      name: `${type} ${scope} ${new Date().toISOString().slice(0, 10)}`,
+      reportType: type,
+      selectedColumns: cols.join(','),
+      recipientUserIds: ids
+    });
+    const rows = await wtBuildPortfolioRows();
+    wtDownloadText(`wisetrack-${type}.csv`, wtReportCsv(rows, cols));
+    closeModal();
+    showToast(`Report saved and sent to ${ids.length} internal user(s)`);
+    if (window.WTPages?.loadPortfolio) await WTPages.loadPortfolio();
+  } catch (err) {
+    showToast(err.message || 'Could not send report', 'danger');
+  }
 }
-
 
 // 7. Project Closure Handover Modal
 function openHandoverModal() {

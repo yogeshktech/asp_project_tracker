@@ -34,6 +34,7 @@ public interface IProjectService
     Task AddVarianceExplanationAsync(long userId, VarianceExplanationRequest request);
     Task<List<VarianceExplanation>> GetVarianceExplanationsAsync(long userId, long projectId);
     Task<MilestoneTemplate> SaveTemplateAsync(MilestoneTemplateRequest request);
+    Task<List<MilestoneTemplate>> GetTemplatesAsync();
     Task<List<Milestone>> CloneTemplateAsync(long userId, CloneTemplateRequest request);
 }
 
@@ -327,6 +328,8 @@ public class ProjectService : IProjectService
             TemplateJson = request.TemplateJson,
             CreatedAt = DateTime.UtcNow
         });
+
+    public Task<List<MilestoneTemplate>> GetTemplatesAsync() => _repository.GetTemplatesAsync();
 
     public async Task<List<Milestone>> CloneTemplateAsync(long userId, CloneTemplateRequest request)
     {

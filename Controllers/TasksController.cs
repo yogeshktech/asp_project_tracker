@@ -54,11 +54,8 @@ public class TasksController : ControllerBase
         Ok(await _taskService.AddDailyUpdateAsync(request, UserId));
 
     [HttpPost("bulk-import")]
-    public async Task<IActionResult> BulkImport([FromBody] TaskBulkImportRequest request)
-    {
-        await _taskService.BulkImportUpdatesAsync(request, UserId);
-        return Ok();
-    }
+    public async Task<IActionResult> BulkImport([FromBody] TaskBulkImportRequest request) =>
+        Ok(await _taskService.BulkImportUpdatesAsync(request, UserId));
 
     [HttpGet("exceptions/{projectId:long}")]
     public async Task<IActionResult> Exceptions(long projectId) =>

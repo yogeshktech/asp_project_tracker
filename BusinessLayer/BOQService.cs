@@ -100,7 +100,7 @@ public class BOQService : IBOQService
                 Quantity = l.Quantity,
                 UnitPrice = l.UnitPrice,
                 Amount = l.Quantity * l.UnitPrice,
-                Remarks = l.Remarks
+                Remarks = CombineBoqRemarks(l)
             });
         }
 
@@ -149,5 +149,15 @@ public class BOQService : IBOQService
 
         await _repository.AddItemsAsync(lines);
         return await _repository.GetAsync(boq.Id) ?? boq;
+    }
+
+    private static string? CombineBoqRemarks(BOQImportLineDto line)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(line.Remarks)) parts.Add(line.Remarks);
+        if (!string.IsNullOrWhiteSpace(line.Brand)) parts.Add($"Brand: {line.Brand}");
+        if (!string.IsNullOrWhiteSpace(line.Unit)) parts.Add($"Unit: {line.Unit}");
+        if (!string.IsNullOrWhiteSpace(line.AttachmentPath)) parts.Add(line.AttachmentPath);
+        return parts.Count == 0 ? null : string.Join(" | ", parts);
     }
 }

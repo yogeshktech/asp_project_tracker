@@ -53,13 +53,13 @@ public class IssueService : IIssueService
 
     public async Task<Issue> CreateAsync(CreateIssueRequest request, long? userId)
     {
-        if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Issues"))
-            throw new UnauthorizedAccessException("No permission to create issues.");
+        if (userId.HasValue && !await _permissions.CanViewProjectAsync(userId.Value, request.ProjectId))
+            throw new UnauthorizedAccessException("No permission to log issues on this project.");
 
         var issue = await _repository.AddAsync(new Issue
         {
             ProjectId = request.ProjectId,
-            Title = request.Title,
+            Title = string.IsNullOrWhiteSpace(request.Title) ? (request.What ?? "Issue") : request.Title,
             What = request.What,
             Location = request.Location,
             OccurredAt = request.OccurredAt,

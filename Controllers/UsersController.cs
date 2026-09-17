@@ -45,6 +45,10 @@ public class UsersController : ControllerBase
     [HttpGet("permissions")]
     public async Task<IActionResult> Permissions() => Ok(await _userService.GetPermissionsAsync());
 
+    [HttpGet("{id:long}/project-permissions")]
+    public async Task<IActionResult> GetPermissions(long id) =>
+        Ok(await _userService.GetProjectPermissionsAsync(id));
+
     [HttpPost("project-permissions")]
     public async Task<IActionResult> SetPermission([FromBody] UserProjectPermissionDto dto)
     {

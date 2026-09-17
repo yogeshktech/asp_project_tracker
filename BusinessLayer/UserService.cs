@@ -14,6 +14,7 @@ public interface IUserService
     Task<UserResponseDto?> UpdateAsync(long id, UpdateUserRequest request, long? actorId);
     Task<List<Role>> GetRolesAsync();
     Task SetProjectPermissionAsync(UserProjectPermissionDto dto, long? actorId);
+    Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId);
     Task<List<Permission>> GetPermissionsAsync();
 }
 
@@ -74,6 +75,8 @@ public class UserService : IUserService
 
     public Task<List<Role>> GetRolesAsync() => _repository.GetRolesAsync();
     public Task<List<Permission>> GetPermissionsAsync() => _repository.GetPermissionsAsync();
+    public Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId) =>
+        _repository.GetProjectPermissionsAsync(userId);
 
     public async Task SetProjectPermissionAsync(UserProjectPermissionDto dto, long? actorId)
     {

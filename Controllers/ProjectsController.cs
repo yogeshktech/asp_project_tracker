@@ -153,6 +153,10 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> GetVariance(long id) =>
         Ok(await _projectService.GetVarianceExplanationsAsync(UserId, id));
 
+    [HttpGet("milestone-templates")]
+    public async Task<IActionResult> GetTemplates() =>
+        Ok(await _projectService.GetTemplatesAsync());
+
     [HttpPost("milestone-templates")]
     public async Task<IActionResult> SaveTemplate([FromBody] MilestoneTemplateRequest request) =>
         Ok(await _projectService.SaveTemplateAsync(request));

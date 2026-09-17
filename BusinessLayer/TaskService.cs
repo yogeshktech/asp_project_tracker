@@ -16,7 +16,7 @@ public interface ITaskService
     Task DeleteTaskAsync(long taskId, long userId);
     Task DeleteSubTaskAsync(long subTaskId, long userId);
     Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId);
-    Task BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId);
+    Task<TaskBulkImportResultDto> BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId);
     Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId);
     Task<DailySiteReportDto> GetDailyReportAsync(long projectId, DateOnly? date);
 }
@@ -63,6 +63,7 @@ public class TaskService : ITaskService
     private static TaskItemDto MapTask(ProjectTask t, long userId, bool isAdmin, bool canEdit)
     {
         var canDeleteTask = isAdmin || canEdit || t.AssignedTo == userId;
+        var canEditPercent = isAdmin || canEdit || t.AssignedTo == userId;
         return new TaskItemDto
         {
             Id = t.Id,
@@ -77,6 +78,7 @@ public class TaskService : ITaskService
             CompletionPercent = t.CompletionPercent,
             Remarks = t.Remarks,
             CanDelete = canDeleteTask,
+            CanEditPercent = canEditPercent,
             SubTasks = (t.SubTasks ?? Array.Empty<SubTask>())
                 .Select(s => MapSubTask(s, userId, isAdmin, canEdit, t.AssignedTo))
                 .ToList()
@@ -93,7 +95,8 @@ public class TaskService : ITaskService
         Status = s.Status,
         CompletionPercent = s.CompletionPercent,
         Remarks = s.Remarks,
-        CanDelete = isAdmin || canEdit || s.AssignedTo == userId || parentAssignedTo == userId
+        CanDelete = isAdmin || canEdit || s.AssignedTo == userId || parentAssignedTo == userId,
+        CanEditPercent = isAdmin || canEdit || s.AssignedTo == userId || parentAssignedTo == userId
     };
 
     private static SubTaskItemDto MapSubTask(SubTask s) => MapSubTask(s, 0, false, false, null);
@@ -144,7 +147,7 @@ public class TaskService : ITaskService
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "SubTask", sub.Id);
-        return MapSubTask(sub);
+        return MapSubTask(sub, userId ?? 0, false, false, parent.AssignedTo);
     }
 
     public async Task DeleteTaskAsync(long taskId, long userId)
@@ -172,25 +175,28 @@ public class TaskService : ITaskService
     public async Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId)
     {
         var task = await _repository.GetTaskAsync(request.TaskId) ?? throw new InvalidOperationException("Task not found");
-        var isTaskOwner = userId.HasValue && (
-            await _permissions.IsAdminAsync(userId.Value)
-            || task.AssignedTo == userId
-            || await _permissions.CanEditModuleAsync(userId.Value, task.ProjectId, "Tasks"));
+        if (userId.HasValue && !await _permissions.CanViewProjectAsync(userId.Value, task.ProjectId))
+            throw new UnauthorizedAccessException("No permission to update this project.");
 
-        if (request.CompletionPercent.HasValue && !isTaskOwner && task.AssignedTo != userId)
-            throw new UnauthorizedAccessException("Only task owner/assignee can change % completion on main task.");
-
+        var canEditModule = userId.HasValue && await _permissions.CanEditModuleAsync(userId.Value, task.ProjectId, "Tasks");
+        var isAdmin = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
+        SubTask? sub = null;
         if (request.SubTaskId.HasValue)
+            sub = task.SubTasks.FirstOrDefault(s => s.Id == request.SubTaskId);
+
+        var canChangePercent = isAdmin || canEditModule
+            || (sub != null ? sub.AssignedTo == userId || task.AssignedTo == userId : task.AssignedTo == userId);
+
+        if (request.CompletionPercent.HasValue && !canChangePercent)
+            throw new UnauthorizedAccessException("Only the task owner can change % completion.");
+
+        if (sub != null)
         {
-            var sub = task.SubTasks.FirstOrDefault(s => s.Id == request.SubTaskId);
-            if (sub != null)
-            {
-                if (request.CompletionPercent.HasValue) sub.CompletionPercent = request.CompletionPercent.Value;
-                if (!string.IsNullOrWhiteSpace(request.Status)) sub.Status = request.Status;
-                if (!string.IsNullOrWhiteSpace(request.Remarks)) sub.Remarks = request.Remarks;
-            }
+            if (request.CompletionPercent.HasValue) sub.CompletionPercent = request.CompletionPercent.Value;
+            if (!string.IsNullOrWhiteSpace(request.Status)) sub.Status = request.Status;
+            if (!string.IsNullOrWhiteSpace(request.Remarks)) sub.Remarks = request.Remarks;
         }
-        else if (request.CompletionPercent.HasValue && isTaskOwner)
+        else if (request.CompletionPercent.HasValue && canChangePercent)
         {
             task.CompletionPercent = request.CompletionPercent.Value;
         }
@@ -227,16 +233,31 @@ public class TaskService : ITaskService
         });
     }
 
-    public async Task BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId)
+    public async Task<TaskBulkImportResultDto> BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId)
     {
+        var result = new TaskBulkImportResultDto();
         foreach (var update in request.Updates)
         {
-            update.TaskId = update.TaskId == 0 ? update.TaskId : update.TaskId;
             var task = await _repository.GetTaskAsync(update.TaskId);
-            if (task == null || task.ProjectId != request.ProjectId) continue;
-            await AddDailyUpdateAsync(update, userId);
+            if (task == null || task.ProjectId != request.ProjectId)
+            {
+                result.Skipped++;
+                result.Errors.Add($"Task {update.TaskId} not found in project {request.ProjectId}.");
+                continue;
+            }
+            try
+            {
+                await AddDailyUpdateAsync(update, userId);
+                result.Imported++;
+            }
+            catch (Exception ex)
+            {
+                result.Skipped++;
+                result.Errors.Add($"Task {update.TaskId}: {ex.Message}");
+            }
         }
-        await _audit.LogAsync(userId, "Import", "TaskUpdate", request.ProjectId, $"{request.Updates.Count} rows");
+        await _audit.LogAsync(userId, "Import", "TaskUpdate", request.ProjectId, $"{result.Imported} imported, {result.Skipped} skipped");
+        return result;
     }
 
     public async Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId)

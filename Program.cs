@@ -128,6 +128,14 @@ if (Directory.Exists(frontendPath))
     });
 }
 
+var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
+Directory.CreateDirectory(uploadsPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(uploadsPath),
+    RequestPath = "/uploads"
+});
+
 app.MapStaticAssets();
 app.MapControllers();
 app.MapGet("/", () => Results.Redirect("/app/login.html"));

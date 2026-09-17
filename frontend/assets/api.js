@@ -112,6 +112,22 @@ const WisetrackAPI = {
   createUser(data) { return this.post('/users', data); },
   updateUser(id, data) { return this.put(`/users/${id}`, data); },
   setProjectPermission(data) { return this.post('/users/project-permissions', data); },
+  getUserProjectPermissions(userId) { return this.get(`/users/${userId}/project-permissions`); },
+
+  async uploadFile(file, module, relatedId) {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (module) fd.append('module', module);
+    if (relatedId) fd.append('relatedId', String(relatedId));
+    const res = await fetch(`${API_BASE}/files`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this._token()}` },
+      body: fd
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.message || `Upload failed (${res.status})`);
+    return data;
+  },
 
   // Resorts
   getResorts() { return this.get('/projects/resorts'); },
@@ -245,6 +261,7 @@ const WisetrackAPI = {
 
   addVarianceExplanation(data) { return this.post('/projects/variance-explanations', data); },
   getVarianceExplanations(projectId) { return this.get(`/projects/${projectId}/variance-explanations`); },
+  getTemplates() { return this.get('/projects/milestone-templates'); },
   saveTemplate(data) { return this.post('/projects/milestone-templates', data); },
   cloneTemplate(data) { return this.post('/projects/milestone-templates/clone', data); },
 };
