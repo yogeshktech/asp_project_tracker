@@ -13,6 +13,9 @@ public interface ITaskRepository
     Task<ProjectTask> AddTaskAsync(ProjectTask task);
     Task UpdateTaskAsync(ProjectTask task);
     Task<SubTask> AddSubTaskAsync(SubTask subTask);
+    Task<SubTask?> GetSubTaskAsync(long id);
+    Task DeleteTaskAsync(long id);
+    Task DeleteSubTaskAsync(long id);
     Task UpdateSubTaskAsync(SubTask subTask);
     Task<TaskUpdate> AddUpdateAsync(TaskUpdate update);
     Task AddAttachmentAsync(TaskAttachment attachment);
@@ -51,6 +54,28 @@ public class TaskRepository : ITaskRepository
     public async Task UpdateTaskAsync(ProjectTask task)
     {
         _db.Tasks.Update(task);
+        await _db.SaveChangesAsync();
+    }
+
+    public Task<SubTask?> GetSubTaskAsync(long id) =>
+        _db.SubTasks.Include(s => s.Task).FirstOrDefaultAsync(s => s.Id == id);
+
+    public async Task DeleteTaskAsync(long id)
+    {
+        var dependents = await _db.Tasks.Where(t => t.DependsOnTaskId == id).ToListAsync();
+        foreach (var d in dependents)
+            d.DependsOnTaskId = null;
+
+        var task = await _db.Tasks.Include(t => t.SubTasks).FirstOrDefaultAsync(t => t.Id == id)
+            ?? throw new InvalidOperationException("Task not found");
+        _db.Tasks.Remove(task);
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task DeleteSubTaskAsync(long id)
+    {
+        var sub = await _db.SubTasks.FindAsync(id) ?? throw new InvalidOperationException("Sub-task not found");
+        _db.SubTasks.Remove(sub);
         await _db.SaveChangesAsync();
     }
 

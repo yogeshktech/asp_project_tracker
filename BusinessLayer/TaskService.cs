@@ -10,10 +10,12 @@ public interface ITaskService
 {
     Task<List<Milestone>> GetMilestonesAsync(long projectId);
     Task<Milestone> CreateMilestoneAsync(CreateMilestoneRequest request, long? userId);
-    Task<List<TaskItemDto>> GetTasksAsync(long projectId);
+    Task<List<TaskItemDto>> GetTasksAsync(long projectId, long userId);
     Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId);
     Task<SubTaskItemDto> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId);
-    Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId, bool isTaskOwner);
+    Task DeleteTaskAsync(long taskId, long userId);
+    Task DeleteSubTaskAsync(long subTaskId, long userId);
+    Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId);
     Task BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId);
     Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId);
     Task<DailySiteReportDto> GetDailyReportAsync(long projectId, DateOnly? date);
@@ -50,29 +52,38 @@ public class TaskService : ITaskService
         return milestone;
     }
 
-    public async Task<List<TaskItemDto>> GetTasksAsync(long projectId)
+    public async Task<List<TaskItemDto>> GetTasksAsync(long projectId, long userId)
     {
         var tasks = await _repository.GetTasksAsync(projectId);
-        return tasks.Select(MapTask).ToList();
+        var isAdmin = await _permissions.IsAdminAsync(userId);
+        var canEdit = isAdmin || await _permissions.CanEditModuleAsync(userId, projectId, "Tasks");
+        return tasks.Select(t => MapTask(t, userId, isAdmin, canEdit)).ToList();
     }
 
-    private static TaskItemDto MapTask(ProjectTask t) => new()
+    private static TaskItemDto MapTask(ProjectTask t, long userId, bool isAdmin, bool canEdit)
     {
-        Id = t.Id,
-        ProjectId = t.ProjectId,
-        MilestoneId = t.MilestoneId,
-        Title = t.Title,
-        Description = t.Description,
-        AssignedTo = t.AssignedTo,
-        StartDate = t.StartDate,
-        DueDate = t.DueDate,
-        Status = t.Status,
-        CompletionPercent = t.CompletionPercent,
-        Remarks = t.Remarks,
-        SubTasks = (t.SubTasks ?? Array.Empty<SubTask>()).Select(MapSubTask).ToList()
-    };
+        var canDeleteTask = isAdmin || canEdit || t.AssignedTo == userId;
+        return new TaskItemDto
+        {
+            Id = t.Id,
+            ProjectId = t.ProjectId,
+            MilestoneId = t.MilestoneId,
+            Title = t.Title,
+            Description = t.Description,
+            AssignedTo = t.AssignedTo,
+            StartDate = t.StartDate,
+            DueDate = t.DueDate,
+            Status = t.Status,
+            CompletionPercent = t.CompletionPercent,
+            Remarks = t.Remarks,
+            CanDelete = canDeleteTask,
+            SubTasks = (t.SubTasks ?? Array.Empty<SubTask>())
+                .Select(s => MapSubTask(s, userId, isAdmin, canEdit, t.AssignedTo))
+                .ToList()
+        };
+    }
 
-    private static SubTaskItemDto MapSubTask(SubTask s) => new()
+    private static SubTaskItemDto MapSubTask(SubTask s, long userId, bool isAdmin, bool canEdit, long? parentAssignedTo) => new()
     {
         Id = s.Id,
         TaskId = s.TaskId,
@@ -81,8 +92,19 @@ public class TaskService : ITaskService
         DueDate = s.DueDate,
         Status = s.Status,
         CompletionPercent = s.CompletionPercent,
-        Remarks = s.Remarks
+        Remarks = s.Remarks,
+        CanDelete = isAdmin || canEdit || s.AssignedTo == userId || parentAssignedTo == userId
     };
+
+    private static SubTaskItemDto MapSubTask(SubTask s) => MapSubTask(s, 0, false, false, null);
+
+    private async Task EnsureCanManageTaskAsync(long userId, ProjectTask task)
+    {
+        if (await _permissions.IsAdminAsync(userId)) return;
+        if (task.AssignedTo == userId) return;
+        if (await _permissions.CanEditModuleAsync(userId, task.ProjectId, "Tasks")) return;
+        throw new UnauthorizedAccessException("You can only manage tasks assigned to you.");
+    }
 
     public async Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId)
     {
@@ -93,7 +115,7 @@ public class TaskService : ITaskService
             DependsOnTaskId = request.DependsOnTaskId,
             Title = request.Title,
             Description = request.Description,
-            AssignedTo = request.AssignedTo,
+            AssignedTo = request.AssignedTo ?? userId,
             StartDate = request.StartDate,
             DueDate = request.DueDate,
             Remarks = request.Remarks,
@@ -106,7 +128,7 @@ public class TaskService : ITaskService
 
     public async Task<SubTaskItemDto> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId)
     {
-        _ = await _repository.GetTaskAsync(request.TaskId)
+        var parent = await _repository.GetTaskAsync(request.TaskId)
             ?? throw new InvalidOperationException("Parent task not found.");
         var status = string.IsNullOrWhiteSpace(request.Status)
             ? "NotStarted"
@@ -115,7 +137,7 @@ public class TaskService : ITaskService
         {
             TaskId = request.TaskId,
             Title = request.Title,
-            AssignedTo = request.AssignedTo,
+            AssignedTo = request.AssignedTo ?? parent.AssignedTo ?? userId,
             DueDate = request.DueDate,
             Remarks = request.Remarks,
             Status = status,
@@ -125,9 +147,35 @@ public class TaskService : ITaskService
         return MapSubTask(sub);
     }
 
-    public async Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId, bool isTaskOwner)
+    public async Task DeleteTaskAsync(long taskId, long userId)
+    {
+        var task = await _repository.GetTaskAsync(taskId) ?? throw new InvalidOperationException("Task not found");
+        await EnsureCanManageTaskAsync(userId, task);
+        await _repository.DeleteTaskAsync(taskId);
+        await _audit.LogAsync(userId, "Delete", "Task", taskId);
+    }
+
+    public async Task DeleteSubTaskAsync(long subTaskId, long userId)
+    {
+        var sub = await _repository.GetSubTaskAsync(subTaskId) ?? throw new InvalidOperationException("Sub-task not found");
+        var parent = sub.Task ?? await _repository.GetTaskAsync(sub.TaskId)
+            ?? throw new InvalidOperationException("Parent task not found");
+        if (!await _permissions.IsAdminAsync(userId)
+            && sub.AssignedTo != userId
+            && parent.AssignedTo != userId
+            && !await _permissions.CanEditModuleAsync(userId, parent.ProjectId, "Tasks"))
+            throw new UnauthorizedAccessException("You can only delete sub-tasks assigned to you.");
+        await _repository.DeleteSubTaskAsync(subTaskId);
+        await _audit.LogAsync(userId, "Delete", "SubTask", subTaskId);
+    }
+
+    public async Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId)
     {
         var task = await _repository.GetTaskAsync(request.TaskId) ?? throw new InvalidOperationException("Task not found");
+        var isTaskOwner = userId.HasValue && (
+            await _permissions.IsAdminAsync(userId.Value)
+            || task.AssignedTo == userId
+            || await _permissions.CanEditModuleAsync(userId.Value, task.ProjectId, "Tasks"));
 
         if (request.CompletionPercent.HasValue && !isTaskOwner && task.AssignedTo != userId)
             throw new UnauthorizedAccessException("Only task owner/assignee can change % completion on main task.");
@@ -186,8 +234,7 @@ public class TaskService : ITaskService
             update.TaskId = update.TaskId == 0 ? update.TaskId : update.TaskId;
             var task = await _repository.GetTaskAsync(update.TaskId);
             if (task == null || task.ProjectId != request.ProjectId) continue;
-            var isOwner = task.AssignedTo == userId;
-            await AddDailyUpdateAsync(update, userId, isOwner);
+            await AddDailyUpdateAsync(update, userId);
         }
         await _audit.LogAsync(userId, "Import", "TaskUpdate", request.ProjectId, $"{request.Updates.Count} rows");
     }

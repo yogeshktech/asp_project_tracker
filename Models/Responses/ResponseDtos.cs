@@ -188,6 +188,7 @@ public class TaskItemDto
     public decimal CompletionPercent { get; set; }
     public string? Remarks { get; set; }
     public List<SubTaskItemDto> SubTasks { get; set; } = new();
+    public bool CanDelete { get; set; }
 }
 
 public class SubTaskItemDto
@@ -200,4 +201,5 @@ public class SubTaskItemDto
     public string Status { get; set; } = "NotStarted";
     public decimal CompletionPercent { get; set; }
     public string? Remarks { get; set; }
+    public bool CanDelete { get; set; }
 }

@@ -25,22 +25,33 @@ public class TasksController : ControllerBase
 
     [HttpGet("project/{projectId:long}")]
     public async Task<IActionResult> GetByProject(long projectId) =>
-        Ok(await _taskService.GetTasksAsync(projectId));
+        Ok(await _taskService.GetTasksAsync(projectId, UserId));
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateTaskRequest request) =>
         Ok(await _taskService.CreateTaskAsync(request, UserId));
 
+    [HttpDelete("{id:long}")]
+    public async Task<IActionResult> Delete(long id)
+    {
+        await _taskService.DeleteTaskAsync(id, UserId);
+        return NoContent();
+    }
+
     [HttpPost("subtasks")]
     public async Task<IActionResult> CreateSubTask([FromBody] CreateSubTaskRequest request) =>
         Ok(await _taskService.CreateSubTaskAsync(request, UserId));
 
-    [HttpPost("updates")]
-    public async Task<IActionResult> DailyUpdate([FromBody] CreateTaskUpdateRequest request)
+    [HttpDelete("subtasks/{id:long}")]
+    public async Task<IActionResult> DeleteSubTask(long id)
     {
-        var isOwner = User.IsInRole("ProjectManager") || User.IsInRole("Admin");
-        return Ok(await _taskService.AddDailyUpdateAsync(request, UserId, isOwner));
+        await _taskService.DeleteSubTaskAsync(id, UserId);
+        return NoContent();
     }
+
+    [HttpPost("updates")]
+    public async Task<IActionResult> DailyUpdate([FromBody] CreateTaskUpdateRequest request) =>
+        Ok(await _taskService.AddDailyUpdateAsync(request, UserId));
 
     [HttpPost("bulk-import")]
     public async Task<IActionResult> BulkImport([FromBody] TaskBulkImportRequest request)

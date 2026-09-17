@@ -1794,6 +1794,7 @@
               <td class="table-actions">
                 <button class="btn sm" onclick="${kind === 'daily' ? `openAddDailyReportModal('${esc(t.title || t.name)}')` : `WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
                 ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-plus"></i> Sub-Task</button>` : ''}
+                ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
               </td>
             </tr>`;
           const subRows = kind === 'planning' ? subs.map(s => {
@@ -1816,6 +1817,7 @@
                 </td>
                 <td class="table-actions">
                   <button class="btn sm" onclick="WTPages.openTaskUpdateModal(${t.id})"><i class="fa-solid fa-pen"></i> Update</button>
+                  ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
                 </td>
               </tr>`;
           }).join('') : '';
@@ -1871,11 +1873,24 @@
 
   async function openTaskModal() {
     const pid = await selectedProjectId();
+    const currentUserId = localStorage.getItem('WISETRACK_USER_ID') || '';
+    let ownerOpts = '<option value="">Unassigned</option>';
+    try {
+      const loaded = typeof wtLoadLiveTasksAndOwners === 'function'
+        ? await wtLoadLiveTasksAndOwners()
+        : { owners: [] };
+      const owners = loaded.owners || [];
+      ownerOpts = (owners.length ? owners : []).map(u => {
+        const selected = String(u.id) === String(currentUserId) ? 'selected' : '';
+        return `<option value="${u.id}" ${selected}>${esc(u.fullName)} (${esc(u.role || 'Team')})</option>`;
+      }).join('') || `<option value="${esc(currentUserId)}" selected>Me</option>`;
+    } catch (_) { /* keep fallback */ }
     openModal('Create Task', `
       <form onsubmit="WTPages.saveTask(event)">
         <input type="hidden" id="tProj" value="${pid}">
         <div class="form-grid">
           <div class="field full"><label>Title *</label><input id="tTitle" required></div>
+          <div class="field full"><label>Assign to user *</label><select id="tOwner">${ownerOpts}</select></div>
           <div class="field full"><label>Description</label><textarea id="tDesc"></textarea></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -1885,8 +1900,31 @@
   async function saveTask(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createTask({ projectId: Number($('#tProj').value), title: $('#tTitle').value.trim(), description: $('#tDesc').value.trim() });
+      await WisetrackAPI.createTask({
+        projectId: Number($('#tProj').value),
+        title: $('#tTitle').value.trim(),
+        description: $('#tDesc').value.trim(),
+        assignedTo: Number($('#tOwner')?.value) || Number(localStorage.getItem('WISETRACK_USER_ID')) || null
+      });
       closeModal(); showToast('Task created'); await pageTasks('planning');
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function deleteTask(id, title) {
+    if (!confirm(`Delete task "${title || id}" and all its sub-tasks?`)) return;
+    try {
+      await WisetrackAPI.deleteTask(id);
+      showToast('Task deleted');
+      await pageTasks('planning');
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function deleteSubTask(id, title) {
+    if (!confirm(`Delete sub-task "${title || id}"?`)) return;
+    try {
+      await WisetrackAPI.deleteSubTask(id);
+      showToast('Sub-task deleted');
+      await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2612,7 +2650,7 @@
     openBudgetModal, saveBudget, reviseBudget, openCostCenterModal, saveCC, deleteCC,
     openPurchaseModal, savePurchase, openActualModal, saveActual,
     boqFromMaster, boqImport, saveBoqImport, viewBoq,
-    openMilestoneModal, saveMilestone, openTaskModal, saveTask, openTaskUpdateModal, saveTaskUpdate,
+    openMilestoneModal, saveMilestone, openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, saveTaskUpdate,
     openCreateSubTaskModal: (p) => openCreateSubTaskModal(p),
     saveSubTask: (e) => handleCreateSubTask(e),
     refreshPlanning: () => pageTasks('planning'),
