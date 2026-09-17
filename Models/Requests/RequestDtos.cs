@@ -248,6 +248,7 @@ public class CreateSubTaskRequest
     public string Title { get; set; } = string.Empty;
     public long? AssignedTo { get; set; }
     public DateOnly? DueDate { get; set; }
+    public string? Status { get; set; }
     public string? Remarks { get; set; }
 }
 

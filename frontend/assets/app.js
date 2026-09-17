@@ -855,9 +855,109 @@ function openExcelDsrImportModal() {
   `);
 }
 
-// 8. Create Sub-Task Modal (PM-18)
-function openCreateSubTaskModal(parentTaskId = '') {
-  const html = `
+function wtEscHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function wtAsArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.$values)) return value.$values;
+  if (value && Array.isArray(value.items)) return value.items;
+  return [];
+}
+
+function wtSubTasksOf(task) {
+  return wtAsArray(task?.subTasks || task?.SubTasks || task?.subtasks);
+}
+
+function wtProjectScopeIds(projects, pid) {
+  const root = Number(pid);
+  const ids = new Set([root]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const p of projects || []) {
+      const id = Number(p.id);
+      const parent = Number(p.parentProjectId || p.ParentProjectId || 0);
+      if (parent && ids.has(parent) && !ids.has(id)) {
+        ids.add(id);
+        grew = true;
+      }
+    }
+  }
+  return [...ids];
+}
+
+async function wtLoadLiveTasksAndOwners() {
+  const pid = localStorage.getItem('WISETRACK_SELECTED_PROJECT');
+  if (!pid) return { pid: null, tasks: [], owners: [], projects: [] };
+
+  const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
+  const projects = await WisetrackAPI.getProjects(resortId).catch(() => []);
+  const scopeIds = wtProjectScopeIds(projects, pid);
+  const [taskBatches, teamBatches, allUsers] = await Promise.all([
+    Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => []))),
+    Promise.all(scopeIds.map(id => (typeof WisetrackAPI.getProjectTeam === 'function' ? WisetrackAPI.getProjectTeam(id) : Promise.resolve([])).catch(() => []))),
+    WisetrackAPI.getUsers().catch(() => [])
+  ]);
+
+  const tasks = taskBatches.flatMap((rows, i) => wtAsArray(rows).map(t => ({ ...t, _projectId: scopeIds[i] })));
+  const seen = new Set();
+  const owners = [];
+  const pushOwner = (id, fullName, role, email) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    owners.push({ id, fullName: fullName || `User ${id}`, role: role || 'Team', email: email || '' });
+  };
+  wtAsArray(teamBatches.flat()).forEach(m => pushOwner(
+    Number(m.userId || m.id),
+    m.fullName || m.name,
+    m.teamRole || (m.roles && m.roles[0]),
+    m.email
+  ));
+  if (!owners.length) {
+    wtAsArray(allUsers).filter(u => u.isActive !== false).forEach(u => pushOwner(
+      Number(u.id),
+      u.fullName || u.name,
+      (u.roles && u.roles[0]) || 'Team',
+      u.email
+    ));
+  }
+  return { pid, tasks, owners, projects };
+}
+
+async function openCreateSubTaskModal(parentTaskId = '') {
+  if (typeof WisetrackAPI === 'undefined' || !WisetrackAPI.isLoggedIn()) {
+    showToast('Please login first.', 'danger');
+    return;
+  }
+
+  const { pid, tasks, owners, projects } = await wtLoadLiveTasksAndOwners();
+  if (!pid) {
+    showToast('Select a project first, then create a main task.', 'danger');
+    return;
+  }
+  if (!tasks.length) {
+    showToast('Create a main task first, then add a sub-task under it.', 'warning');
+    return;
+  }
+
+  const nameOf = (id) => {
+    const p = (projects || []).find(x => Number(x.id) === Number(id));
+    return p ? (p.code || p.name || `#${id}`) : `#${id}`;
+  };
+  const selectedId = parentTaskId ? String(parentTaskId) : '';
+  const parentOpts = tasks.map(t => {
+    const selected = selectedId && String(t.id) === selectedId ? 'selected' : '';
+    return `<option value="${t.id}" ${selected}>${wtEscHtml(t.title || t.name)} (${wtEscHtml(nameOf(t._projectId || t.projectId))})</option>`;
+  }).join('');
+  const ownerOpts = owners.length
+    ? owners.map(u => `<option value="${u.id}">${wtEscHtml(u.fullName)} (${wtEscHtml(u.role)})</option>`).join('')
+    : '<option value="">No users found</option>';
+  const preselected = tasks.find(t => String(t.id) === selectedId);
+  const defaultDue = String(preselected?.dueDate || preselected?.DueDate || '').slice(0, 10);
+
+  openModal('Create New Sub-Task under Main Task', `
     <form onsubmit="handleCreateSubTask(event)">
       <div class="form-grid">
         <div class="field full">
@@ -867,30 +967,23 @@ function openCreateSubTaskModal(parentTaskId = '') {
         <div class="field">
           <label>Parent Main Task *</label>
           <select id="subTaskParent" required>
-            <option value="TASK-01">Main Cable Tray Laying & LT Cabling (GR-MEP-001-ELE-T2)</option>
-            <option value="TASK-02">Substation Transformer Positioning (GR-MEP-001-ELE-T1)</option>
-            <option value="TASK-03">HVAC Chilled Water Piping (GR-MEP-001-HVAC-T1)</option>
-            <option value="TASK-04">Floor 1-4 RCC Casting (GR-CIV-001-A-WP1)</option>
+            ${selectedId ? '' : '<option value="">Select which task this sub-task belongs to</option>'}
+            ${parentOpts}
           </select>
         </div>
         <div class="field">
           <label>Responsible Sub-Task Owner (PM / Lead) *</label>
-          <select id="subTaskOwner" required>
-            <option>Rahul Sharma (Task Owner)</option>
-            <option>Amit Verma (Site Engineer)</option>
-            <option>Manoj Joshi (HVAC Lead)</option>
-            <option>Ravi Shankar (Civil Lead)</option>
-          </select>
+          <select id="subTaskOwner" required>${ownerOpts}</select>
         </div>
         <div class="field">
           <label>Target Completion Date</label>
-          <input type="date" id="subTaskDueDate" value="2026-10-15">
+          <input type="date" id="subTaskDueDate" value="${wtEscHtml(defaultDue)}">
         </div>
         <div class="field">
-          <label>Initial Status Dropdown</label>
+          <label>Initial Status</label>
           <select id="subTaskInitStatus">
-            <option value="Not Started">⚪ Not Started</option>
-            <option value="In Progress" selected>🔵 In Progress</option>
+            <option value="NotStarted">⚪ Not Started</option>
+            <option value="InProgress" selected>🔵 In Progress</option>
             <option value="Delayed">🟠 Delayed</option>
           </select>
         </div>
@@ -903,16 +996,37 @@ function openCreateSubTaskModal(parentTaskId = '') {
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
         <button type="submit" class="btn primary">＋ Create Sub-Task</button>
       </div>
-    </form>
-  `;
-  openModal("Create New Sub-Task under Main Task", html);
+    </form>`);
 }
 
-function handleCreateSubTask(e) {
+async function handleCreateSubTask(e) {
   e.preventDefault();
-  const title = document.getElementById('subTaskTitle').value;
-  closeModal();
-  showToast(`Sub-Task "${title}" created successfully!`, 'success');
+  const taskId = Number(document.getElementById('subTaskParent')?.value);
+  const title = (document.getElementById('subTaskTitle')?.value || '').trim();
+  const assignedTo = Number(document.getElementById('subTaskOwner')?.value) || null;
+  const dueDate = document.getElementById('subTaskDueDate')?.value || null;
+  const status = (document.getElementById('subTaskInitStatus')?.value || 'NotStarted').replace(/\s+/g, '');
+  const remarks = (document.getElementById('subTaskNotes')?.value || '').trim();
+  if (!taskId) {
+    showToast('Select the parent main task.', 'danger');
+    return;
+  }
+  if (!title) {
+    showToast('Enter a sub-task title.', 'danger');
+    return;
+  }
+  try {
+    await WisetrackAPI.createSubTask({ taskId, title, assignedTo, dueDate, status, remarks });
+    closeModal();
+    showToast(`Sub-task "${title}" created`);
+    if (window.WTPages && typeof WTPages.refreshPlanning === 'function') {
+      await WTPages.refreshPlanning();
+    } else {
+      location.reload();
+    }
+  } catch (err) {
+    showToast(err.message || 'Could not create sub-task', 'danger');
+  }
 }
 
 // 9. On-Demand Report Generator with Column Customization & Internal-Only Email Dispatch (PM-28)

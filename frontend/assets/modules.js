@@ -1705,7 +1705,7 @@
         : kind === 'daily'
         ? ` <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
-        : ` <button class="btn" onclick="openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub-Task</button>
+        : ` <button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub-Task</button>
             <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>
             <button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
@@ -1740,32 +1740,86 @@
         }).join('') : emptyRow(5, 'No milestones for this project (or its sub-projects)');
       } else {
         const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => [])));
-        const tasks = batches.flatMap((rows, i) => (rows || []).map(t => ({ ...t, _projectId: scopeIds[i] })));
+        const tasks = batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] })));
+        const users = await WisetrackAPI.getUsers().catch(() => []);
+        const userName = (id) => {
+          if (!id) return 'Unassigned';
+          const u = (users || []).find(x => Number(x.id) === Number(id));
+          return u ? (u.fullName || u.name || u.email) : `#${id}`;
+        };
+        const userRole = (id) => {
+          const u = (users || []).find(x => Number(x.id) === Number(id));
+          return (u?.roles && u.roles[0]) || '';
+        };
         let comp = 0, prog = 0, del = 0, crit = 0;
+
+        const statusBadge = (status, pct) => {
+          const s = String(status || '').toLowerCase();
+          if (pct >= 100 || s.includes('complete')) return 'green';
+          if (s.includes('delay')) return 'amber';
+          if (s.includes('block') || s.includes('critical')) return 'red';
+          return 'blue';
+        };
+
+        const formatStatus = (status) => {
+          const raw = status || 'In Progress';
+          return String(raw).replace(/([a-z])([A-Z])/g, '$1 $2');
+        };
         
-        $('#tasksBody').innerHTML = tasks.length ? tasks.map(t => {
+        $('#tasksBody').innerHTML = tasks.length ? tasks.flatMap(t => {
           const pct = progressOf(t);
           const status = (t.status || 'In Progress').toLowerCase();
           if (pct >= 100 || status.includes('complete')) comp++;
           else if (status.includes('delay')) del++;
           else if (status.includes('block') || status.includes('critical')) crit++;
           else prog++;
-
-          return `
+          const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t) : (t.subTasks || t.SubTasks || []);
+          const owner = userName(t.assignedTo || t.AssignedTo);
+          const ownerLabel = userRole(t.assignedTo || t.AssignedTo);
+          const parentRow = `
             <tr>
               <td><code>TASK-${t.id}</code></td>
-              <td><strong>${esc(t.title || t.name)}</strong><small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small></td>
-              <td><span class="badge ${pct>=100 ? 'green' : pct>50 ? 'blue' : 'amber'}">${esc(t.status || 'In Progress')}</span></td>
+              <td>
+                <strong>${esc(t.title || t.name)}</strong>
+                <small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small>
+                <small style="display:block;color:var(--text-muted);">Owner: ${esc(owner)}${ownerLabel ? ' · ' + esc(ownerLabel) : ''} · ${subs.length} sub-task${subs.length === 1 ? '' : 's'}</small>
+              </td>
+              <td><span class="badge ${statusBadge(t.status, pct)}">${esc(formatStatus(t.status))}</span></td>
               <td>
                 <div style="display:flex;align-items:center;gap:6px;">
-                  <div class="progress ${pct>=100 ? 'green' : pct>50 ? 'blue' : 'amber'}" style="width:60px;margin:0;"><i style="width:${pct}%"></i></div>
+                  <div class="progress ${statusBadge(t.status, pct)}" style="width:60px;margin:0;"><i style="width:${pct}%"></i></div>
                   <b>${pct}%</b>
                 </div>
               </td>
-              <td>
+              <td class="table-actions">
                 <button class="btn sm" onclick="${kind === 'daily' ? `openAddDailyReportModal('${esc(t.title || t.name)}')` : `WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
+                ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-plus"></i> Sub-Task</button>` : ''}
               </td>
             </tr>`;
+          const subRows = kind === 'planning' ? subs.map(s => {
+            const spct = progressOf(s);
+            const due = s.dueDate || s.DueDate;
+            const dueLabel = due ? String(due).slice(0, 10) : 'No due date';
+            return `
+              <tr class="subtask-row">
+                <td><code>SUB-${s.id}</code></td>
+                <td class="subtask-title">
+                  <strong>↳ ${esc(s.title || s.name)}</strong>
+                  <small>Owner: ${esc(userName(s.assignedTo || s.AssignedTo))} · Due: ${esc(dueLabel)}</small>
+                </td>
+                <td><span class="badge ${statusBadge(s.status, spct)}">${esc(formatStatus(s.status))}</span></td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <div class="progress ${statusBadge(s.status, spct)}" style="width:60px;margin:0;"><i style="width:${spct}%"></i></div>
+                    <b>${spct}%</b>
+                  </div>
+                </td>
+                <td class="table-actions">
+                  <button class="btn sm" onclick="WTPages.openTaskUpdateModal(${t.id})"><i class="fa-solid fa-pen"></i> Update</button>
+                </td>
+              </tr>`;
+          }).join('') : '';
+          return [parentRow, subRows];
         }).join('') : emptyRow(5, 'No tasks for this project (or its sub-projects)');
 
         if (kind === 'daily') {
@@ -2559,12 +2613,14 @@
     openPurchaseModal, savePurchase, openActualModal, saveActual,
     boqFromMaster, boqImport, saveBoqImport, viewBoq,
     openMilestoneModal, saveMilestone, openTaskModal, saveTask, openTaskUpdateModal, saveTaskUpdate,
+    openCreateSubTaskModal: (p) => openCreateSubTaskModal(p),
+    saveSubTask: (e) => handleCreateSubTask(e),
+    refreshPlanning: () => pageTasks('planning'),
     openIssueModal, saveIssue, commentIssue, escalateIssue,
     openNotifyModal, saveNotify, openEscRuleModal, saveEscRule,
     refreshNotifications: () => pageNotifications(),
     loadPortfolio, openReportModal, saveReport,
     openReportExportModal: (t) => typeof openReportExportModal === 'function' && openReportExportModal(t),
-    openCreateSubTaskModal: (p) => typeof openCreateSubTaskModal === 'function' && openCreateSubTaskModal(p),
     openAddDailyReportModal: (s) => typeof openAddDailyReportModal === 'function' && openAddDailyReportModal(s),
     openInventoryModal, saveInventory, closeProject,
     boot

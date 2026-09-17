@@ -10,9 +10,9 @@ public interface ITaskService
 {
     Task<List<Milestone>> GetMilestonesAsync(long projectId);
     Task<Milestone> CreateMilestoneAsync(CreateMilestoneRequest request, long? userId);
-    Task<List<ProjectTask>> GetTasksAsync(long projectId);
+    Task<List<TaskItemDto>> GetTasksAsync(long projectId);
     Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId);
-    Task<SubTask> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId);
+    Task<SubTaskItemDto> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId);
     Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId, bool isTaskOwner);
     Task BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId);
     Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId);
@@ -50,7 +50,39 @@ public class TaskService : ITaskService
         return milestone;
     }
 
-    public Task<List<ProjectTask>> GetTasksAsync(long projectId) => _repository.GetTasksAsync(projectId);
+    public async Task<List<TaskItemDto>> GetTasksAsync(long projectId)
+    {
+        var tasks = await _repository.GetTasksAsync(projectId);
+        return tasks.Select(MapTask).ToList();
+    }
+
+    private static TaskItemDto MapTask(ProjectTask t) => new()
+    {
+        Id = t.Id,
+        ProjectId = t.ProjectId,
+        MilestoneId = t.MilestoneId,
+        Title = t.Title,
+        Description = t.Description,
+        AssignedTo = t.AssignedTo,
+        StartDate = t.StartDate,
+        DueDate = t.DueDate,
+        Status = t.Status,
+        CompletionPercent = t.CompletionPercent,
+        Remarks = t.Remarks,
+        SubTasks = (t.SubTasks ?? Array.Empty<SubTask>()).Select(MapSubTask).ToList()
+    };
+
+    private static SubTaskItemDto MapSubTask(SubTask s) => new()
+    {
+        Id = s.Id,
+        TaskId = s.TaskId,
+        Title = s.Title,
+        AssignedTo = s.AssignedTo,
+        DueDate = s.DueDate,
+        Status = s.Status,
+        CompletionPercent = s.CompletionPercent,
+        Remarks = s.Remarks
+    };
 
     public async Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId)
     {
@@ -72,8 +104,13 @@ public class TaskService : ITaskService
         return task;
     }
 
-    public async Task<SubTask> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId)
+    public async Task<SubTaskItemDto> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId)
     {
+        _ = await _repository.GetTaskAsync(request.TaskId)
+            ?? throw new InvalidOperationException("Parent task not found.");
+        var status = string.IsNullOrWhiteSpace(request.Status)
+            ? "NotStarted"
+            : request.Status.Replace(" ", "");
         var sub = await _repository.AddSubTaskAsync(new SubTask
         {
             TaskId = request.TaskId,
@@ -81,11 +118,11 @@ public class TaskService : ITaskService
             AssignedTo = request.AssignedTo,
             DueDate = request.DueDate,
             Remarks = request.Remarks,
-            Status = "NotStarted",
+            Status = status,
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "SubTask", sub.Id);
-        return sub;
+        return MapSubTask(sub);
     }
 
     public async Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId, bool isTaskOwner)

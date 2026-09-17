@@ -30,6 +30,7 @@ public interface IProjectService
     Task DeleteAsync(long userId, long id);
     Task AssignUserAsync(long userId, long projectId, AssignProjectUserRequest request);
     Task RemoveUserAsync(long userId, long projectId, long memberUserId);
+    Task<List<ProjectTeamMemberDto>> GetTeamAsync(long userId, long projectId);
     Task AddVarianceExplanationAsync(long userId, VarianceExplanationRequest request);
     Task<List<VarianceExplanation>> GetVarianceExplanationsAsync(long userId, long projectId);
     Task<MilestoneTemplate> SaveTemplateAsync(MilestoneTemplateRequest request);
@@ -277,6 +278,25 @@ public class ProjectService : IProjectService
             throw new UnauthorizedAccessException("No permission.");
         await _repository.RemoveUserAsync(projectId, memberUserId);
         await _audit.LogAsync(userId, "RemoveUser", "Project", projectId, $"User {memberUserId}");
+    }
+
+    public async Task<List<ProjectTeamMemberDto>> GetTeamAsync(long userId, long projectId)
+    {
+        if (!await _permissions.CanViewProjectAsync(userId, projectId))
+            throw new UnauthorizedAccessException("No permission to view project team.");
+        var project = await _repository.GetProjectAsync(projectId)
+            ?? throw new InvalidOperationException("Project not found");
+        return project.ProjectUsers
+            .Where(pu => pu.User == null || pu.User.IsActive)
+            .Select(pu => new ProjectTeamMemberDto
+            {
+                UserId = pu.UserId,
+                FullName = pu.User?.FullName ?? $"User {pu.UserId}",
+                Email = pu.User?.Email ?? "",
+                TeamRole = pu.TeamRole
+            })
+            .OrderBy(m => m.FullName)
+            .ToList();
     }
 
     public async Task AddVarianceExplanationAsync(long userId, VarianceExplanationRequest request)

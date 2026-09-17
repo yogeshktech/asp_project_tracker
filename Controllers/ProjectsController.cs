@@ -124,6 +124,10 @@ public class ProjectsController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("{id:long}/team")]
+    public async Task<IActionResult> GetTeam(long id) =>
+        Ok(await _projectService.GetTeamAsync(UserId, id));
+
     [HttpPost("{id:long}/team")]
     public async Task<IActionResult> Assign(long id, [FromBody] AssignProjectUserRequest request)
     {

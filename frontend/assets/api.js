@@ -142,6 +142,7 @@ const WisetrackAPI = {
   },
   getProjectHierarchy(resortId) { return this.get(`/projects/hierarchy/${resortId}`); },
   getProject(id) { return this.get(`/projects/${id}`); },
+  getProjectTeam(projectId) { return this.get(`/projects/${projectId}/team`); },
   createProject(data) { return this.post('/projects', data); },
   updateProject(id, data) { return this.put(`/projects/${id}`, data); },
   deleteProject(id) { return this.del(`/projects/${id}`); },

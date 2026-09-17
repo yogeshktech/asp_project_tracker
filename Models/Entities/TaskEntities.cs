@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace project_tracker_madhu.Models.Entities;
 
@@ -54,6 +55,7 @@ public class SubTask
     public decimal CompletionPercent { get; set; }
     public string? Remarks { get; set; }
     public DateTime CreatedAt { get; set; }
+    [JsonIgnore]
     public ProjectTask Task { get; set; } = null!;
 }
 

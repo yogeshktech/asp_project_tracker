@@ -37,6 +37,14 @@ public class UserResponseDto
     public List<string> Roles { get; set; } = new();
 }
 
+public class ProjectTeamMemberDto
+{
+    public long UserId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? TeamRole { get; set; }
+}
+
 public class ProjectResponseDto
 {
     public long Id { get; set; }
@@ -164,4 +172,32 @@ public class ComparableProjectDto
     public decimal ApprovedBudget { get; set; }
     public decimal ActualCost { get; set; }
     public int? DurationDays { get; set; }
+}
+
+public class TaskItemDto
+{
+    public long Id { get; set; }
+    public long ProjectId { get; set; }
+    public long? MilestoneId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public long? AssignedTo { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? DueDate { get; set; }
+    public string Status { get; set; } = "NotStarted";
+    public decimal CompletionPercent { get; set; }
+    public string? Remarks { get; set; }
+    public List<SubTaskItemDto> SubTasks { get; set; } = new();
+}
+
+public class SubTaskItemDto
+{
+    public long Id { get; set; }
+    public long TaskId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public long? AssignedTo { get; set; }
+    public DateOnly? DueDate { get; set; }
+    public string Status { get; set; } = "NotStarted";
+    public decimal CompletionPercent { get; set; }
+    public string? Remarks { get; set; }
 }

@@ -1236,6 +1236,15 @@ header.topbar {
 .table-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+.subtask-row td {
+  background: #f8fafc;
+}
+
+.subtask-title {
+  padding-left: 22px !important;
 }
 
 /* N-Level Hierarchy / Tree View */
