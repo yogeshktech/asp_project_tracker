@@ -30,6 +30,7 @@ function showToast(message, type = 'success') {
 
 // Modal Management
 function openModal(title, contentHtml, footerHtml = '') {
+  document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
   let modal = document.getElementById('modal');
   if (!modal) {
     modal = document.createElement('div');

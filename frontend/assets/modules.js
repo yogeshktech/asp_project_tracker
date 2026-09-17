@@ -1792,7 +1792,7 @@
                 </div>
               </td>
               <td class="table-actions">
-                <button class="btn sm" onclick="${kind === 'daily' ? `openAddDailyReportModal('${esc(t.title || t.name)}')` : `WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
+                <button class="btn sm" onclick="${kind === 'daily' ? `openAddDailyReportModal('${esc(t.title || t.name)}')` : `event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
                 ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-plus"></i> Sub-Task</button>` : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
               </td>
@@ -1816,7 +1816,7 @@
                   </div>
                 </td>
                 <td class="table-actions">
-                  <button class="btn sm" onclick="WTPages.openTaskUpdateModal(${t.id})"><i class="fa-solid fa-pen"></i> Update</button>
+                  <button class="btn sm" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id}, ${s.id})"><i class="fa-solid fa-pen"></i> Update</button>
                   ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
                 </td>
               </tr>`;
@@ -1928,27 +1928,126 @@
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
-  function openTaskUpdateModal(taskId) {
-    openModal('Task Progress Update', `
+  async function openTaskUpdateModal(taskId, subTaskId) {
+    closeModal();
+    const isSub = subTaskId != null && subTaskId !== '' && Number(subTaskId) > 0;
+    let tasks = [];
+    try {
+      const loaded = typeof wtLoadLiveTasksAndOwners === 'function'
+        ? await wtLoadLiveTasksAndOwners()
+        : { tasks: [] };
+      tasks = loaded.tasks || [];
+    } catch (_) { tasks = []; }
+
+    const findTask = (id) => tasks.find(t => Number(t.id) === Number(id));
+    const findSub = (task, id) => {
+      const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(task || {}) : (task?.subTasks || []);
+      return (subs || []).find(s => Number(s.id) === Number(id));
+    };
+
+    let selectedTask = taskId ? findTask(taskId) : null;
+    let selectedSub = isSub && selectedTask ? findSub(selectedTask, subTaskId) : null;
+
+    if (!taskId && tasks.length === 1) {
+      selectedTask = tasks[0];
+      taskId = selectedTask.id;
+    }
+
+    const taskOpts = tasks.length
+      ? tasks.map(t => `<option value="${t.id}" ${Number(t.id) === Number(taskId) ? 'selected' : ''}>TASK-${t.id} · ${esc(t.title || t.name)}</option>`).join('')
+      : '<option value="">No tasks found</option>';
+
+    const buildSubOpts = (tid) => {
+      const t = findTask(tid);
+      const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t || {}) : (t?.subTasks || []);
+      if (!subs.length) return '<option value="">No sub-task (update main task)</option>';
+      return `<option value="">Main task only</option>` + subs.map(s =>
+        `<option value="${s.id}" ${Number(s.id) === Number(subTaskId) ? 'selected' : ''}>SUB-${s.id} · ${esc(s.title || s.name)}</option>`
+      ).join('');
+    };
+
+    const pct = Number(isSub
+      ? (selectedSub?.completionPercent ?? selectedSub?.CompletionPercent ?? 0)
+      : (selectedTask?.completionPercent ?? selectedTask?.CompletionPercent ?? 0));
+    const status = isSub
+      ? (selectedSub?.status || selectedSub?.Status || 'InProgress')
+      : (selectedTask?.status || selectedTask?.Status || 'InProgress');
+    const title = isSub
+      ? (selectedSub?.title || selectedSub?.name || 'Sub-task')
+      : (selectedTask?.title || selectedTask?.name || (taskId ? `TASK-${taskId}` : 'Select a task'));
+
+    const statusOpts = ['NotStarted', 'InProgress', 'Delayed', 'Completed'].map(s => {
+      const match = String(status).replace(/\s+/g, '') === s;
+      const label = s.replace(/([a-z])([A-Z])/g, '$1 $2');
+      return `<option value="${s}" ${match ? 'selected' : ''}>${label}</option>`;
+    }).join('');
+
+    openModal(isSub ? 'Update Sub-Task' : 'Update Task', `
       <form onsubmit="WTPages.saveTaskUpdate(event)">
         <div class="form-grid">
-          <div class="field"><label>Task ID *</label><input id="tuId" type="number" value="${taskId || ''}" required></div>
-          <div class="field"><label>% Complete *</label><input id="tuPct" type="number" min="0" max="100" value="10" required></div>
-          <div class="field full"><label>Remark</label><input id="tuRem"></div>
+          <div class="field">
+            <label>Main Task *</label>
+            <select id="tuId" required onchange="WTPages.onUpdateTaskChange(this.value)">${taskOpts}</select>
+          </div>
+          <div class="field">
+            <label>Sub-Task</label>
+            <select id="tuSubId">${buildSubOpts(taskId)}</select>
+          </div>
+          <div class="field full">
+            <label>Updating</label>
+            <input id="tuLabel" value="${esc(title)}" readonly>
+          </div>
+          <div class="field">
+            <label>% Complete *</label>
+            <input id="tuPct" type="number" min="0" max="100" value="${Number.isFinite(pct) ? pct : 0}" required>
+          </div>
+          <div class="field">
+            <label>Status</label>
+            <select id="tuStatus">${statusOpts}</select>
+          </div>
+          <div class="field full">
+            <label>Remark</label>
+            <input id="tuRem" placeholder="What changed today?">
+          </div>
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
+        <div class="modalfoot" style="padding:0;margin-top:12px">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn primary" type="submit">Save</button>
+        </div>
       </form>`);
+  }
+
+  function onUpdateTaskChange(taskId) {
+    const sel = document.getElementById('tuSubId');
+    const label = document.getElementById('tuLabel');
+    if (!sel || typeof wtLoadLiveTasksAndOwners !== 'function') return;
+    wtLoadLiveTasksAndOwners().then(({ tasks }) => {
+      const t = (tasks || []).find(x => Number(x.id) === Number(taskId));
+      const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t || {}) : (t?.subTasks || []);
+      sel.innerHTML = !subs.length
+        ? '<option value="">No sub-task (update main task)</option>'
+        : `<option value="">Main task only</option>` + subs.map(s => `<option value="${s.id}">SUB-${s.id} · ${esc(s.title || s.name)}</option>`).join('');
+      if (label) label.value = t ? (t.title || t.name || `TASK-${t.id}`) : '';
+    }).catch(() => {});
   }
 
   async function saveTaskUpdate(e) {
     e.preventDefault();
+    const taskId = Number($('#tuId').value);
+    const subTaskId = Number($('#tuSubId')?.value) || null;
+    if (!taskId) {
+      showToast('Select a task to update.', 'danger');
+      return;
+    }
     try {
       await WisetrackAPI.addTaskUpdate({
-        taskId: Number($('#tuId').value),
+        taskId,
+        subTaskId,
         completionPercent: Number($('#tuPct').value),
-        remarks: $('#tuRem').value.trim()
+        status: $('#tuStatus')?.value || null,
+        remarks: ($('#tuRem').value || '').trim()
       });
-      closeModal(); showToast('Update saved'); await pageTasks('planning');
+      closeModal(); showToast(subTaskId ? 'Sub-task updated' : 'Task updated'); await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2650,7 +2749,7 @@
     openBudgetModal, saveBudget, reviseBudget, openCostCenterModal, saveCC, deleteCC,
     openPurchaseModal, savePurchase, openActualModal, saveActual,
     boqFromMaster, boqImport, saveBoqImport, viewBoq,
-    openMilestoneModal, saveMilestone, openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, saveTaskUpdate,
+    openMilestoneModal, saveMilestone, openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate,
     openCreateSubTaskModal: (p) => openCreateSubTaskModal(p),
     saveSubTask: (e) => handleCreateSubTask(e),
     refreshPlanning: () => pageTasks('planning'),
