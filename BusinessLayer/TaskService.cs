@@ -57,7 +57,20 @@ public class TaskService : ITaskService
         var tasks = await _repository.GetTasksAsync(projectId);
         var isAdmin = await _permissions.IsAdminAsync(userId);
         var canEdit = isAdmin || await _permissions.CanEditModuleAsync(userId, projectId, "Tasks");
-        return tasks.Select(t => MapTask(t, userId, isAdmin, canEdit)).ToList();
+        var ordered = tasks.OrderBy(t => t.Id).ToList();
+        return ordered.Select((t, i) =>
+        {
+            var dto = MapTask(t, userId, isAdmin, canEdit);
+            dto.DisplayCode = $"Task-{i + 1}";
+            var subs = (t.SubTasks ?? Array.Empty<SubTask>()).OrderBy(s => s.Id).ToList();
+            dto.SubTasks = subs.Select((s, j) =>
+            {
+                var subDto = MapSubTask(s, userId, isAdmin, canEdit, t.AssignedTo);
+                subDto.DisplayCode = $"{dto.DisplayCode}-Sub-{j + 1}";
+                return subDto;
+            }).ToList();
+            return dto;
+        }).ToList();
     }
 
     private static TaskItemDto MapTask(ProjectTask t, long userId, bool isAdmin, bool canEdit)
@@ -147,7 +160,13 @@ public class TaskService : ITaskService
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "SubTask", sub.Id);
-        return MapSubTask(sub, userId ?? 0, false, false, parent.AssignedTo);
+        var dto = MapSubTask(sub, userId ?? 0, false, false, parent.AssignedTo);
+        var projectTasks = await _repository.GetTasksAsync(parent.ProjectId);
+        var taskNo = projectTasks.OrderBy(t => t.Id).Select((t, i) => (t.Id, No: i + 1)).First(x => x.Id == parent.Id).No;
+        var subNo = projectTasks.First(t => t.Id == parent.Id).SubTasks.OrderBy(s => s.Id)
+            .Select((s, i) => (s.Id, No: i + 1)).First(x => x.Id == sub.Id).No;
+        dto.DisplayCode = $"Task-{taskNo}-Sub-{subNo}";
+        return dto;
     }
 
     public async Task DeleteTaskAsync(long taskId, long userId)

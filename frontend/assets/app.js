@@ -790,10 +790,10 @@ async function openAddDailyReportModal(taskId, subTaskId) {
 
   const opts = [];
   tasks.forEach(t => {
-    opts.push(`<option value="${t.id}">TASK-${t.id} · ${wtEscHtml(t.title || t.name)}</option>`);
+    opts.push(`<option value="${t.id}">${wtTaskCode(t)} · ${wtEscHtml(t.title || t.name)}</option>`);
     const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t) : [];
-    subs.forEach(s => {
-      opts.push(`<option value="${t.id}:${s.id}">↳ SUB-${s.id} · ${wtEscHtml(s.title || s.name)}</option>`);
+    subs.forEach((s, j) => {
+      opts.push(`<option value="${t.id}:${s.id}">↳ ${wtSubTaskCode(t, s, j)} · ${wtEscHtml(s.title || s.name)}</option>`);
     });
   });
 
@@ -1016,6 +1016,34 @@ function wtSubTasksOf(task) {
   return wtAsArray(task?.subTasks || task?.SubTasks || task?.subtasks);
 }
 
+function wtTaskCode(task, index) {
+  return task?.displayCode || task?.DisplayCode || `Task-${(index ?? 0) + 1}`;
+}
+
+function wtSubTaskCode(task, sub, subIndex) {
+  return sub?.displayCode || sub?.DisplayCode || `${wtTaskCode(task)}-Sub-${(subIndex ?? 0) + 1}`;
+}
+
+function wtApplyTaskDisplayCodes(tasks) {
+  const grouped = {};
+  (tasks || []).forEach(t => {
+    const pid = Number(t.projectId || t.ProjectId || t._projectId || 0);
+    if (!grouped[pid]) grouped[pid] = [];
+    grouped[pid].push(t);
+  });
+  Object.values(grouped).forEach(list => {
+    list.sort((a, b) => Number(a.id) - Number(b.id));
+    list.forEach((t, i) => {
+      t.displayCode = t.displayCode || t.DisplayCode || `Task-${i + 1}`;
+      const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t) : (t.subTasks || []);
+      [...subs].sort((a, b) => Number(a.id) - Number(b.id)).forEach((s, j) => {
+        s.displayCode = s.displayCode || s.DisplayCode || `${t.displayCode}-Sub-${j + 1}`;
+      });
+    });
+  });
+  return tasks;
+}
+
 function wtProjectScopeIds(projects, pid) {
   const root = Number(pid);
   const ids = new Set([root]);
@@ -1048,6 +1076,7 @@ async function wtLoadLiveTasksAndOwners() {
   ]);
 
   const tasks = taskBatches.flatMap((rows, i) => wtAsArray(rows).map(t => ({ ...t, _projectId: scopeIds[i] })));
+  wtApplyTaskDisplayCodes(tasks);
   const seen = new Set();
   const owners = [];
   const pushOwner = (id, fullName, role, email) => {
@@ -1095,7 +1124,7 @@ async function openCreateSubTaskModal(parentTaskId = '') {
   const selectedId = parentTaskId ? String(parentTaskId) : '';
   const parentOpts = tasks.map(t => {
     const selected = selectedId && String(t.id) === selectedId ? 'selected' : '';
-    return `<option value="${t.id}" ${selected}>${wtEscHtml(t.title || t.name)} (${wtEscHtml(nameOf(t._projectId || t.projectId))})</option>`;
+    return `<option value="${t.id}" ${selected}>${wtEscHtml(wtTaskCode(t))} · ${wtEscHtml(t.title || t.name)} (${wtEscHtml(nameOf(t._projectId || t.projectId))})</option>`;
   }).join('');
   const ownerOpts = owners.length
     ? owners.map(u => `<option value="${u.id}">${wtEscHtml(u.fullName)} (${wtEscHtml(u.role)})</option>`).join('')

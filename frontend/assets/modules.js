@@ -1835,6 +1835,7 @@
       } else {
         const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => [])));
         const tasks = batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] })));
+        if (typeof wtApplyTaskDisplayCodes === 'function') wtApplyTaskDisplayCodes(tasks);
         const users = await WisetrackAPI.getUsers().catch(() => []);
         const userName = (id) => {
           if (!id) return 'Unassigned';
@@ -1872,7 +1873,7 @@
           const ownerLabel = userRole(t.assignedTo || t.AssignedTo);
           const parentRow = `
             <tr>
-              <td><code>TASK-${t.id}</code></td>
+              <td><code>${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t) : (t.displayCode || 'Task-' + t.id))}</code></td>
               <td>
                 <strong>${esc(t.title || t.name)}</strong>
                 <small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small>
@@ -1891,13 +1892,13 @@
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
               </td>
             </tr>`;
-          const subRows = (kind === 'planning' || kind === 'daily') ? subs.map(s => {
+          const subRows = (kind === 'planning' || kind === 'daily') ? subs.map((s, si) => {
             const spct = progressOf(s);
             const due = s.dueDate || s.DueDate;
             const dueLabel = due ? String(due).slice(0, 10) : 'No due date';
             return `
               <tr class="subtask-row">
-                <td><code>SUB-${s.id}</code></td>
+                <td><code>${esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s, si) : (s.displayCode || 'Sub-' + s.id))}</code></td>
                 <td class="subtask-title">
                   <strong>↳ ${esc(s.title || s.name)}</strong>
                   <small>Owner: ${esc(userName(s.assignedTo || s.AssignedTo))} · Due: ${esc(dueLabel)}</small>
@@ -2106,7 +2107,7 @@
     }
 
     const taskOpts = tasks.length
-      ? tasks.map(t => `<option value="${t.id}" ${Number(t.id) === Number(taskId) ? 'selected' : ''}>TASK-${t.id} · ${esc(t.title || t.name)}</option>`).join('')
+      ? tasks.map((t, i) => `<option value="${t.id}" ${Number(t.id) === Number(taskId) ? 'selected' : ''}>${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t, i) : (t.displayCode || t.title))} · ${esc(t.title || t.name)}</option>`).join('')
       : '<option value="">No tasks found</option>';
 
     const buildSubOpts = (tid) => {
@@ -2114,7 +2115,7 @@
       const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t || {}) : (t?.subTasks || []);
       if (!subs.length) return '<option value="">No sub-task (update main task)</option>';
       return `<option value="">Main task only</option>` + subs.map(s =>
-        `<option value="${s.id}" ${Number(s.id) === Number(subTaskId) ? 'selected' : ''}>SUB-${s.id} · ${esc(s.title || s.name)}</option>`
+        `<option value="${s.id}" ${Number(s.id) === Number(subTaskId) ? 'selected' : ''}>${esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s) : (s.displayCode || s.title))} · ${esc(s.title || s.name)}</option>`
       ).join('');
     };
 
@@ -2126,7 +2127,7 @@
       : (selectedTask?.status || selectedTask?.Status || 'InProgress');
     const title = isSub
       ? (selectedSub?.title || selectedSub?.name || 'Sub-task')
-      : (selectedTask?.title || selectedTask?.name || (taskId ? `TASK-${taskId}` : 'Select a task'));
+      : (selectedTask?.title || selectedTask?.name || (taskId ? (typeof wtTaskCode === 'function' ? wtTaskCode(selectedTask || { id: taskId }) : `Task-${taskId}`) : 'Select a task'));
 
     const statusOpts = ['NotStarted', 'InProgress', 'Delayed', 'Completed'].map(s => {
       const match = String(status).replace(/\s+/g, '') === s;
@@ -2190,8 +2191,8 @@
       const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t || {}) : (t?.subTasks || []);
       sel.innerHTML = !subs.length
         ? '<option value="">No sub-task (update main task)</option>'
-        : `<option value="">Main task only</option>` + subs.map(s => `<option value="${s.id}">SUB-${s.id} · ${esc(s.title || s.name)}</option>`).join('');
-      if (label) label.value = t ? (t.title || t.name || `TASK-${t.id}`) : '';
+        : `<option value="">Main task only</option>` + subs.map(s => `<option value="${s.id}">${esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s) : (s.displayCode || s.title))} · ${esc(s.title || s.name)}</option>`).join('');
+      if (label) label.value = t ? `${typeof wtTaskCode === 'function' ? wtTaskCode(t) : (t.displayCode || '')} · ${t.title || t.name || ''}` : '';
     }).catch(() => {});
   }
 
@@ -2688,32 +2689,28 @@
         <div class="flow-rail">
           <a class="flow-node" href="users.html"><div class="fn" style="background:#1d4ed8">1</div><div class="ft">Users & Roles</div><div class="fs">PM-02 / PM-03</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="resorts.html"><div class="fn" style="background:#2563eb">2</div><div class="ft">Resort Setup</div><div class="fs">PM-06</div></a>
+          <a class="flow-node" href="project-detail.html"><div class="fn" style="background:#6d28d9">2</div><div class="ft">Team Assign</div><div class="fs">PM-02 / PM-04</div></a>
           <span class="flow-arrow">➜</span>
           <a class="flow-node" href="projects.html"><div class="fn" style="background:#7c3aed">3</div><div class="ft">N-Level Projects</div><div class="fs">PM-01 / PM-06</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="project-detail.html"><div class="fn" style="background:#6d28d9">4</div><div class="ft">Team Assign</div><div class="fs">PM-02 / PM-04</div></a>
+          <a class="flow-node" href="milestones.html"><div class="fn" style="background:#059669">4</div><div class="ft">Milestones</div><div class="fs">PM-15…18</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="items.html"><div class="fn" style="background:#d97706">5</div><div class="ft">Item Master</div><div class="fs">PM-12</div></a>
+          <a class="flow-node" href="planning.html"><div class="fn" style="background:#0d9488">5</div><div class="ft">Tasks / Sub-tasks</div><div class="fs">PM-18</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="boq.html"><div class="fn" style="background:#ea580c">6</div><div class="ft">BOQ + Versions</div><div class="fs">PM-10…14</div></a>
-          <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="budget.html"><div class="fn" style="background:#dc2626">7</div><div class="ft">Budget & CC</div><div class="fs">PM-07 / PM-08</div></a>
+          <a class="flow-node" href="budget.html"><div class="fn" style="background:#dc2626">6</div><div class="ft">Budget & CC</div><div class="fs">PM-07 / PM-08</div></a>
         </div>
         <div class="flow-rail">
-          <a class="flow-node" href="milestones.html"><div class="fn" style="background:#059669">8</div><div class="ft">Milestones</div><div class="fs">PM-15…18</div></a>
+          <a class="flow-node" href="items.html"><div class="fn" style="background:#d97706">7</div><div class="ft">Item Master</div><div class="fs">PM-12</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="planning.html"><div class="fn" style="background:#0d9488">9</div><div class="ft">Tasks / Sub-tasks</div><div class="fs">PM-18</div></a>
+          <a class="flow-node" href="daily-report.html"><div class="fn" style="background:#8b5cf6">8</div><div class="ft">Daily Updates</div><div class="fs">DSR / Excel</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="daily-report.html"><div class="fn" style="background:#8b5cf6">10</div><div class="ft">Daily Updates</div><div class="fs">DSR / Excel</div></a>
+          <a class="flow-node" href="costs.html"><div class="fn" style="background:#e11d48">9</div><div class="ft">Purchase / Actual</div><div class="fs">PM-21 / PM-22</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="costs.html"><div class="fn" style="background:#e11d48">11</div><div class="ft">Purchase / Actual</div><div class="fs">PM-21 / PM-22</div></a>
+          <a class="flow-node" href="boq.html"><div class="fn" style="background:#ea580c">10</div><div class="ft">BOQ + Versions</div><div class="fs">PM-10…14</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="issues.html"><div class="fn" style="background:#b91c1c">12</div><div class="ft">Issues</div><div class="fs">Incident + mail</div></a>
+          <a class="flow-node" href="issues.html"><div class="fn" style="background:#b91c1c">11</div><div class="ft">Issues</div><div class="fs">Incident + mail</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="reports.html"><div class="fn" style="background:#0284c7">13</div><div class="ft">Reports</div><div class="fs">PM-25…29</div></a>
-          <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="inventory.html"><div class="fn" style="background:#047857">14</div><div class="ft">Close Gate</div><div class="fs">PM-30</div></a>
+          <a class="flow-node" href="reports.html"><div class="fn" style="background:#0284c7">12</div><div class="ft">Reports</div><div class="fs">PM-25…29</div></a>
         </div>
       </div>
 
@@ -2767,70 +2764,88 @@
         <h3 class="card-title">Step-by-step — how to run the full application</h3>
         <ol class="flow-howto">
           <li>
-            <div class="h-title">1) Access control setup (Admin)</div>
+            <div class="h-title">1) Users &amp; roles (Admin)</div>
             <div class="h-body">
               Set module rights in <a href="roles.html">Roles & Permissions</a> →
-              create users and assign roles in <a href="users.html">Users</a> →
-              then assign project-wise team + module view/edit in <a href="project-detail.html">Project Workspace</a> (PM-03).
-              External owners see only authorized projects (PM-04). Material actions are recorded in <a href="audit-logs.html">Audit Logs</a> (PM-05).
+              create users and assign roles in <a href="users.html">Users</a>.
+              Grant project + module View/Edit during user setup (PM-03).
             </div>
           </li>
           <li>
-            <div class="h-title">2) Resort → Property → Parent → Sub-projects</div>
+            <div class="h-title">2) Team assignment</div>
+            <div class="h-body">
+              Assign users to projects in <a href="project-detail.html">Project Workspace</a> (PM-02 / PM-04).
+              Users see only the projects they are assigned to.
+            </div>
+          </li>
+          <li>
+            <div class="h-title">3) N-level projects</div>
             <div class="h-body">
               Create resort + property in <a href="resorts.html">Resorts</a> →
-              create Parent projects in <a href="projects.html">Projects</a> (types: MEP / Civil / New Development / Major Renovation) →
-              add Sub-Projects underneath. Each package keeps its own schedule, owner, and budget (PM-01, PM-06).
+              create Parent projects in <a href="projects.html">Projects</a> (MEP / Civil / New Development / Major Renovation) →
+              add Sub-Projects underneath (PM-01, PM-06).
             </div>
           </li>
           <li>
-            <div class="h-title">3) Item master → BOQ → versions</div>
+            <div class="h-title">4) Milestones</div>
             <div class="h-body">
-              <a href="items.html">Item Master</a>: code, unit, purchase price, brand, image, category (PM-12) →
-              <a href="boq.html">BOQ</a>: pick from master or flexible Excel/JSON import (PM-10/11) →
-              lock baseline version and track revisions (PM-13/14). Lines support qty, price, remark, and attachments.
+              <a href="milestones.html">Milestones</a>: plan backward from handover (procure → ship → install → commission → handover) (PM-15…18).
+              Save / clone templates for repeated project types.
             </div>
           </li>
           <li>
-            <div class="h-title">4) Budget baseline + cost centers + 80% RAG</div>
+            <div class="h-title">5) Tasks / sub-tasks</div>
+            <div class="h-body">
+              <a href="planning.html">Tasks & Planning</a>: main tasks are numbered <code>Task-1</code>, <code>Task-2</code>.
+              Sub-tasks under a parent are <code>Task-1-Sub-1</code>, <code>Task-1-Sub-2</code> so ownership is obvious.
+            </div>
+          </li>
+          <li>
+            <div class="h-title">6) Budget &amp; cost centers</div>
             <div class="h-body">
               <a href="budget.html">Budgets</a>: distribute approved amount across CCs (sub-projects act as CCs on the parent) →
-              revise with reasons (PM-08) →
-              enter costs in <a href="costs.html">Purchases & Actuals</a> (PM-21) →
-              when CC spend ≥ 80% of allocation → RAG Amber/Red + escalation mail via <a href="notifications.html">Notifications</a> (PM-07, PM-20).
-              Record variance reasons on the project (PM-24).
+              revise with reasons (PM-08). 80% spend flags RAG + escalation mail (PM-07).
             </div>
           </li>
           <li>
-            <div class="h-title">5) Plan: milestones → tasks → sub-tasks</div>
+            <div class="h-title">7) Item master</div>
             <div class="h-body">
-              <a href="milestones.html">Milestones</a>: plan backward from handover (procure → ship → install → commission → handover) (PM-15…18) →
-              <a href="planning.html">Tasks & Planning</a>: owner, dates, dependencies → create sub-tasks →
-              update daily % / status / remark / attachments in <a href="daily-report.html">Daily Report</a>.
-              Exception radar flags items with no progress for 7 days (PM-19).
+              <a href="items.html">Item Master</a>: code, unit, purchase price, brand, image, category (PM-12).
             </div>
           </li>
           <li>
-            <div class="h-title">6) Issues / incidents</div>
+            <div class="h-title">8) Daily updates</div>
+            <div class="h-body">
+              Site team updates sub-task status / remark / attachment in <a href="daily-report.html">Daily Report</a>.
+              % completion is changed only by the task owner. Excel CSV bulk upload is supported.
+            </div>
+          </li>
+          <li>
+            <div class="h-title">9) Purchase / actual</div>
+            <div class="h-body">
+              Enter costs in <a href="costs.html">Purchases & Actuals</a> (PM-21 / PM-22). Record variance reasons (PM-24).
+            </div>
+          </li>
+          <li>
+            <div class="h-title">10) BOQ + versions</div>
+            <div class="h-body">
+              <a href="boq.html">BOQ</a>: pick from master or flexible vendor CSV import (PM-10/11) →
+              lock baseline version and track revisions (PM-13/14).
+            </div>
+          </li>
+          <li>
+            <div class="h-title">11) Issues / incidents</div>
             <div class="h-body">
               <a href="issues.html">Issues</a>: What / Where / When / Reported By / Impact / Priority.
-              HIGH/CRITICAL triggers escalation email to high-priority stakeholders. Comments and attachments supported.
+              HIGH/CRITICAL triggers escalation email to stakeholders.
             </div>
           </li>
           <li>
-            <div class="h-title">7) Dashboards & reports (internal only)</div>
+            <div class="h-title">12) Reports (internal only)</div>
             <div class="h-body">
               <a href="dashboard.html">Dashboard</a> for portfolio health (PM-25/26) →
-              <a href="reports.html">Reports</a>: monthly / daily / portfolio / completion; choose columns;
-              recipients must be internal emails only (PM-28/29). Do not send reports to external users from the app.
-            </div>
-          </li>
-          <li>
-            <div class="h-title">8) Closure gate (mandatory)</div>
-            <div class="h-body">
-              <a href="inventory.html">Inventory & Closure</a>: update leftover inventory →
-              upload signed Project Completion / Handover PDF →
-              <b>only the Project Manager</b> may close the project (PM-30). Close is blocked without inventory + signed PCR.
+              <a href="reports.html">Reports</a>: choose columns; recipients must be internal emails only (PM-28/29).
+              Close the project from <a href="inventory.html">Inventory & Closure</a> after leftover inventory and signed PCR (PM-30).
             </div>
           </li>
         </ol>

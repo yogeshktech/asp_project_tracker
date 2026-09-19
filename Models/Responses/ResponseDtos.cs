@@ -190,6 +190,7 @@ public class TaskItemDto
     public List<SubTaskItemDto> SubTasks { get; set; } = new();
     public bool CanDelete { get; set; }
     public bool CanEditPercent { get; set; }
+    public string DisplayCode { get; set; } = string.Empty;
 }
 
 public class SubTaskItemDto
@@ -204,6 +205,7 @@ public class SubTaskItemDto
     public string? Remarks { get; set; }
     public bool CanDelete { get; set; }
     public bool CanEditPercent { get; set; }
+    public string DisplayCode { get; set; } = string.Empty;
 }
 
 public class TaskBulkImportResultDto
