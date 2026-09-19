@@ -45,7 +45,9 @@ public class AuthService : IAuthService
                 ProjectId = p.ProjectId,
                 Module = p.Module,
                 CanView = p.CanView,
-                CanEdit = p.CanEdit
+                CanEdit = p.CanEdit,
+                CanUpdate = p.CanUpdate,
+                CanDelete = p.CanDelete
             }).ToList();
         return new LoginResponseDto
         {

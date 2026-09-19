@@ -61,11 +61,13 @@ public class ProjectUser
 public class ProjectPermission
 {
     public long Id { get; set; }
-    public long ProjectId { get; set; }
+    public long? ProjectId { get; set; }
     public long UserId { get; set; }
     public string Module { get; set; } = string.Empty;
     public bool CanView { get; set; } = true;
     public bool CanEdit { get; set; }
-    public Project Project { get; set; } = null!;
+    public bool CanUpdate { get; set; }
+    public bool CanDelete { get; set; }
+    public Project? Project { get; set; }
     public User User { get; set; } = null!;
 }

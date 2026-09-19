@@ -93,7 +93,9 @@ public class UserService : IUserService
                 ProjectId = p.ProjectId,
                 Module = p.Module,
                 CanView = p.CanView,
-                CanEdit = p.CanEdit
+                CanEdit = p.CanEdit,
+                CanUpdate = p.CanUpdate,
+                CanDelete = p.CanDelete
             }).ToList();
         return new UserAccessDto { IsAdmin = isAdmin, Permissions = perms };
     }
@@ -101,14 +103,7 @@ public class UserService : IUserService
     public async Task SetProjectPermissionAsync(UserProjectPermissionDto dto, long? actorId)
     {
         if (actorId.HasValue) await EnsureAdminActorAsync(actorId.Value);
-        await _repository.SetProjectPermissionAsync(new ProjectPermission
-        {
-            ProjectId = dto.ProjectId,
-            UserId = dto.UserId,
-            Module = dto.Module,
-            CanView = dto.CanView || dto.CanEdit,
-            CanEdit = dto.CanEdit
-        });
+        await _repository.SetProjectPermissionAsync(ToPermission(dto.UserId, dto));
         await _audit.LogAsync(actorId, "Permission", "ProjectPermission", dto.ProjectId,
             $"User {dto.UserId} module {dto.Module}");
     }
@@ -132,18 +127,13 @@ public class UserService : IUserService
         }
 
         var rows = (permissions ?? new())
-            .Where(p => p.CanView || p.CanEdit)
-            .Select(p => new ProjectPermission
-            {
-                UserId = userId,
-                ProjectId = p.ProjectId,
-                Module = p.Module,
-                CanView = p.CanView || p.CanEdit,
-                CanEdit = p.CanEdit
-            }).ToList();
+            .Where(HasAnyRight)
+            .Where(p => PermissionService.IsGlobalModule(p.Module) || (p.ProjectId.HasValue && p.ProjectId.Value > 0))
+            .Select(p => ToPermission(userId, p))
+            .ToList();
         await _repository.ReplaceProjectPermissionsAsync(userId, rows);
 
-        var keepProjects = rows.Select(r => r.ProjectId).Distinct().ToList();
+        var keepProjects = rows.Where(r => r.ProjectId.HasValue).Select(r => r.ProjectId!.Value).Distinct().ToList();
         foreach (var projectId in keepProjects)
             await _repository.AssignToProjectAsync(userId, projectId, "Member");
         await _repository.RemoveFromProjectsExceptAsync(userId, keepProjects);
@@ -156,6 +146,25 @@ public class UserService : IUserService
         var admin = roles.FirstOrDefault(r => r.Name == "Admin")
             ?? throw new InvalidOperationException("Admin role is missing.");
         return new List<long> { admin.Id };
+    }
+
+    private static bool HasAnyRight(UserProjectPermissionDto dto) =>
+        dto.CanView || dto.CanEdit || dto.CanUpdate || dto.CanDelete;
+
+    private static ProjectPermission ToPermission(long userId, UserProjectPermissionDto dto)
+    {
+        var write = dto.CanEdit || dto.CanUpdate || dto.CanDelete;
+        var global = PermissionService.IsGlobalModule(dto.Module);
+        return new ProjectPermission
+        {
+            UserId = userId,
+            ProjectId = global ? null : dto.ProjectId,
+            Module = dto.Module,
+            CanView = dto.CanView || write,
+            CanEdit = dto.CanEdit,
+            CanUpdate = dto.CanUpdate,
+            CanDelete = dto.CanDelete
+        };
     }
 
     private async Task EnsureAdminActorAsync(long actorId)

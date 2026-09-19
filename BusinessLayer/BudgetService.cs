@@ -70,7 +70,7 @@ public class BudgetService : IBudgetService
     public async Task<BudgetVersion> ReviseAsync(long budgetId, decimal totalAmount, string? remarks, long? userId, long? approverId)
     {
         var budget = await _repository.GetAsync(budgetId) ?? throw new InvalidOperationException("Budget not found");
-        if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, budget.ProjectId, "Budgets"))
+        if (userId.HasValue && !await _permissions.CanUpdateModuleAsync(userId.Value, budget.ProjectId, "Budgets"))
             throw new UnauthorizedAccessException("No permission.");
 
         var next = (budget.Versions.Count == 0 ? 0 : budget.Versions.Max(v => v.VersionNo)) + 1;
@@ -92,6 +92,9 @@ public class BudgetService : IBudgetService
 
     public async Task<CostCenter> CreateCostCenterAsync(CreateCostCenterRequest request, long? userId)
     {
+        var projectId = request.SubProjectId ?? request.ProjectId ?? 0;
+        if (userId.HasValue && projectId > 0)
+            await _permissions.EnsureModuleAsync(userId.Value, projectId, "Budgets", "edit");
         var cc = await _repository.AddCostCenterAsync(new CostCenter
         {
             ProjectId = request.SubProjectId ?? request.ProjectId,
@@ -110,6 +113,8 @@ public class BudgetService : IBudgetService
     {
         var cc = await _repository.GetCostCenterAsync(id);
         if (cc == null) return null;
+        if (userId.HasValue && cc.ProjectId.HasValue)
+            await _permissions.EnsureModuleAsync(userId.Value, cc.ProjectId.Value, "Budgets", "update");
         cc.ProjectId = request.SubProjectId ?? request.ProjectId;
         cc.Code = request.Code;
         cc.Name = request.Name;
@@ -121,6 +126,9 @@ public class BudgetService : IBudgetService
 
     public async Task DeleteCostCenterAsync(long id, long? userId)
     {
+        var cc = await _repository.GetCostCenterAsync(id);
+        if (userId.HasValue && cc?.ProjectId != null)
+            await _permissions.EnsureModuleAsync(userId.Value, cc.ProjectId.Value, "Budgets", "delete");
         await _repository.DeleteCostCenterAsync(id);
         await _audit.LogAsync(userId, "Delete", "CostCenter", id);
     }

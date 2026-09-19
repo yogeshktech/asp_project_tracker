@@ -58,15 +58,17 @@ public class TaskService : ITaskService
         var tasks = await _repository.GetTasksAsync(projectId);
         var isAdmin = await _permissions.IsAdminAsync(userId);
         var canEdit = isAdmin || await _permissions.CanEditModuleAsync(userId, projectId, "Tasks");
+        var canUpdate = isAdmin || await _permissions.CanUpdateModuleAsync(userId, projectId, "Tasks");
+        var canDelete = isAdmin || await _permissions.CanDeleteModuleAsync(userId, projectId, "Tasks");
         var ordered = tasks.OrderBy(t => t.Id).ToList();
         return ordered.Select((t, i) =>
         {
-            var dto = MapTask(t, userId, isAdmin, canEdit);
+            var dto = MapTask(t, userId, isAdmin, canEdit, canUpdate, canDelete);
             dto.DisplayCode = $"Task-{i + 1}";
             var subs = (t.SubTasks ?? Array.Empty<SubTask>()).OrderBy(s => s.Id).ToList();
             dto.SubTasks = subs.Select((s, j) =>
             {
-                var subDto = MapSubTask(s, userId, isAdmin, canEdit, t.AssignedTo);
+                var subDto = MapSubTask(s, userId, isAdmin, canEdit, canUpdate, canDelete, t.AssignedTo);
                 subDto.DisplayCode = $"{dto.DisplayCode}-Sub-{j + 1}";
                 return subDto;
             }).ToList();
@@ -74,10 +76,10 @@ public class TaskService : ITaskService
         }).ToList();
     }
 
-    private static TaskItemDto MapTask(ProjectTask t, long userId, bool isAdmin, bool canEdit)
+    private static TaskItemDto MapTask(ProjectTask t, long userId, bool isAdmin, bool canEdit, bool canUpdate, bool canDelete)
     {
-        var canDeleteTask = isAdmin || canEdit || t.AssignedTo == userId;
-        var canEditPercent = isAdmin || canEdit || t.AssignedTo == userId;
+        var canDeleteTask = isAdmin || canDelete || t.AssignedTo == userId;
+        var canEditPercent = isAdmin || canUpdate || canEdit || t.AssignedTo == userId;
         return new TaskItemDto
         {
             Id = t.Id,
@@ -94,12 +96,12 @@ public class TaskService : ITaskService
             CanDelete = canDeleteTask,
             CanEditPercent = canEditPercent,
             SubTasks = (t.SubTasks ?? Array.Empty<SubTask>())
-                .Select(s => MapSubTask(s, userId, isAdmin, canEdit, t.AssignedTo))
+                .Select(s => MapSubTask(s, userId, isAdmin, canEdit, canUpdate, canDelete, t.AssignedTo))
                 .ToList()
         };
     }
 
-    private static SubTaskItemDto MapSubTask(SubTask s, long userId, bool isAdmin, bool canEdit, long? parentAssignedTo) => new()
+    private static SubTaskItemDto MapSubTask(SubTask s, long userId, bool isAdmin, bool canEdit, bool canUpdate, bool canDelete, long? parentAssignedTo) => new()
     {
         Id = s.Id,
         TaskId = s.TaskId,
@@ -109,22 +111,23 @@ public class TaskService : ITaskService
         Status = s.Status,
         CompletionPercent = s.CompletionPercent,
         Remarks = s.Remarks,
-        CanDelete = isAdmin || canEdit || s.AssignedTo == userId || parentAssignedTo == userId,
-        CanEditPercent = isAdmin || canEdit || s.AssignedTo == userId || parentAssignedTo == userId
+        CanDelete = isAdmin || canDelete || s.AssignedTo == userId || parentAssignedTo == userId,
+        CanEditPercent = isAdmin || canUpdate || canEdit || s.AssignedTo == userId || parentAssignedTo == userId
     };
 
-    private static SubTaskItemDto MapSubTask(SubTask s) => MapSubTask(s, 0, false, false, null);
+    private static SubTaskItemDto MapSubTask(SubTask s) => MapSubTask(s, 0, false, false, false, false, null);
 
     private async Task EnsureCanManageTaskAsync(long userId, ProjectTask task)
     {
         if (await _permissions.IsAdminAsync(userId)) return;
         if (task.AssignedTo == userId) return;
-        if (await _permissions.CanEditModuleAsync(userId, task.ProjectId, "Tasks")) return;
+        if (await _permissions.CanDeleteModuleAsync(userId, task.ProjectId, "Tasks")) return;
         throw new UnauthorizedAccessException("You can only manage tasks assigned to you.");
     }
 
     public async Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, request.ProjectId, "Tasks", "edit");
         var task = await _repository.AddTaskAsync(new ProjectTask
         {
             ProjectId = request.ProjectId,
@@ -147,6 +150,7 @@ public class TaskService : ITaskService
     {
         var parent = await _repository.GetTaskAsync(request.TaskId)
             ?? throw new InvalidOperationException("Parent task not found.");
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, parent.ProjectId, "Tasks", "edit");
         var status = string.IsNullOrWhiteSpace(request.Status)
             ? "NotStarted"
             : request.Status.Replace(" ", "");
@@ -161,7 +165,7 @@ public class TaskService : ITaskService
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "SubTask", sub.Id);
-        var dto = MapSubTask(sub, userId ?? 0, false, false, parent.AssignedTo);
+        var dto = MapSubTask(sub, userId ?? 0, false, false, false, false, parent.AssignedTo);
         var projectTasks = await _repository.GetTasksAsync(parent.ProjectId);
         var taskNo = projectTasks.OrderBy(t => t.Id).Select((t, i) => (t.Id, No: i + 1)).First(x => x.Id == parent.Id).No;
         var subNo = projectTasks.First(t => t.Id == parent.Id).SubTasks.OrderBy(s => s.Id)
@@ -186,7 +190,7 @@ public class TaskService : ITaskService
         if (!await _permissions.IsAdminAsync(userId)
             && sub.AssignedTo != userId
             && parent.AssignedTo != userId
-            && !await _permissions.CanEditModuleAsync(userId, parent.ProjectId, "Tasks"))
+            && !await _permissions.CanDeleteModuleAsync(userId, parent.ProjectId, "Tasks"))
             throw new UnauthorizedAccessException("You can only delete sub-tasks assigned to you.");
         await _repository.DeleteSubTaskAsync(subTaskId);
         await _audit.LogAsync(userId, "Delete", "SubTask", subTaskId);
@@ -198,7 +202,7 @@ public class TaskService : ITaskService
         if (userId.HasValue && !await _permissions.CanViewProjectAsync(userId.Value, task.ProjectId))
             throw new UnauthorizedAccessException("No permission to update this project.");
 
-        var canEditModule = userId.HasValue && await _permissions.CanEditModuleAsync(userId.Value, task.ProjectId, "Tasks");
+        var canEditModule = userId.HasValue && await _permissions.CanUpdateModuleAsync(userId.Value, task.ProjectId, "Tasks");
         var isAdmin = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
         SubTask? sub = null;
         if (request.SubTaskId.HasValue)

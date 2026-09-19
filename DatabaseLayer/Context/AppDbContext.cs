@@ -90,6 +90,13 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(x => x.ReportedBy);
 
+        modelBuilder.Entity<ProjectPermission>()
+            .HasOne(x => x.Project)
+            .WithMany()
+            .HasForeignKey(x => x.ProjectId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Cascade);
+
         foreach (var entity in modelBuilder.Model.GetEntityTypes())
         {
             foreach (var property in entity.GetProperties())

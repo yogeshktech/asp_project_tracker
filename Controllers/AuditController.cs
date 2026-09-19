@@ -12,11 +12,18 @@ namespace project_tracker_madhu.Controllers;
 public class AuditController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public AuditController(AppDbContext db) => _db = db;
+    private readonly IPermissionService _permissions;
+    public AuditController(AppDbContext db, IPermissionService permissions)
+    {
+        _db = db;
+        _permissions = permissions;
+    }
 
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] string? entityName, [FromQuery] long? entityId, [FromQuery] int take = 100)
     {
+        var userId = UserContext.GetUserId(User)!.Value;
+        await _permissions.EnsureModuleAsync(userId, 0, "Audit", "view");
         var q = _db.AuditLogs.AsNoTracking().OrderByDescending(a => a.CreatedAt).AsQueryable();
         if (!string.IsNullOrWhiteSpace(entityName)) q = q.Where(a => a.EntityName == entityName);
         if (entityId.HasValue) q = q.Where(a => a.EntityId == entityId);

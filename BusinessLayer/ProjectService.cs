@@ -61,6 +61,7 @@ public class ProjectService : IProjectService
 
     public async Task<Resort> CreateResortAsync(CreateResortRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "edit");
         var resort = await _repository.AddResortAsync(new Resort
         {
             Name = request.Name,
@@ -75,6 +76,7 @@ public class ProjectService : IProjectService
 
     public async Task<Resort?> UpdateResortAsync(long id, UpdateResortRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "update");
         var resort = await _repository.GetResortAsync(id);
         if (resort == null) return null;
         resort.Name = request.Name;
@@ -89,6 +91,7 @@ public class ProjectService : IProjectService
 
     public async Task DeleteResortAsync(long id, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "delete");
         await _repository.DeleteResortAsync(id);
         await _audit.LogAsync(userId, "Delete", "Resort", id);
     }
@@ -231,7 +234,7 @@ public class ProjectService : IProjectService
         });
         if (!await _permissions.IsAdminAsync(userId))
         {
-            foreach (var module in PermissionService.Modules)
+            foreach (var module in PermissionService.ProjectModules)
             {
                 await _users.SetProjectPermissionAsync(new ProjectPermission
                 {
@@ -239,7 +242,9 @@ public class ProjectService : IProjectService
                     UserId = userId,
                     Module = module,
                     CanView = true,
-                    CanEdit = true
+                    CanEdit = true,
+                    CanUpdate = true,
+                    CanDelete = true
                 });
             }
         }
@@ -258,7 +263,7 @@ public class ProjectService : IProjectService
 
     public async Task<ProjectResponseDto?> UpdateAsync(long userId, long id, UpdateProjectDto dto)
     {
-        if (!await _permissions.CanEditModuleAsync(userId, id, "Projects")) return null;
+        if (!await _permissions.CanUpdateModuleAsync(userId, id, "Projects")) return null;
         var project = await _repository.GetProjectAsync(id);
         if (project == null) return null;
         ApplyDto(project, dto);
@@ -270,7 +275,7 @@ public class ProjectService : IProjectService
 
     public async Task DeleteAsync(long userId, long id)
     {
-        if (!await _permissions.CanEditModuleAsync(userId, id, "Projects"))
+        if (!await _permissions.CanDeleteModuleAsync(userId, id, "Projects"))
             throw new UnauthorizedAccessException("No permission to delete project.");
         await _repository.DeleteProjectAsync(id);
         await _audit.LogAsync(userId, "Delete", "Project", id);

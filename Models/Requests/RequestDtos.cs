@@ -134,11 +134,13 @@ public class AssignProjectUserRequest
 
 public class UserProjectPermissionDto
 {
-    public long ProjectId { get; set; }
+    public long? ProjectId { get; set; }
     public long UserId { get; set; }
     public string Module { get; set; } = string.Empty;
     public bool CanView { get; set; } = true;
     public bool CanEdit { get; set; }
+    public bool CanUpdate { get; set; }
+    public bool CanDelete { get; set; }
 }
 
 public class ReplaceUserAccessRequest

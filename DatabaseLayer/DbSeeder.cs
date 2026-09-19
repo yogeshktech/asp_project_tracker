@@ -351,11 +351,11 @@ public static class DbSeeder
 
         // Granular module rights (PM-03) — finance can view budgets but not edit BOQ prices on site project
         db.ProjectPermissions.AddRange(
-            new ProjectPermission { ProjectId = parentA.Id, UserId = finance.Id, Module = "Budgets", CanView = true, CanEdit = true },
-            new ProjectPermission { ProjectId = parentA.Id, UserId = finance.Id, Module = "Costs", CanView = true, CanEdit = true },
+            new ProjectPermission { ProjectId = parentA.Id, UserId = finance.Id, Module = "Budgets", CanView = true, CanEdit = true, CanUpdate = true, CanDelete = true },
+            new ProjectPermission { ProjectId = parentA.Id, UserId = finance.Id, Module = "Costs", CanView = true, CanEdit = true, CanUpdate = true, CanDelete = true },
             new ProjectPermission { ProjectId = parentA.Id, UserId = finance.Id, Module = "BOQ", CanView = true, CanEdit = false },
             new ProjectPermission { ProjectId = parentA.Id, UserId = site.Id, Module = "Tasks", CanView = true, CanEdit = false },
-            new ProjectPermission { ProjectId = parentA.Id, UserId = site.Id, Module = "Issues", CanView = true, CanEdit = true },
+            new ProjectPermission { ProjectId = parentA.Id, UserId = site.Id, Module = "Issues", CanView = true, CanEdit = true, CanUpdate = true, CanDelete = true },
             new ProjectPermission { ProjectId = parentA.Id, UserId = site.Id, Module = "Budgets", CanView = false, CanEdit = false },
             new ProjectPermission { ProjectId = parentA.Id, UserId = external.Id, Module = "Projects", CanView = true, CanEdit = false },
             new ProjectPermission { ProjectId = parentA.Id, UserId = external.Id, Module = "Budgets", CanView = false, CanEdit = false },
@@ -876,7 +876,7 @@ public static class DbSeeder
         db.VarianceExplanations.RemoveRange(db.VarianceExplanations.Where(x => projectIds.Contains(x.ProjectId)));
         db.Inventories.RemoveRange(db.Inventories.Where(x => projectIds.Contains(x.ProjectId)));
         db.ProjectCompletionReports.RemoveRange(db.ProjectCompletionReports.Where(x => projectIds.Contains(x.ProjectId)));
-        db.ProjectPermissions.RemoveRange(db.ProjectPermissions.Where(x => projectIds.Contains(x.ProjectId)));
+        db.ProjectPermissions.RemoveRange(db.ProjectPermissions.Where(x => x.ProjectId != null && projectIds.Contains(x.ProjectId.Value)));
         db.ProjectUsers.RemoveRange(db.ProjectUsers.Where(x => projectIds.Contains(x.ProjectId)));
         db.FileRecords.RemoveRange(db.FileRecords.Where(x => x.FilePath.StartsWith("/uploads/demo/")));
         db.AuditLogs.RemoveRange(db.AuditLogs.Where(x => x.Details != null && x.Details.Contains("GPLR") || x.Details != null && x.Details.Contains("PRJ-GPLR")));
@@ -951,7 +951,7 @@ public static class DbSeeder
 
     public static async Task EnsureUserBasedAccessAsync(AppDbContext db)
     {
-        var modules = new[] { "Projects", "Budgets", "Costs", "BOQ", "Tasks", "Issues", "Reports", "Closure" };
+        var modules = PermissionService.ProjectModules;
         var pmRole = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Name == "ProjectManager");
         if (pmRole == null) return;
 
@@ -974,7 +974,9 @@ public static class DbSeeder
                     ProjectId = row.Id,
                     Module = module,
                     CanView = true,
-                    CanEdit = true
+                    CanEdit = true,
+                    CanUpdate = true,
+                    CanDelete = true
                 });
             }
         }

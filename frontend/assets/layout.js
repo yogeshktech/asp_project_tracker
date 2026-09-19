@@ -28,7 +28,7 @@ const WT_NAV = [
 
 const WT_NAV_ACCESS = {
   'dashboard.html': '*',
-  'resorts.html': 'Projects',
+  'resorts.html': 'Resorts',
   'workflow.html': '*',
   'projects.html': 'Projects',
   'project-detail.html': 'Projects',
@@ -39,12 +39,12 @@ const WT_NAV_ACCESS = {
   'boq.html': 'BOQ',
   'budget.html': 'Budgets',
   'costs.html': 'Costs',
-  'items.html': 'BOQ',
+  'items.html': 'Module',
   'inventory.html': 'Closure',
   'users.html': 'admin',
   'roles.html': 'admin',
   'notifications.html': '*',
-  'audit-logs.html': 'admin',
+  'audit-logs.html': 'Audit',
   'reports.html': 'Reports',
   'settings.html': 'admin'
 };
@@ -55,17 +55,32 @@ function wtIsAdmin() {
 
 function wtCanViewModule(module) {
   if (wtIsAdmin()) return true;
-  if (!module || module === '*') {
-    const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
-    return perms.some(p => p.canView || p.CanView || p.canEdit || p.CanEdit);
-  }
   const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
-  return perms.some(p =>
-    String(p.module || p.Module) === module &&
-    (p.canView || p.CanView || p.canEdit || p.CanEdit));
+  const on = (p) => p.canView || p.CanView || p.canEdit || p.CanEdit || p.canUpdate || p.CanUpdate || p.canDelete || p.CanDelete;
+  if (!module || module === '*') return perms.some(on);
+  return perms.some(p => String(p.module || p.Module) === module && on(p));
+}
+
+function wtCan(module, right, projectId) {
+  if (wtIsAdmin()) return true;
+  const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
+  const keys = {
+    view: ['canView', 'CanView'],
+    edit: ['canEdit', 'CanEdit'],
+    update: ['canUpdate', 'CanUpdate'],
+    delete: ['canDelete', 'CanDelete']
+  }[right] || ['canView', 'CanView'];
+  return perms.some(p => {
+    if (String(p.module || p.Module) !== module) return false;
+    if (projectId && Number(p.projectId || p.ProjectId || 0) !== Number(projectId)) return false;
+    return keys.some(k => p[k]);
+  });
 }
 
 function wtPageAllowed(href) {
+  if (href === 'dashboard.html') return wtIsAdmin() || wtCanViewModule('*') || wtCanViewModule('Dashboard');
+  if (href === 'items.html') return wtCanViewModule('Module') || wtCanViewModule('BOQ');
+  if (href === 'resorts.html') return wtCanViewModule('Resorts') || wtCanViewModule('Projects');
   const need = WT_NAV_ACCESS[href];
   if (!need) return true;
   if (need === 'admin') return wtIsAdmin();

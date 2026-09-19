@@ -17,7 +17,7 @@ public class BOQController : ControllerBase
 
     [HttpGet("project/{projectId:long}")]
     public async Task<IActionResult> GetByProject(long projectId) =>
-        Ok(await _boqService.GetByProjectAsync(projectId));
+        Ok(await _boqService.GetByProjectAsync(UserId, projectId));
 
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)

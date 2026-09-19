@@ -192,13 +192,18 @@ CREATE TABLE project_users (
 
 CREATE TABLE project_permissions (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    project_id BIGINT REFERENCES projects(id) ON DELETE CASCADE,
     user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     module     VARCHAR(100) NOT NULL,
     can_view   BOOLEAN NOT NULL DEFAULT TRUE,
     can_edit   BOOLEAN NOT NULL DEFAULT FALSE,
-    UNIQUE (project_id, user_id, module)
+    can_update BOOLEAN NOT NULL DEFAULT FALSE,
+    can_delete BOOLEAN NOT NULL DEFAULT FALSE
 );
+CREATE UNIQUE INDEX ux_project_permissions_scoped
+    ON project_permissions (project_id, user_id, module) WHERE project_id IS NOT NULL;
+CREATE UNIQUE INDEX ux_project_permissions_global
+    ON project_permissions (user_id, module) WHERE project_id IS NULL;
 
 -- =============================================================================
 -- 04. Budget & Cost Center

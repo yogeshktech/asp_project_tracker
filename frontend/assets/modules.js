@@ -300,7 +300,52 @@
   }
 
   // ---------- USERS ----------
-  const ACCESS_MODULES = ['Projects', 'Budgets', 'Costs', 'BOQ', 'Tasks', 'Issues', 'Reports', 'Closure'];
+  const PERM_TABS = [
+    { id: 'Dashboard', label: 'Dashboard', global: true, rows: [{ key: 'Dashboard', name: 'Dashboard' }] },
+    { id: 'Resorts', label: 'Resort', global: true, rows: [{ key: 'Resorts', name: 'Resort master' }] },
+    { id: 'Projects', label: 'Project', global: false },
+    { id: 'Tasks', label: 'Tasks', global: false },
+    { id: 'BOQ', label: 'BOQ', global: false },
+    { id: 'Budgets', label: 'Budget', global: false },
+    { id: 'Costs', label: 'Costs', global: false },
+    { id: 'Issues', label: 'Issues', global: false },
+    { id: 'Reports', label: 'Reports', global: false },
+    { id: 'Closure', label: 'Closure', global: false },
+    { id: 'Audit', label: 'Audit', global: true, rows: [{ key: 'Audit', name: 'Audit logs' }] },
+    { id: 'Module', label: 'Module', global: true, rows: [{ key: 'Module', name: 'Item master' }] }
+  ];
+  const GLOBAL_PERM_MODULES = PERM_TABS.filter(t => t.global).map(t => t.id);
+  const PERM_RIGHTS = [
+    { id: 'view', label: 'View' },
+    { id: 'edit', label: 'Edit' },
+    { id: 'update', label: 'Update' },
+    { id: 'delete', label: 'Delete' }
+  ];
+
+  function permKey(projectId, module) {
+    return `${Number(projectId) || 0}|${module}`;
+  }
+
+  function permFlag(row, right) {
+    const map = {
+      view: ['canView', 'CanView'],
+      edit: ['canEdit', 'CanEdit'],
+      update: ['canUpdate', 'CanUpdate'],
+      delete: ['canDelete', 'CanDelete']
+    };
+    return (map[right] || []).some(k => row && row[k]);
+  }
+
+  function getPermState() {
+    if (!window._wtPerm) {
+      window._wtPerm = { tab: 'Projects', catalog: [], assigned: [], rights: {} };
+    }
+    return window._wtPerm;
+  }
+
+  function projectLabel(p) {
+    return `${p.code || p.name}${p.code && p.name && p.code !== p.name ? ' — ' + p.name : ''}`;
+  }
 
   async function pageUsers() {
     const el = root();
@@ -309,9 +354,9 @@
         `<div class="card"><p>Aapke paas user management ka access nahi hai. Admin se rights maange.</p></div>`;
       return;
     }
-    el.innerHTML = pageHead('Users & Access', 'Admin = full access. Other users = project + module checkboxes only.',
-      `<button class="btn primary" onclick="WTPages.openUserModal()"><i class="fa-solid fa-plus"></i> Add User</button>`)
-      + tableWrap(['ID', 'Name', 'Email', 'Access', 'Internal', 'Status', 'Actions'], 'usersBody');
+    el.innerHTML = pageHead('Users & Access', 'Admin = full access. Other users = selected projects + View / Edit / Update / Delete.',
+      `<button class="btn primary" onclick="WTPages.openUserModal()"><i class="fa-solid fa-plus"></i> New User</button>`)
+      + tableWrap(['ID', 'Name', 'Email', 'Access', 'Internal', 'Status', 'Permissions'], 'usersBody');
     await refreshUsers();
   }
 
@@ -329,24 +374,163 @@
           <td>${admin ? '<span class="badge blue">Admin</span>' : '<span class="badge gray">User</span>'}</td>
           <td>${u.isInternal ? 'Yes' : 'No'}</td>
           <td><span class="badge ${u.isActive ? 'green' : 'red'}">${u.isActive ? 'Active' : 'Inactive'}</span></td>
-          <td><button class="btn sm" onclick="WTPages.openUserModal(${u.id})"><i class="fa-solid fa-pen"></i></button></td>
+          <td><button class="btn sm" title="Permissions" onclick="WTPages.openUserModal(${u.id})"><i class="fa-solid fa-key"></i></button></td>
         </tr>`;
       }).join('') : emptyRow(7, 'No users');
     } catch (e) { body.innerHTML = errRow(7, e); }
   }
 
   function collectUserPermissions() {
-    const permMap = {};
-    document.querySelectorAll('.perm-view, .perm-edit').forEach(el => {
-      const key = `${el.dataset.project}|${el.dataset.module}`;
-      if (!permMap[key]) permMap[key] = { projectId: Number(el.dataset.project), module: el.dataset.module, canView: false, canEdit: false };
-      if (el.classList.contains('perm-view') && el.checked) permMap[key].canView = true;
-      if (el.classList.contains('perm-edit') && el.checked) {
-        permMap[key].canEdit = true;
-        permMap[key].canView = true;
-      }
+    const st = getPermState();
+    return Object.entries(st.rights).map(([key, r]) => {
+      if (!r || !(r.view || r.edit || r.update || r.delete)) return null;
+      const sep = key.indexOf('|');
+      const pid = Number(key.slice(0, sep));
+      const module = key.slice(sep + 1);
+      const global = GLOBAL_PERM_MODULES.includes(module);
+      return {
+        projectId: global ? null : pid,
+        module,
+        canView: !!(r.view || r.edit || r.update || r.delete),
+        canEdit: !!r.edit,
+        canUpdate: !!r.update,
+        canDelete: !!r.delete
+      };
+    }).filter(p => p && (GLOBAL_PERM_MODULES.includes(p.module) || p.projectId));
+  }
+
+  function renderPermChips() {
+    const st = getPermState();
+    const box = document.getElementById('permChips');
+    if (!box) return;
+    if (!st.assigned.length) {
+      box.innerHTML = '<span style="color:var(--text-muted);font-size:12px">50 projects me se sirf jinhe access dena hai, unhe Add project se chune.</span>';
+      return;
+    }
+    box.innerHTML = st.assigned.map(id => {
+      const p = st.catalog.find(x => Number(x.id) === Number(id));
+      const label = p ? projectLabel(p) : `Project #${id}`;
+      return `<span class="perm-chip">${esc(label)} <button type="button" onclick="WTPages.removeUserPermProject(${id})" title="Remove">×</button></span>`;
+    }).join('');
+  }
+
+  function renderPermTabs() {
+    const st = getPermState();
+    const box = document.getElementById('permTabs');
+    if (!box) return;
+    box.innerHTML = PERM_TABS.map(t =>
+      `<button type="button" class="perm-tab${st.tab === t.id ? ' active' : ''}" onclick="WTPages.switchUserPermTab('${t.id}')">${esc(t.label)}</button>`
+    ).join('');
+  }
+
+  function renderPermTable() {
+    const st = getPermState();
+    const box = document.getElementById('permTableWrap');
+    if (!box) return;
+    const tab = PERM_TABS.find(t => t.id === st.tab) || PERM_TABS[2];
+    let rows = [];
+    if (tab.global) {
+      rows = tab.rows.map(r => ({ projectId: 0, module: r.key, name: r.name }));
+    } else {
+      rows = st.assigned.map(id => {
+        const p = st.catalog.find(x => Number(x.id) === Number(id));
+        return { projectId: Number(id), module: tab.id, name: p ? projectLabel(p) : `Project #${id}` };
+      });
+    }
+    if (!rows.length) {
+      box.innerHTML = `<div style="padding:24px;color:var(--text-muted);text-align:center">Is tab ke liye pehle upar se 1 ya 2 project add karein.</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <table class="perm-table">
+        <thead>
+          <tr>
+            <th>Category</th>
+            ${PERM_RIGHTS.map(r => `<th class="center">${esc(r.label)}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => {
+            const key = permKey(row.projectId, row.module);
+            const cur = st.rights[key] || { view: false, edit: false, update: false, delete: false };
+            return `<tr>
+              <td>${esc(row.name)}</td>
+              ${PERM_RIGHTS.map(r => `<td class="center">
+                <input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-module="${row.module}" data-right="${r.id}" ${cur[r.id] ? 'checked' : ''} onchange="WTPages.onUserPermToggle(this)">
+              </td>`).join('')}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function refreshPermPanel() {
+    renderPermChips();
+    renderPermTabs();
+    renderPermTable();
+    fillPermProjectSelect();
+  }
+
+  function fillPermProjectSelect() {
+    const st = getPermState();
+    const sel = document.getElementById('permProjectSelect');
+    const q = (document.getElementById('permProjectSearch')?.value || '').trim().toLowerCase();
+    if (!sel) return;
+    const available = st.catalog.filter(p => !st.assigned.includes(Number(p.id)));
+    const filtered = q ? available.filter(p => projectLabel(p).toLowerCase().includes(q)) : available;
+    sel.innerHTML = `<option value="">${filtered.length ? 'Select project…' : 'No matching project'}</option>` +
+      filtered.slice(0, 80).map(p => `<option value="${p.id}">${esc(projectLabel(p))}</option>`).join('');
+  }
+
+  function switchUserPermTab(id) {
+    getPermState().tab = id;
+    renderPermTabs();
+    renderPermTable();
+  }
+
+  function addUserPermProject() {
+    const st = getPermState();
+    const sel = document.getElementById('permProjectSelect');
+    const id = Number(sel?.value || 0);
+    if (!id || st.assigned.includes(id)) return;
+    st.assigned.push(id);
+    const key = permKey(id, 'Projects');
+    if (!st.rights[key]) st.rights[key] = { view: true, edit: false, update: false, delete: false };
+    else st.rights[key].view = true;
+    const search = document.getElementById('permProjectSearch');
+    if (search) search.value = '';
+    refreshPermPanel();
+  }
+
+  function removeUserPermProject(id) {
+    const st = getPermState();
+    st.assigned = st.assigned.filter(x => Number(x) !== Number(id));
+    Object.keys(st.rights).forEach(key => {
+      if (key.startsWith(`${Number(id)}|`)) delete st.rights[key];
     });
-    return Object.values(permMap).filter(p => p.canView || p.canEdit);
+    refreshPermPanel();
+  }
+
+  function onUserPermToggle(el) {
+    const st = getPermState();
+    const pid = Number(el.dataset.pid || 0);
+    const module = el.dataset.module;
+    const right = el.dataset.right;
+    const key = permKey(pid, module);
+    if (!st.rights[key]) st.rights[key] = { view: false, edit: false, update: false, delete: false };
+    st.rights[key][right] = !!el.checked;
+    if (right !== 'view' && el.checked) st.rights[key].view = true;
+    if (right === 'view' && !el.checked) {
+      st.rights[key].edit = false;
+      st.rights[key].update = false;
+      st.rights[key].delete = false;
+    }
+    renderPermTable();
+  }
+
+  function toggleUserAdmin(on) {
+    const box = document.getElementById('userPermMatrix');
+    if (box) box.style.display = on ? 'none' : 'block';
   }
 
   async function openUserModal(id) {
@@ -361,32 +545,29 @@
       projects = await WisetrackAPI.getProjects();
       if (id) perms = await WisetrackAPI.getUserProjectPermissions(id).catch(() => []);
     } catch (_) { /* optional */ }
-    const permOn = (pid, mod, field) => (perms || []).some(p =>
-      Number(p.projectId || p.ProjectId) === Number(pid) &&
-      String(p.module || p.Module) === mod &&
-      (field === 'edit' ? (p.canEdit || p.CanEdit) : (p.canView || p.CanView)));
-    const permTable = projects.length ? `
-      <div class="field full" id="userPermMatrix" style="overflow:auto;max-height:360px;${isAdmin ? 'display:none' : ''}">
-        <label>Project × module access (View / Edit)</label>
-        <table class="table" style="font-size:11px">
-          <thead><tr><th>Project</th>${ACCESS_MODULES.map(m => `<th>${esc(m)}</th>`).join('')}</tr></thead>
-          <tbody>
-            ${projects.map(p => `<tr>
-              <td>${esc(p.code || p.name)}</td>
-              ${ACCESS_MODULES.map(m => `<td style="white-space:nowrap">
-                <label><input type="checkbox" class="perm-view" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'view') ? 'checked' : ''} onchange="if(this.checked===false){const e=this.parentElement.parentElement.querySelector('.perm-edit'); if(e) e.checked=false;}"> View</label>
-                <label><input type="checkbox" class="perm-edit" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'edit') ? 'checked' : ''} onchange="if(this.checked){const v=this.parentElement.parentElement.querySelector('.perm-view'); if(v) v.checked=true;}"> Edit</label>
-              </td>`).join('')}
-            </tr>`).join('')}
-          </tbody>
-        </table>
-        <small style="color:var(--text-muted)">Unchecked project + module is hidden. Admin checkbox above bypasses this matrix.</small>
-      </div>` : '<p class="field full">No projects yet — create a project first, then assign module rights.</p>';
-    openModal(id ? 'Edit User Access' : 'Create User', `
+
+    const rights = {};
+    const assigned = [];
+    (perms || []).forEach(p => {
+      const module = p.module || p.Module;
+      const pid = Number(p.projectId ?? p.ProjectId ?? 0);
+      const key = permKey(GLOBAL_PERM_MODULES.includes(module) ? 0 : pid, module);
+      rights[key] = {
+        view: permFlag(p, 'view'),
+        edit: permFlag(p, 'edit'),
+        update: permFlag(p, 'update'),
+        delete: permFlag(p, 'delete')
+      };
+      if (pid && !GLOBAL_PERM_MODULES.includes(module) && !assigned.includes(pid)) assigned.push(pid);
+    });
+    window._wtPerm = { tab: 'Projects', catalog: projects || [], assigned, rights };
+
+    openModal('User Permissions Manager', `
+      <p class="perm-manager-intro">Easily review and modify each user’s detailed access permissions across key system modules. Ensure every team member has the appropriate rights.</p>
       <form onsubmit="WTPages.saveUser(event, ${id || 'null'})">
         <div class="form-grid">
           <div class="field"><label>Full Name *</label><input id="uName" type="text" value="${esc(u.fullName)}" required></div>
-          <div class="field"><label>Email ${id ? '' : '*'}</label><input id="uEmail" type="email" value="${esc(u.email)}" ${id ? 'readonly' : 'required'}></div>
+          <div class="field perm-account"><label>User account</label><input id="uEmail" type="email" value="${esc(u.email)}" ${id ? 'readonly' : 'required'}></div>
           ${id ? '' : `<div class="field"><label>Password *</label><input id="uPass" type="password" value="Welcome@123" required></div>`}
           <div class="field"><label>Phone</label><input id="uPhone" type="text" value="${esc(u.phone || '')}"></div>
           <div class="field"><label>Internal</label><select id="uInternal"><option value="true" ${u.isInternal ? 'selected' : ''}>Yes</option><option value="false" ${!u.isInternal ? 'selected' : ''}>No</option></select></div>
@@ -394,18 +575,23 @@
           <div class="field full">
             <label class="check-list-item" style="display:flex;gap:8px;align-items:center">
               <input type="checkbox" id="uAdmin" ${isAdmin ? 'checked' : ''} onchange="WTPages.toggleUserAdmin(this.checked)">
-              <span><strong>Admin</strong> — full access to every project and module</span>
+              <span><strong>Admin</strong> — full access, no project picker needed</span>
             </label>
           </div>
-          ${permTable}
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save access</button></div>
-      </form>`);
-  }
-
-  function toggleUserAdmin(on) {
-    const box = document.getElementById('userPermMatrix');
-    if (box) box.style.display = on ? 'none' : 'block';
+        <div id="userPermMatrix" style="${isAdmin ? 'display:none' : ''}">
+          <div class="perm-project-bar">
+            <input id="permProjectSearch" type="search" placeholder="Search among all projects…" oninput="WTPages.fillPermProjectSelect()">
+            <select id="permProjectSelect"></select>
+            <button type="button" class="btn primary" onclick="WTPages.addUserPermProject()"><i class="fa-solid fa-plus"></i> Add project</button>
+          </div>
+          <div id="permChips" class="perm-chips"></div>
+          <div id="permTabs" class="perm-tabs"></div>
+          <div id="permTableWrap" class="perm-table-wrap"></div>
+        </div>
+        <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Apply</button></div>
+      </form>`, '', 'perm-manager');
+    refreshPermPanel();
   }
 
   async function saveUser(e, id) {
@@ -2977,7 +3163,7 @@
   window.WTPages = {
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
-    openUserModal, saveUser, toggleUserAdmin,
+    openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, fillPermProjectSelect,
     openPropertyModal, saveProperty, deleteProperty, openTypeModal, saveType, deleteType,
     addTeam,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,

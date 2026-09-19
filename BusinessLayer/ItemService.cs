@@ -30,11 +30,13 @@ public class ItemService : IItemService
 {
     private readonly IItemRepository _repository;
     private readonly IAuditService _audit;
+    private readonly IPermissionService _permissions;
 
-    public ItemService(IItemRepository repository, IAuditService audit)
+    public ItemService(IItemRepository repository, IAuditService audit, IPermissionService permissions)
     {
         _repository = repository;
         _audit = audit;
+        _permissions = permissions;
     }
 
     public Task<List<Item>> GetAllAsync() => _repository.GetAllAsync();
@@ -42,6 +44,7 @@ public class ItemService : IItemService
 
     public async Task<Item> CreateAsync(CreateItemRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", "edit");
         var item = await _repository.AddAsync(new Item
         {
             ItemCode = request.ItemCode,
@@ -61,6 +64,7 @@ public class ItemService : IItemService
 
     public async Task<Item?> UpdateAsync(long id, CreateItemRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", "update");
         var item = await _repository.GetAsync(id);
         if (item == null) return null;
         item.ItemCode = request.ItemCode;
@@ -79,14 +83,21 @@ public class ItemService : IItemService
 
     public async Task DeleteAsync(long id, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", "delete");
         await _repository.DeleteAsync(id);
         await _audit.LogAsync(userId, "Delete", "Item", id);
+    }
+
+    private async Task EnsureMasterAsync(long? userId, string right)
+    {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", right);
     }
 
     public Task<List<Brand>> GetBrandsAsync() => _repository.GetBrandsAsync();
 
     public async Task<Brand> CreateBrandAsync(string name, long? userId)
     {
+        await EnsureMasterAsync(userId, "edit");
         var brand = await _repository.AddBrandAsync(new Brand { Name = name, CreatedAt = DateTime.UtcNow });
         await _audit.LogAsync(userId, "Create", "Brand", brand.Id);
         return brand;
@@ -94,6 +105,7 @@ public class ItemService : IItemService
 
     public async Task<Brand?> UpdateBrandAsync(long id, string name, long? userId)
     {
+        await EnsureMasterAsync(userId, "update");
         var brand = await _repository.GetBrandAsync(id);
         if (brand == null) return null;
         brand.Name = name;
@@ -104,6 +116,7 @@ public class ItemService : IItemService
 
     public async Task DeleteBrandAsync(long id, long? userId)
     {
+        await EnsureMasterAsync(userId, "delete");
         await _repository.DeleteBrandAsync(id);
         await _audit.LogAsync(userId, "Delete", "Brand", id);
     }
@@ -112,6 +125,7 @@ public class ItemService : IItemService
 
     public async Task<Unit> CreateUnitAsync(string code, string name, long? userId)
     {
+        await EnsureMasterAsync(userId, "edit");
         var unit = await _repository.AddUnitAsync(new Unit { Code = code, Name = name });
         await _audit.LogAsync(userId, "Create", "Unit", unit.Id);
         return unit;
@@ -119,6 +133,7 @@ public class ItemService : IItemService
 
     public async Task<Unit?> UpdateUnitAsync(long id, string code, string name, long? userId)
     {
+        await EnsureMasterAsync(userId, "update");
         var unit = await _repository.GetUnitAsync(id);
         if (unit == null) return null;
         unit.Code = code;
@@ -130,6 +145,7 @@ public class ItemService : IItemService
 
     public async Task DeleteUnitAsync(long id, long? userId)
     {
+        await EnsureMasterAsync(userId, "delete");
         await _repository.DeleteUnitAsync(id);
         await _audit.LogAsync(userId, "Delete", "Unit", id);
     }
@@ -138,6 +154,7 @@ public class ItemService : IItemService
 
     public async Task<ItemCategory> CreateCategoryAsync(string name, long? parentId, long? userId)
     {
+        await EnsureMasterAsync(userId, "edit");
         var cat = await _repository.AddCategoryAsync(new ItemCategory { Name = name, ParentId = parentId });
         await _audit.LogAsync(userId, "Create", "ItemCategory", cat.Id);
         return cat;
@@ -145,6 +162,7 @@ public class ItemService : IItemService
 
     public async Task<ItemCategory?> UpdateCategoryAsync(long id, UpdateCategoryRequest request, long? userId)
     {
+        await EnsureMasterAsync(userId, "update");
         var cat = await _repository.GetCategoryAsync(id);
         if (cat == null) return null;
         cat.Name = request.Name;
@@ -156,6 +174,7 @@ public class ItemService : IItemService
 
     public async Task DeleteCategoryAsync(long id, long? userId)
     {
+        await EnsureMasterAsync(userId, "delete");
         await _repository.DeleteCategoryAsync(id);
         await _audit.LogAsync(userId, "Delete", "ItemCategory", id);
     }

@@ -9,7 +9,7 @@ namespace project_tracker_madhu.BusinessLayer.BoqModule;
 
 public interface IBOQService
 {
-    Task<List<Boq>> GetByProjectAsync(long projectId);
+    Task<List<Boq>> GetByProjectAsync(long userId, long projectId);
     Task<Boq?> GetAsync(long id);
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
     Task<Boq> CreateFromMasterAsync(long projectId, List<long> itemIds, long? userId);
@@ -20,19 +20,26 @@ public class BOQService : IBOQService
     private readonly IBOQRepository _repository;
     private readonly IItemRepository _items;
     private readonly IAuditService _audit;
+    private readonly IPermissionService _permissions;
 
-    public BOQService(IBOQRepository repository, IItemRepository items, IAuditService audit)
+    public BOQService(IBOQRepository repository, IItemRepository items, IAuditService audit, IPermissionService permissions)
     {
         _repository = repository;
         _items = items;
         _audit = audit;
+        _permissions = permissions;
     }
 
-    public Task<List<Boq>> GetByProjectAsync(long projectId) => _repository.GetByProjectAsync(projectId);
+    public async Task<List<Boq>> GetByProjectAsync(long userId, long projectId)
+    {
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "BOQ")) return new();
+        return await _repository.GetByProjectAsync(projectId);
+    }
     public Task<Boq?> GetAsync(long id) => _repository.GetAsync(id);
 
     public async Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, dto.ProjectId, "BOQ", dto.Commit ? "edit" : "view");
         var result = new BOQValidationResultDto { TotalRows = dto.Lines.Count };
         var seenCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -112,6 +119,7 @@ public class BOQService : IBOQService
 
     public async Task<Boq> CreateFromMasterAsync(long projectId, List<long> itemIds, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, projectId, "BOQ", "edit");
         var boq = await _repository.AddAsync(new Boq
         {
             ProjectId = projectId,

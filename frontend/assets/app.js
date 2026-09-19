@@ -29,7 +29,7 @@ function showToast(message, type = 'success') {
 }
 
 // Modal Management
-function openModal(title, contentHtml, footerHtml = '') {
+function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
   document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
   let modal = document.getElementById('modal');
   if (!modal) {
@@ -48,6 +48,8 @@ function openModal(title, contentHtml, footerHtml = '') {
     `;
     document.body.appendChild(modal);
   }
+  const box = modal.querySelector('.modalbox');
+  if (box) box.className = 'modalbox' + (boxClass ? ' ' + boxClass : '');
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = contentHtml;
   

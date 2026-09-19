@@ -38,6 +38,8 @@ public class ReportService : IReportService
 
     public async Task<Report> CreateAsync(CreateReportRequest request, long? userId)
     {
+        if (userId.HasValue && request.ProjectId.HasValue)
+            await _permissions.EnsureModuleAsync(userId.Value, request.ProjectId.Value, "Reports", "edit");
         var internalEmails = await _repository.GetInternalUserEmailsAsync(request.RecipientUserIds);
         if (request.RecipientUserIds.Count > 0 && internalEmails.Count != request.RecipientUserIds.Distinct().Count())
             throw new InvalidOperationException("Reports can only be sent to internal team members.");

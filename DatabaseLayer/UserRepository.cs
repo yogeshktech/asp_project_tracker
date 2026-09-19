@@ -66,6 +66,8 @@ public class UserRepository : IUserRepository
         {
             existing.CanView = permission.CanView;
             existing.CanEdit = permission.CanEdit;
+            existing.CanUpdate = permission.CanUpdate;
+            existing.CanDelete = permission.CanDelete;
         }
         await _db.SaveChangesAsync();
     }
@@ -77,7 +79,7 @@ public class UserRepository : IUserRepository
         foreach (var p in permissions)
         {
             p.UserId = userId;
-            if (p.CanView || p.CanEdit)
+            if (p.CanView || p.CanEdit || p.CanUpdate || p.CanDelete)
                 _db.ProjectPermissions.Add(p);
         }
         await _db.SaveChangesAsync();
