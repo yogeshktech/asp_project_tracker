@@ -7,6 +7,7 @@ public interface IPermissionService
 {
     Task<bool> IsAdminAsync(long userId);
     Task<bool> CanViewProjectAsync(long userId, long projectId);
+    Task<bool> CanViewModuleAsync(long userId, long projectId, string module);
     Task<bool> CanEditModuleAsync(long userId, long projectId, string module);
     Task<List<long>> GetAccessibleProjectIdsAsync(long userId);
     Task<bool> IsProjectManagerAsync(long userId, long projectId);
@@ -14,6 +15,11 @@ public interface IPermissionService
 
 public class PermissionService : IPermissionService
 {
+    public static readonly string[] Modules =
+    {
+        "Projects", "Budgets", "Costs", "BOQ", "Tasks", "Issues", "Reports", "Closure"
+    };
+
     private readonly AppDbContext _db;
     public PermissionService(AppDbContext db) => _db = db;
 
@@ -27,25 +33,25 @@ public class PermissionService : IPermissionService
     public async Task<bool> CanViewProjectAsync(long userId, long projectId)
     {
         if (await IsAdminAsync(userId)) return true;
-        if (await _db.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == userId)) return true;
-        if (await _db.ProjectUsers.AnyAsync(pu => pu.ProjectId == projectId && pu.UserId == userId)) return true;
+        var chain = await GetProjectAndAncestorIdsAsync(projectId);
         return await _db.ProjectPermissions.AnyAsync(p =>
-            p.ProjectId == projectId && p.UserId == userId && p.CanView);
+            p.UserId == userId && chain.Contains(p.ProjectId) && p.CanView);
+    }
+
+    public async Task<bool> CanViewModuleAsync(long userId, long projectId, string module)
+    {
+        if (await IsAdminAsync(userId)) return true;
+        var chain = await GetProjectAndAncestorIdsAsync(projectId);
+        return await _db.ProjectPermissions.AnyAsync(p =>
+            p.UserId == userId && chain.Contains(p.ProjectId) && p.Module == module && p.CanView);
     }
 
     public async Task<bool> CanEditModuleAsync(long userId, long projectId, string module)
     {
         if (await IsAdminAsync(userId)) return true;
-        if (await _db.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == userId)) return true;
-        // Creators / managers on the team can edit even if OwnerId was not set at create time
-        if (await _db.ProjectUsers.AnyAsync(pu =>
-                pu.ProjectId == projectId && pu.UserId == userId &&
-                pu.TeamRole != null &&
-                (pu.TeamRole == "Creator" ||
-                 pu.TeamRole.ToLower().Contains("manager"))))
-            return true;
+        var chain = await GetProjectAndAncestorIdsAsync(projectId);
         return await _db.ProjectPermissions.AnyAsync(p =>
-            p.ProjectId == projectId && p.UserId == userId && p.Module == module && p.CanEdit);
+            p.UserId == userId && chain.Contains(p.ProjectId) && p.Module == module && p.CanEdit);
     }
 
     public async Task<List<long>> GetAccessibleProjectIdsAsync(long userId)
@@ -53,18 +59,47 @@ public class PermissionService : IPermissionService
         if (await IsAdminAsync(userId))
             return await _db.Projects.Select(p => p.Id).ToListAsync();
 
-        var fromTeam = _db.ProjectUsers.Where(pu => pu.UserId == userId).Select(pu => pu.ProjectId);
-        var fromPerm = _db.ProjectPermissions.Where(p => p.UserId == userId && p.CanView).Select(p => p.ProjectId);
-        var owned = _db.Projects.Where(p => p.OwnerId == userId).Select(p => p.Id);
-        return await fromTeam.Union(fromPerm).Union(owned).Distinct().ToListAsync();
+        var permitted = await _db.ProjectPermissions
+            .Where(p => p.UserId == userId && p.CanView)
+            .Select(p => p.ProjectId)
+            .Distinct()
+            .ToListAsync();
+        if (permitted.Count == 0) return new();
+
+        var all = await _db.Projects.AsNoTracking().Select(p => new { p.Id, p.ParentProjectId }).ToListAsync();
+        var allowed = new HashSet<long>(permitted);
+        bool grew;
+        do
+        {
+            grew = false;
+            foreach (var p in all)
+            {
+                if (p.ParentProjectId.HasValue && allowed.Contains(p.ParentProjectId.Value) && allowed.Add(p.Id))
+                    grew = true;
+            }
+        } while (grew);
+
+        return allowed.ToList();
     }
 
-    public async Task<bool> IsProjectManagerAsync(long userId, long projectId)
+    public Task<bool> IsProjectManagerAsync(long userId, long projectId) =>
+        CanEditModuleAsync(userId, projectId, "Closure");
+
+    private async Task<List<long>> GetProjectAndAncestorIdsAsync(long projectId)
     {
-        if (await IsAdminAsync(userId)) return true;
-        if (await _db.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == userId)) return true;
-        return await _db.ProjectUsers.AnyAsync(pu =>
-            pu.ProjectId == projectId && pu.UserId == userId &&
-            pu.TeamRole != null && pu.TeamRole.ToLower().Contains("manager"));
+        var ids = new List<long>();
+        long? cursor = projectId;
+        var guard = 0;
+        while (cursor.HasValue && guard++ < 50)
+        {
+            var row = await _db.Projects.AsNoTracking()
+                .Where(p => p.Id == cursor.Value)
+                .Select(p => new { p.Id, p.ParentProjectId })
+                .FirstOrDefaultAsync();
+            if (row == null) break;
+            ids.Add(row.Id);
+            cursor = row.ParentProjectId;
+        }
+        return ids;
     }
 }

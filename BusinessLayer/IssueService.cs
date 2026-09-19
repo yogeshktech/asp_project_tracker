@@ -40,7 +40,7 @@ public class IssueService : IIssueService
 
     public async Task<List<Issue>> GetByProjectAsync(long userId, long projectId)
     {
-        if (!await _permissions.CanViewProjectAsync(userId, projectId)) return new();
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Issues")) return new();
         return await _repository.GetByProjectAsync(projectId);
     }
 
@@ -53,7 +53,7 @@ public class IssueService : IIssueService
 
     public async Task<Issue> CreateAsync(CreateIssueRequest request, long? userId)
     {
-        if (userId.HasValue && !await _permissions.CanViewProjectAsync(userId.Value, request.ProjectId))
+        if (userId.HasValue && !await _permissions.CanViewModuleAsync(userId.Value, request.ProjectId, "Issues"))
             throw new UnauthorizedAccessException("No permission to log issues on this project.");
 
         var issue = await _repository.AddAsync(new Issue

@@ -51,8 +51,10 @@ public class CreateUserRequest
     public string FullName { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public bool IsInternal { get; set; } = true;
+    public bool IsAdmin { get; set; }
     public List<long> RoleIds { get; set; } = new();
     public List<long> ProjectIds { get; set; } = new();
+    public List<UserProjectPermissionDto> Permissions { get; set; } = new();
 }
 
 public class UpdateUserRequest
@@ -61,6 +63,7 @@ public class UpdateUserRequest
     public string? Phone { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsInternal { get; set; } = true;
+    public bool IsAdmin { get; set; }
     public List<long> RoleIds { get; set; } = new();
 }
 
@@ -136,6 +139,18 @@ public class UserProjectPermissionDto
     public string Module { get; set; } = string.Empty;
     public bool CanView { get; set; } = true;
     public bool CanEdit { get; set; }
+}
+
+public class ReplaceUserAccessRequest
+{
+    public bool IsAdmin { get; set; }
+    public List<UserProjectPermissionDto> Permissions { get; set; } = new();
+}
+
+public class UserAccessDto
+{
+    public bool IsAdmin { get; set; }
+    public List<UserProjectPermissionDto> Permissions { get; set; } = new();
 }
 
 public class CreateBudgetRequest

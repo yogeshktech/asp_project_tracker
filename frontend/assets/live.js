@@ -13,18 +13,30 @@ function requireAuth() {
   return true;
 }
 
-function applyLoggedInUser() {
+async function applyLoggedInUser() {
   const name = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
-  const roles = JSON.parse(localStorage.getItem('WISETRACK_USER_ROLES') || '[]');
+  try {
+    if (typeof WisetrackAPI !== 'undefined' && WisetrackAPI.getMyAccess) {
+      const access = await WisetrackAPI.getMyAccess();
+      localStorage.setItem('WISETRACK_IS_ADMIN', access.isAdmin ? 'true' : 'false');
+      localStorage.setItem('WISETRACK_PERMISSIONS', JSON.stringify(access.permissions || []));
+    }
+  } catch (_) { /* keep cached flags */ }
   const initials = name.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
   document.querySelectorAll('.user-name').forEach(el => { el.textContent = name; });
   document.querySelectorAll('.avatar').forEach(el => { el.textContent = initials; });
-  document.querySelectorAll('.current-role-label').forEach(el => {
-    el.textContent = roles[0] || localStorage.getItem('WISETRACK_ROLE') || 'User';
-  });
+  const accessLabel = (typeof wtIsAdmin === 'function' && wtIsAdmin()) ? 'Admin' : 'User';
+  document.querySelectorAll('.current-role-label').forEach(el => { el.textContent = accessLabel; });
   document.querySelectorAll('a[href="login.html"]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); WisetrackAPI.logout(); };
   });
+  if (typeof wtBuildSidebar === 'function') {
+    const side = document.querySelector('aside.side');
+    if (side) side.innerHTML = wtBuildSidebar();
+    document.querySelectorAll('.current-role-label').forEach(el => { el.textContent = accessLabel; });
+    document.querySelectorAll('.user-name').forEach(el => { el.textContent = name; });
+    document.querySelectorAll('.avatar').forEach(el => { el.textContent = initials; });
+  }
 }
 
 async function fillResortSelector() {

@@ -137,28 +137,7 @@
 
   // ---------- ROLES & PERMISSIONS ----------
   async function pageRoles() {
-    const el = root();
-    el.innerHTML = pageHead('Roles & Permissions', 'Full CRUD for dynamic roles and permission catalog',
-      `<button class="btn" onclick="WTPages.openPermissionModal()"><i class="fa-solid fa-key"></i> New Permission</button>
-       <button class="btn primary" onclick="WTPages.openRoleModal()"><i class="fa-solid fa-plus"></i> New Role</button>`)
-      + `<div class="tabs" style="margin-bottom:16px">
-          <a class="tab-item active" href="#rolesTab" onclick="WTPages.showRoleTab('roles',this)">Roles</a>
-          <a class="tab-item" href="#permTab" onclick="WTPages.showRoleTab('perms',this)">Permissions</a>
-          <a class="tab-item" href="#assignTab" onclick="WTPages.showRoleTab('assign',this)">Assign to User</a>
-        </div>
-        <div id="rolesTab">${tableWrap(['ID', 'Name', 'Description', 'Permissions', 'Actions'], 'rolesBody')}</div>
-        <div id="permTab" style="display:none">${tableWrap(['ID', 'Code', 'Name', 'Module', 'Actions'], 'permsBody')}</div>
-        <div id="assignTab" style="display:none" class="card">
-          <div class="form-grid">
-            <div class="field"><label>User</label><select id="assignUserId"></select></div>
-            <div class="field full"><label>Roles</label><div id="assignRoleChecks"></div></div>
-          </div>
-          <button class="btn primary" onclick="WTPages.saveUserRoles()"><i class="fa-solid fa-save"></i> Save User Roles</button>
-        </div>`;
-
-    await refreshRoles();
-    await refreshPermissions();
-    await prepareAssignTab();
+    location.href = 'users.html';
   }
 
   async function refreshRoles() {
@@ -321,11 +300,18 @@
   }
 
   // ---------- USERS ----------
+  const ACCESS_MODULES = ['Projects', 'Budgets', 'Costs', 'BOQ', 'Tasks', 'Issues', 'Reports', 'Closure'];
+
   async function pageUsers() {
     const el = root();
-    el.innerHTML = pageHead('Users', 'Create users, update profiles, assign roles',
+    if (typeof wtIsAdmin === 'function' && !wtIsAdmin()) {
+      el.innerHTML = pageHead('Users & Access', 'Only Admin can manage users') +
+        `<div class="card"><p>Aapke paas user management ka access nahi hai. Admin se rights maange.</p></div>`;
+      return;
+    }
+    el.innerHTML = pageHead('Users & Access', 'Admin = full access. Other users = project + module checkboxes only.',
       `<button class="btn primary" onclick="WTPages.openUserModal()"><i class="fa-solid fa-plus"></i> Add User</button>`)
-      + tableWrap(['ID', 'Name', 'Email', 'Roles', 'Internal', 'Status', 'Actions'], 'usersBody');
+      + tableWrap(['ID', 'Name', 'Email', 'Access', 'Internal', 'Status', 'Actions'], 'usersBody');
     await refreshUsers();
   }
 
@@ -333,31 +319,42 @@
     const body = $('#usersBody');
     try {
       const users = await WisetrackAPI.getUsers();
-      body.innerHTML = users.length ? users.map(u => `
+      body.innerHTML = users.length ? users.map(u => {
+        const admin = u.isAdmin || (u.roles || []).includes('Admin');
+        return `
         <tr>
           <td>${u.id}</td>
           <td><strong>${esc(u.fullName)}</strong></td>
           <td>${esc(u.email)}</td>
-          <td>${esc((u.roles || []).join(', ') || '—')}</td>
+          <td>${admin ? '<span class="badge blue">Admin</span>' : '<span class="badge gray">User</span>'}</td>
           <td>${u.isInternal ? 'Yes' : 'No'}</td>
           <td><span class="badge ${u.isActive ? 'green' : 'red'}">${u.isActive ? 'Active' : 'Inactive'}</span></td>
           <td><button class="btn sm" onclick="WTPages.openUserModal(${u.id})"><i class="fa-solid fa-pen"></i></button></td>
-        </tr>`).join('') : emptyRow(7, 'No users');
+        </tr>`;
+      }).join('') : emptyRow(7, 'No users');
     } catch (e) { body.innerHTML = errRow(7, e); }
   }
 
+  function collectUserPermissions() {
+    const permMap = {};
+    document.querySelectorAll('.perm-view, .perm-edit').forEach(el => {
+      const key = `${el.dataset.project}|${el.dataset.module}`;
+      if (!permMap[key]) permMap[key] = { projectId: Number(el.dataset.project), module: el.dataset.module, canView: false, canEdit: false };
+      if (el.classList.contains('perm-view') && el.checked) permMap[key].canView = true;
+      if (el.classList.contains('perm-edit') && el.checked) {
+        permMap[key].canEdit = true;
+        permMap[key].canView = true;
+      }
+    });
+    return Object.values(permMap).filter(p => p.canView || p.canEdit);
+  }
+
   async function openUserModal(id) {
-    let u = { fullName: '', email: '', phone: '', isActive: true, isInternal: true, roles: [] };
-    let roles = [];
+    let u = { fullName: '', email: '', phone: '', isActive: true, isInternal: true, roles: [], isAdmin: false };
     try {
-      roles = await WisetrackAPI.getRoles();
       if (id) u = await WisetrackAPI.getUser(id);
     } catch (e) { showToast(e.message, 'danger'); return; }
-    const roleNames = new Set(u.roles || []);
-    const checks = roles.map(r =>
-      `<label class="check-list-item"><input type="checkbox" class="user-role" value="${r.id}" ${roleNames.has(r.name) ? 'checked' : ''}> <span class="perm-name">${esc(r.name)}</span></label>`
-    ).join('');
-    const modules = ['Projects', 'Budgets', 'Costs', 'BOQ', 'Tasks', 'Issues', 'Reports', 'Closure'];
+    const isAdmin = !!(u.isAdmin || (u.roles || []).includes('Admin'));
     let projects = [];
     let perms = [];
     try {
@@ -369,23 +366,23 @@
       String(p.module || p.Module) === mod &&
       (field === 'edit' ? (p.canEdit || p.CanEdit) : (p.canView || p.CanView)));
     const permTable = projects.length ? `
-      <div class="field full" style="overflow:auto">
-        <label>Project &amp; module rights (View / Edit) — PM-03</label>
+      <div class="field full" id="userPermMatrix" style="overflow:auto;max-height:360px;${isAdmin ? 'display:none' : ''}">
+        <label>Project × module access (View / Edit)</label>
         <table class="table" style="font-size:11px">
-          <thead><tr><th>Project</th>${modules.map(m => `<th>${esc(m)}</th>`).join('')}</tr></thead>
+          <thead><tr><th>Project</th>${ACCESS_MODULES.map(m => `<th>${esc(m)}</th>`).join('')}</tr></thead>
           <tbody>
             ${projects.map(p => `<tr>
               <td>${esc(p.code || p.name)}</td>
-              ${modules.map(m => `<td style="white-space:nowrap">
-                <label><input type="checkbox" class="perm-view" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'view') ? 'checked' : ''}> V</label>
-                <label><input type="checkbox" class="perm-edit" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'edit') ? 'checked' : ''}> E</label>
+              ${ACCESS_MODULES.map(m => `<td style="white-space:nowrap">
+                <label><input type="checkbox" class="perm-view" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'view') ? 'checked' : ''} onchange="if(this.checked===false){const e=this.parentElement.parentElement.querySelector('.perm-edit'); if(e) e.checked=false;}"> View</label>
+                <label><input type="checkbox" class="perm-edit" data-project="${p.id}" data-module="${m}" ${permOn(p.id, m, 'edit') ? 'checked' : ''} onchange="if(this.checked){const v=this.parentElement.parentElement.querySelector('.perm-view'); if(v) v.checked=true;}"> Edit</label>
               </td>`).join('')}
             </tr>`).join('')}
           </tbody>
         </table>
-        <small style="color:var(--text-muted)">Unchecked projects stay hidden. External users should only get View on authorized projects.</small>
-      </div>` : '';
-    openModal(id ? 'Edit User' : 'Create User', `
+        <small style="color:var(--text-muted)">Unchecked project + module is hidden. Admin checkbox above bypasses this matrix.</small>
+      </div>` : '<p class="field full">No projects yet — create a project first, then assign module rights.</p>';
+    openModal(id ? 'Edit User Access' : 'Create User', `
       <form onsubmit="WTPages.saveUser(event, ${id || 'null'})">
         <div class="form-grid">
           <div class="field"><label>Full Name *</label><input id="uName" type="text" value="${esc(u.fullName)}" required></div>
@@ -394,27 +391,27 @@
           <div class="field"><label>Phone</label><input id="uPhone" type="text" value="${esc(u.phone || '')}"></div>
           <div class="field"><label>Internal</label><select id="uInternal"><option value="true" ${u.isInternal ? 'selected' : ''}>Yes</option><option value="false" ${!u.isInternal ? 'selected' : ''}>No</option></select></div>
           ${id ? `<div class="field"><label>Active</label><select id="uActive"><option value="true" ${u.isActive ? 'selected' : ''}>Active</option><option value="false" ${!u.isActive ? 'selected' : ''}>Inactive</option></select></div>` : ''}
-          <div class="field full"><label>Roles</label><div class="check-list">${checks}</div></div>
+          <div class="field full">
+            <label class="check-list-item" style="display:flex;gap:8px;align-items:center">
+              <input type="checkbox" id="uAdmin" ${isAdmin ? 'checked' : ''} onchange="WTPages.toggleUserAdmin(this.checked)">
+              <span><strong>Admin</strong> — full access to every project and module</span>
+            </label>
+          </div>
           ${permTable}
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
+        <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save access</button></div>
       </form>`);
+  }
+
+  function toggleUserAdmin(on) {
+    const box = document.getElementById('userPermMatrix');
+    if (box) box.style.display = on ? 'none' : 'block';
   }
 
   async function saveUser(e, id) {
     e.preventDefault();
-    const roleIds = [...document.querySelectorAll('.user-role:checked')].map(x => Number(x.value));
-    const permRows = [...document.querySelectorAll('.perm-view, .perm-edit')];
-    const permMap = {};
-    permRows.forEach(el => {
-      const key = `${el.dataset.project}|${el.dataset.module}`;
-      if (!permMap[key]) permMap[key] = { projectId: Number(el.dataset.project), module: el.dataset.module, canView: false, canEdit: false };
-      if (el.classList.contains('perm-view') && el.checked) permMap[key].canView = true;
-      if (el.classList.contains('perm-edit') && el.checked) {
-        permMap[key].canEdit = true;
-        permMap[key].canView = true;
-      }
-    });
+    const isAdmin = !!(document.getElementById('uAdmin')?.checked);
+    const permissions = isAdmin ? [] : collectUserPermissions();
     try {
       let userId = id;
       if (id) {
@@ -423,7 +420,7 @@
           phone: $('#uPhone').value.trim(),
           isActive: $('#uActive').value === 'true',
           isInternal: $('#uInternal').value === 'true',
-          roleIds
+          isAdmin
         });
       } else {
         const created = await WisetrackAPI.createUser({
@@ -432,24 +429,15 @@
           password: $('#uPass').value,
           phone: $('#uPhone').value.trim(),
           isInternal: $('#uInternal').value === 'true',
-          roleIds,
-          projectIds: Object.values(permMap).filter(p => p.canView).map(p => p.projectId)
+          isAdmin,
+          permissions
         });
         userId = created.id || created.Id;
       }
       if (userId) {
-        for (const p of Object.values(permMap)) {
-          if (!p.canView && !p.canEdit) continue;
-          await WisetrackAPI.setProjectPermission({
-            userId,
-            projectId: p.projectId,
-            module: p.module,
-            canView: p.canView,
-            canEdit: p.canEdit
-          });
-        }
+        await WisetrackAPI.replaceUserAccess(userId, { isAdmin, permissions });
       }
-      closeModal(); showToast('User saved'); await pageUsers();
+      closeModal(); showToast(isAdmin ? 'Admin saved — full access' : 'User access saved'); await pageUsers();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2687,7 +2675,7 @@
         <h3 class="card-title">Master lifecycle flowchart (run the app in this order)</h3>
         <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 8px;">Click any box to open that module.</p>
         <div class="flow-rail">
-          <a class="flow-node" href="users.html"><div class="fn" style="background:#1d4ed8">1</div><div class="ft">Users & Roles</div><div class="fs">PM-02 / PM-03</div></a>
+          <a class="flow-node" href="users.html"><div class="fn" style="background:#1d4ed8">1</div><div class="ft">Users & Access</div><div class="fs">Admin / user checkboxes</div></a>
           <span class="flow-arrow">➜</span>
           <a class="flow-node" href="project-detail.html"><div class="fn" style="background:#6d28d9">2</div><div class="ft">Team Assign</div><div class="fs">PM-02 / PM-04</div></a>
           <span class="flow-arrow">➜</span>
@@ -2938,10 +2926,17 @@
     try {
       if (typeof requireAuth === 'function' && !requireAuth()) return;
       if (typeof wtApplyLayout === 'function') wtApplyLayout();
-      if (typeof applyLoggedInUser === 'function') applyLoggedInUser();
+      if (typeof applyLoggedInUser === 'function') await applyLoggedInUser();
       if (typeof fillResortSelector === 'function') await fillResortSelector();
 
       const page = (location.pathname.split('/').pop() || '').toLowerCase();
+      if (typeof wtPageAllowed === 'function' && page && !wtPageAllowed(page) && page !== 'login.html') {
+        root().innerHTML = `<div class="card" style="padding:24px">
+          <h2 style="margin:0 0 8px">Access denied</h2>
+          <p style="margin:0">Is module ke liye aapke user par checkbox nahi hai. Admin se project × module rights assign karwayein.</p>
+        </div>`;
+        return;
+      }
       const map = {
         'dashboard.html': () => pageDashboard(),
         'index.html': () => pageDashboard(),
@@ -2982,7 +2977,7 @@
   window.WTPages = {
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
-    openUserModal, saveUser,
+    openUserModal, saveUser, toggleUserAdmin,
     openPropertyModal, saveProperty, deleteProperty, openTypeModal, saveType, deleteType,
     addTeam,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,

@@ -54,6 +54,7 @@ public class TaskService : ITaskService
 
     public async Task<List<TaskItemDto>> GetTasksAsync(long projectId, long userId)
     {
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks")) return new();
         var tasks = await _repository.GetTasksAsync(projectId);
         var isAdmin = await _permissions.IsAdminAsync(userId);
         var canEdit = isAdmin || await _permissions.CanEditModuleAsync(userId, projectId, "Tasks");

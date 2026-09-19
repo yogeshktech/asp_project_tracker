@@ -948,4 +948,36 @@ public static class DbSeeder
         }
         return user;
     }
+
+    public static async Task EnsureUserBasedAccessAsync(AppDbContext db)
+    {
+        var modules = new[] { "Projects", "Budgets", "Costs", "BOQ", "Tasks", "Issues", "Reports", "Closure" };
+        var pmRole = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Name == "ProjectManager");
+        if (pmRole == null) return;
+
+        var pmUserIds = await db.UserRoles.Where(ur => ur.RoleId == pmRole.Id).Select(ur => ur.UserId).ToListAsync();
+        var owned = await db.Projects.AsNoTracking()
+            .Where(p => p.OwnerId != null && pmUserIds.Contains(p.OwnerId.Value))
+            .Select(p => new { p.Id, OwnerId = p.OwnerId!.Value })
+            .ToListAsync();
+
+        foreach (var row in owned)
+        {
+            foreach (var module in modules)
+            {
+                var exists = await db.ProjectPermissions.AnyAsync(p =>
+                    p.UserId == row.OwnerId && p.ProjectId == row.Id && p.Module == module);
+                if (exists) continue;
+                db.ProjectPermissions.Add(new ProjectPermission
+                {
+                    UserId = row.OwnerId,
+                    ProjectId = row.Id,
+                    Module = module,
+                    CanView = true,
+                    CanEdit = true
+                });
+            }
+        }
+        await db.SaveChangesAsync();
+    }
 }

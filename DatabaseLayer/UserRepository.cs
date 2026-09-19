@@ -13,8 +13,10 @@ public interface IUserRepository
     Task<List<Role>> GetRolesAsync();
     Task<List<Permission>> GetPermissionsAsync();
     Task SetProjectPermissionAsync(ProjectPermission permission);
+    Task ReplaceProjectPermissionsAsync(long userId, IEnumerable<ProjectPermission> permissions);
     Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId);
     Task AssignToProjectAsync(long userId, long projectId, string? teamRole);
+    Task RemoveFromProjectsExceptAsync(long userId, IEnumerable<long> keepProjectIds);
 }
 
 public class UserRepository : IUserRepository
@@ -68,6 +70,19 @@ public class UserRepository : IUserRepository
         await _db.SaveChangesAsync();
     }
 
+    public async Task ReplaceProjectPermissionsAsync(long userId, IEnumerable<ProjectPermission> permissions)
+    {
+        var existing = _db.ProjectPermissions.Where(p => p.UserId == userId);
+        _db.ProjectPermissions.RemoveRange(existing);
+        foreach (var p in permissions)
+        {
+            p.UserId = userId;
+            if (p.CanView || p.CanEdit)
+                _db.ProjectPermissions.Add(p);
+        }
+        await _db.SaveChangesAsync();
+    }
+
     public Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId) =>
         _db.ProjectPermissions.Where(p => p.UserId == userId).AsNoTracking().ToListAsync();
 
@@ -78,5 +93,14 @@ public class UserRepository : IUserRepository
             _db.ProjectUsers.Add(new ProjectUser { ProjectId = projectId, UserId = userId, TeamRole = teamRole });
             await _db.SaveChangesAsync();
         }
+    }
+
+    public async Task RemoveFromProjectsExceptAsync(long userId, IEnumerable<long> keepProjectIds)
+    {
+        var keep = keepProjectIds.Distinct().ToHashSet();
+        var extra = await _db.ProjectUsers.Where(pu => pu.UserId == userId && !keep.Contains(pu.ProjectId)).ToListAsync();
+        if (extra.Count == 0) return;
+        _db.ProjectUsers.RemoveRange(extra);
+        await _db.SaveChangesAsync();
     }
 }

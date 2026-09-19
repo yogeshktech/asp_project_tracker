@@ -33,6 +33,7 @@ public static class DatabaseBootstrap
         }
 
         await DbSeeder.SeedAsync(db);
+        await DbSeeder.EnsureUserBasedAccessAsync(db);
         logger.LogInformation("Database seed completed.");
     }
 

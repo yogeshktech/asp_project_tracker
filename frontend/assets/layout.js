@@ -19,13 +19,59 @@ const WT_NAV = [
   { href: 'items.html', icon: 'fa-box', label: 'Item Master' },
   { href: 'inventory.html', icon: 'fa-lock', label: 'Inventory & Closure' },
   { group: 'Governance' },
-  { href: 'users.html', icon: 'fa-users', label: 'Users' },
-  { href: 'roles.html', icon: 'fa-user-shield', label: 'Roles & Permissions' },
+  { href: 'users.html', icon: 'fa-users', label: 'Users & Access' },
   { href: 'notifications.html', icon: 'fa-bell', label: 'Notifications' },
   { href: 'audit-logs.html', icon: 'fa-scroll', label: 'Audit Logs' },
   { href: 'reports.html', icon: 'fa-file-lines', label: 'Reports' },
   { href: 'settings.html', icon: 'fa-gear', label: 'Settings' },
 ];
+
+const WT_NAV_ACCESS = {
+  'dashboard.html': '*',
+  'resorts.html': 'Projects',
+  'workflow.html': '*',
+  'projects.html': 'Projects',
+  'project-detail.html': 'Projects',
+  'planning.html': 'Tasks',
+  'milestones.html': 'Tasks',
+  'daily-report.html': 'Tasks',
+  'issues.html': 'Issues',
+  'boq.html': 'BOQ',
+  'budget.html': 'Budgets',
+  'costs.html': 'Costs',
+  'items.html': 'BOQ',
+  'inventory.html': 'Closure',
+  'users.html': 'admin',
+  'roles.html': 'admin',
+  'notifications.html': '*',
+  'audit-logs.html': 'admin',
+  'reports.html': 'Reports',
+  'settings.html': 'admin'
+};
+
+function wtIsAdmin() {
+  return localStorage.getItem('WISETRACK_IS_ADMIN') === 'true';
+}
+
+function wtCanViewModule(module) {
+  if (wtIsAdmin()) return true;
+  if (!module || module === '*') {
+    const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
+    return perms.some(p => p.canView || p.CanView || p.canEdit || p.CanEdit);
+  }
+  const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
+  return perms.some(p =>
+    String(p.module || p.Module) === module &&
+    (p.canView || p.CanView || p.canEdit || p.CanEdit));
+}
+
+function wtPageAllowed(href) {
+  const need = WT_NAV_ACCESS[href];
+  if (!need) return true;
+  if (need === 'admin') return wtIsAdmin();
+  if (need === '*') return wtIsAdmin() || wtCanViewModule('*');
+  return wtCanViewModule(need);
+}
 
 function wtCurrentPage() {
   return (location.pathname.split('/').pop() || 'dashboard.html').toLowerCase();
@@ -46,6 +92,7 @@ function wtBuildSidebar() {
       html += `<div class="nav-group-title">${item.group}</div>`;
       continue;
     }
+    if (typeof wtPageAllowed === 'function' && !wtPageAllowed(item.href)) continue;
     const active = page === item.href ? ' active' : '';
     html += `<a class="nav-link${active}" href="${item.href}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
   }
@@ -54,7 +101,7 @@ function wtBuildSidebar() {
       <div class="avatar">U</div>
       <div class="user-meta">
         <div class="user-name">User</div>
-        <div class="user-role-badge current-role-label">Role</div>
+        <div class="user-role-badge current-role-label">User</div>
       </div>
     </div>`;
   return html;

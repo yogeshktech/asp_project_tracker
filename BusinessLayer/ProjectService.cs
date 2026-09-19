@@ -1,6 +1,7 @@
 using project_tracker_madhu.Common;
 using project_tracker_madhu.DatabaseLayer.Projects;
 using project_tracker_madhu.DatabaseLayer.Tasks;
+using project_tracker_madhu.DatabaseLayer.Users;
 using project_tracker_madhu.Models.Entities;
 using project_tracker_madhu.Models.Requests;
 using project_tracker_madhu.Models.Responses;
@@ -42,13 +43,15 @@ public class ProjectService : IProjectService
 {
     private readonly IProjectRepository _repository;
     private readonly ITaskRepository _tasks;
+    private readonly IUserRepository _users;
     private readonly IPermissionService _permissions;
     private readonly IAuditService _audit;
 
-    public ProjectService(IProjectRepository repository, ITaskRepository tasks, IPermissionService permissions, IAuditService audit)
+    public ProjectService(IProjectRepository repository, ITaskRepository tasks, IUserRepository users, IPermissionService permissions, IAuditService audit)
     {
         _repository = repository;
         _tasks = tasks;
+        _users = users;
         _permissions = permissions;
         _audit = audit;
     }
@@ -218,22 +221,35 @@ public class ProjectService : IProjectService
             throw new UnauthorizedAccessException("No edit permission on parent project.");
 
         var entity = FromDto(dto);
-        // Creator becomes owner so they can edit immediately (CanEditModuleAsync checks OwnerId)
         entity.OwnerId ??= userId;
         var project = await _repository.AddProjectAsync(entity);
         await _repository.AssignUserAsync(new ProjectUser
         {
             ProjectId = project.Id,
             UserId = userId,
-            TeamRole = "Creator"
+            TeamRole = "Member"
         });
+        if (!await _permissions.IsAdminAsync(userId))
+        {
+            foreach (var module in PermissionService.Modules)
+            {
+                await _users.SetProjectPermissionAsync(new ProjectPermission
+                {
+                    ProjectId = project.Id,
+                    UserId = userId,
+                    Module = module,
+                    CanView = true,
+                    CanEdit = true
+                });
+            }
+        }
         if (dto.OwnerId.HasValue && dto.OwnerId != userId)
         {
             await _repository.AssignUserAsync(new ProjectUser
             {
                 ProjectId = project.Id,
                 UserId = dto.OwnerId.Value,
-                TeamRole = "ProjectManager"
+                TeamRole = "Member"
             });
         }
         await _audit.LogAsync(userId, "Create", "Project", project.Id);

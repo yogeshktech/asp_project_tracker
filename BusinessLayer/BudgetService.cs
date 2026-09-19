@@ -34,7 +34,7 @@ public class BudgetService : IBudgetService
 
     public async Task<List<Budget>> GetByProjectAsync(long userId, long projectId)
     {
-        if (!await _permissions.CanViewProjectAsync(userId, projectId)) return new();
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Budgets")) return new();
         return await _repository.GetByProjectAsync(projectId);
     }
 

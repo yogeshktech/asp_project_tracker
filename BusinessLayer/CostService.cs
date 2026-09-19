@@ -69,19 +69,19 @@ public class CostService : ICostService
 
     public async Task<List<PurchaseCost>> GetPurchasesAsync(long userId, long projectId)
     {
-        if (!await _permissions.CanViewProjectAsync(userId, projectId)) return new();
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Costs")) return new();
         return await _repository.GetPurchasesAsync(projectId);
     }
 
     public async Task<List<ActualCost>> GetActualsAsync(long userId, long projectId)
     {
-        if (!await _permissions.CanViewProjectAsync(userId, projectId)) return new();
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Costs")) return new();
         return await _repository.GetActualsAsync(projectId);
     }
 
     public async Task<CostVarianceDto> GetVarianceAsync(long userId, long projectId)
     {
-        if (!await _permissions.CanViewProjectAsync(userId, projectId))
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Costs"))
             throw new UnauthorizedAccessException("No permission.");
 
         var approved = await _repository.GetApprovedBudgetAsync(projectId);

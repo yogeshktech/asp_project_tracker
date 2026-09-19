@@ -18,6 +18,9 @@ public class UsersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll() => Ok(await _userService.GetAllAsync());
 
+    [HttpGet("me/access")]
+    public async Task<IActionResult> MyAccess() => Ok(await _userService.GetAccessAsync(UserId));
+
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
     {
@@ -54,5 +57,12 @@ public class UsersController : ControllerBase
     {
         await _userService.SetProjectPermissionAsync(dto, UserId);
         return Ok();
+    }
+
+    [HttpPut("{id:long}/access")]
+    public async Task<IActionResult> ReplaceAccess(long id, [FromBody] ReplaceUserAccessRequest request)
+    {
+        await _userService.ReplaceAccessAsync(id, request, UserId);
+        return Ok(await _userService.GetAccessAsync(id));
     }
 }

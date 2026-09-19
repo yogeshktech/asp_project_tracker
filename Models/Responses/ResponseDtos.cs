@@ -1,3 +1,5 @@
+using project_tracker_madhu.Models.Requests;
+
 namespace project_tracker_madhu.Models.Responses;
 
 public class LoginResponseDto
@@ -7,6 +9,8 @@ public class LoginResponseDto
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public List<string> Roles { get; set; } = new();
+    public bool IsAdmin { get; set; }
+    public List<UserProjectPermissionDto> Permissions { get; set; } = new();
 }
 
 public class RoleResponseDto
@@ -34,6 +38,7 @@ public class UserResponseDto
     public string? Phone { get; set; }
     public bool IsActive { get; set; }
     public bool IsInternal { get; set; }
+    public bool IsAdmin { get; set; }
     public List<string> Roles { get; set; } = new();
 }
 
