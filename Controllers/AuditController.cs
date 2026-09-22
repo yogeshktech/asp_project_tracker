@@ -27,6 +27,23 @@ public class AuditController : ControllerBase
         var q = _db.AuditLogs.AsNoTracking().OrderByDescending(a => a.CreatedAt).AsQueryable();
         if (!string.IsNullOrWhiteSpace(entityName)) q = q.Where(a => a.EntityName == entityName);
         if (entityId.HasValue) q = q.Where(a => a.EntityId == entityId);
-        return Ok(await q.Take(take).ToListAsync());
+        var logs = await q.Take(Math.Clamp(take, 1, 500)).ToListAsync();
+        var userIds = logs.Where(a => a.UserId.HasValue).Select(a => a.UserId!.Value).Distinct().ToList();
+        var names = await _db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.FullName);
+        return Ok(logs.Select(a => new
+        {
+            a.Id,
+            a.UserId,
+            UserName = a.UserId.HasValue && names.TryGetValue(a.UserId.Value, out var n) && !string.IsNullOrWhiteSpace(n)
+                ? n
+                : a.UserId.HasValue ? $"User #{a.UserId}" : "System",
+            a.Action,
+            a.EntityName,
+            a.EntityId,
+            a.Details,
+            a.CreatedAt
+        }));
     }
 }

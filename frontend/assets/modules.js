@@ -805,11 +805,28 @@
       ];
 
       // 2. Compute dynamic metrics
+      const statusOf = (p) => String(p.status || p.Status || '').toLowerCase();
+      const pctOf = (p) => {
+        const n = Number(p.progressPercent ?? p.progress ?? p.ProgressPercent);
+        return Number.isFinite(n) ? n : 0;
+      };
       const totalPackagesCount = projects.length;
-      const completedCount = projects.filter(p => (p.progressPercent >= 100 || (p.status && p.status.toLowerCase().includes('complete')))).length;
-      const onTrackCount = projects.filter(p => (p.progressPercent < 100 && (!p.status || (!p.status.toLowerCase().includes('delay') && !p.status.toLowerCase().includes('risk') && !p.status.toLowerCase().includes('alert'))))).length;
-      const delayedCount = projects.filter(p => (p.status && (p.status.toLowerCase().includes('delay') || p.status.toLowerCase().includes('risk')))).length;
-      const alertCount = projects.filter(p => (p.status && p.status.toLowerCase().includes('alert'))).length || (issuesRaw && issuesRaw.length ? issuesRaw.length : 2);
+      const completedCount = projects.filter(p => {
+        const st = statusOf(p);
+        return pctOf(p) >= 100 || st.includes('complete') || st.includes('closed');
+      }).length;
+      const delayedCount = projects.filter(p => {
+        const st = statusOf(p);
+        return st.includes('delay') || st.includes('risk') || st.includes('hold');
+      }).length;
+      const alertCount = projects.filter(p => statusOf(p).includes('alert')).length
+        || ((issuesRaw && issuesRaw.length) ? issuesRaw.length : 0);
+      const onTrackCount = projects.filter(p => {
+        const st = statusOf(p);
+        const done = pctOf(p) >= 100 || st.includes('complete') || st.includes('closed');
+        const bad = st.includes('delay') || st.includes('risk') || st.includes('alert') || st.includes('hold');
+        return !done && !bad;
+      }).length;
 
       const totalBudgetNum = d.totalApprovedBudget || 1485000000;
       const totalSpentNum = d.totalCommitted || (totalBudgetNum * 0.719);
@@ -925,18 +942,24 @@
         { icon: '🏊', title: 'Himalayan Sanctuary Manali · Pool Complex', time: '4 hrs ago', desc: 'Plunge pool waterproofing completed 100% and certified by QA auditor.' }
       ];
 
-      $('#liveActivityStream').innerHTML = liveEvents.map(ev => `
+      $('#liveActivityStream').innerHTML = liveEvents.map(ev => {
+        const actor = ev.userName || ev.UserName || ev.user || (ev.userId ? ('User #' + ev.userId) : 'System');
+        const action = ev.action || ev.Action || 'Update';
+        const entity = ev.entityName || ev.EntityName || ev.entityType || 'record';
+        const title = ev.title || `${action} · ${entity}`;
+        const desc = ev.desc || `${actor} performed ${action} on ${ev.details || ev.Details || entity}`;
+        return `
         <div style="display:flex; align-items:flex-start; gap:12px; padding:10px; background:${ev.isAlert ? '#fef2f2' : 'var(--border-light)'}; border-radius:8px; border:1px solid ${ev.isAlert ? '#fecaca' : 'var(--border-color)'};">
           <span style="font-size:20px;">${ev.icon || '📝'}</span>
           <div style="flex:1;">
             <div style="display:flex; justify-content:space-between;">
-              <strong style="font-size:13px; color:${ev.isAlert ? '#991b1b' : 'var(--text-main)'};">${esc(ev.title || (ev.action + ' on ' + (ev.entityType || 'Task')))}</strong>
-              <small style="color:var(--text-muted);">${esc(ev.time || (ev.createdAt ? new Date(ev.createdAt).toLocaleTimeString() : 'Recent'))}</small>
+              <strong style="font-size:13px; color:${ev.isAlert ? '#991b1b' : 'var(--text-main)'};">${esc(title)}</strong>
+              <small style="color:var(--text-muted);">${esc(ev.time || (ev.createdAt || ev.CreatedAt ? new Date(ev.createdAt || ev.CreatedAt).toLocaleTimeString() : 'Recent'))}</small>
             </div>
-            <p style="font-size:12px; margin:3px 0 0; color:${ev.isAlert ? '#7f1d1d' : 'var(--text-main)'};">${esc(ev.desc || (ev.userName + ' performed ' + ev.action + ' on ' + (ev.details || 'item')))}</p>
+            <p style="font-size:12px; margin:3px 0 0; color:${ev.isAlert ? '#7f1d1d' : 'var(--text-main)'};">${esc(desc)}</p>
           </div>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
 
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     } catch (e) {
@@ -1535,14 +1558,81 @@
         <p style="font-size:13px; margin:6px 0 0; line-height:1.5;">${esc(p.desc || p.description || 'Deliverables, milestones, and engineering specifications for this package.')}</p>
       </div>
       
-      <div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px; display:flex; gap:8px;">
+      <div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn sm primary" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i> + Add Sub-Package</button>
         <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i> Edit Package</button>
+        <a class="btn sm" href="planning.html">Tasks</a>
+        <a class="btn sm" href="budget.html">Budget</a>
+        <a class="btn sm" href="issues.html">Issues</a>
+        <a class="btn sm" href="costs.html">Costs</a>
       </div>
+      <div id="wsExtra" style="margin-top:16px;"></div>
     `;
 
     $('#teamUserId').innerHTML = users.map(u => `<option value="${u.id}">${esc(u.fullName || u.name)} (${esc(u.email)})</option>`).join('') || '<option>No users</option>';
-    $('#teamList').innerHTML = '<small class="card-subtitle">Assigned Team: Rahul Sharma (Lead PM), Amit Verma (Site Eng), Site Quality Team</small>';
+    const numericPid = Number(p.id);
+    try {
+      const [team, variance, exceptions, explanations] = await Promise.all([
+        WisetrackAPI.getProjectTeam(numericPid).catch(() => []),
+        WisetrackAPI.getVariance(numericPid).catch(() => null),
+        WisetrackAPI.getExceptions(numericPid).catch(() => []),
+        WisetrackAPI.getVarianceExplanations(numericPid).catch(() => [])
+      ]);
+      const teamRows = Array.isArray(team) ? team : [];
+      $('#teamList').innerHTML = teamRows.length
+        ? `<div style="display:flex;flex-direction:column;gap:6px;">${teamRows.map(m => `
+            <div style="font-size:13px;padding:8px;border:1px solid var(--border-color);border-radius:6px;">
+              <strong>${esc(m.fullName || m.userName || m.name || ('User #' + (m.userId || m.id)))}</strong>
+              <small style="display:block;color:var(--text-muted)">${esc(m.teamRole || m.role || 'Team')}</small>
+            </div>`).join('')}</div>`
+        : '<small class="card-subtitle">No team assigned yet. Use the form to assign a member.</small>';
+      const extra = [];
+      if (variance) {
+        extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
+          <strong>Budget RAG</strong>
+          <div class="grid g4" style="margin-top:8px;font-size:12.5px;">
+            <div>Approved<br><b>₹${Number(variance.approvedBudget || 0).toLocaleString('en-IN')}</b></div>
+            <div>Purchase<br><b>₹${Number(variance.purchaseTotal || 0).toLocaleString('en-IN')}</b></div>
+            <div>Actual<br><b>₹${Number(variance.actualTotal || 0).toLocaleString('en-IN')}</b></div>
+            <div>RAG<br><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus || 'Green')}</span></div>
+          </div>
+        </div>`);
+      }
+      extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
+        <strong>Exceptions</strong>
+        <div id="wsExc" style="margin-top:8px;font-size:12.5px;">${(exceptions || []).length
+          ? `<ul>${exceptions.map(x => `<li>${esc(x.title || x.Title || x.message || x.Message || 'Exception')}</li>`).join('')}</ul>`
+          : 'No open exceptions for this package.'}</div>
+      </div>`);
+      extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
+        <strong>Variance explanations (PM-24)</strong>
+        <div id="wsVarList" style="margin-top:8px;font-size:12.5px;">${(explanations || []).length
+          ? explanations.map(v => `<p><b>${esc(v.varianceType || v.VarianceType)}</b> — ${esc(v.explanation || v.Explanation)}</p>`).join('')
+          : 'No explanations recorded.'}</div>
+        <div class="form-grid" style="margin-top:10px;">
+          <div class="field"><label>Type</label><select id="wsVarType"><option>Cost</option><option>Schedule</option></select></div>
+          <div class="field full"><label>Explanation</label><textarea id="wsVarText" rows="2" placeholder="Why this variance happened"></textarea></div>
+        </div>
+        <button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveWorkspaceVariance(${numericPid})">Save explanation</button>
+      </div>`);
+      $('#wsExtra').innerHTML = extra.join('');
+    } catch (_) {
+      $('#teamList').innerHTML = '<small class="card-subtitle">Team list unavailable.</small>';
+    }
+  }
+
+  async function saveWorkspaceVariance(projectId) {
+    const explanation = ($('#wsVarText')?.value || '').trim();
+    if (!explanation) { showToast('Enter an explanation', 'danger'); return; }
+    try {
+      await WisetrackAPI.addVarianceExplanation({
+        projectId,
+        varianceType: $('#wsVarType')?.value || 'Cost',
+        explanation
+      });
+      showToast('Variance explanation saved');
+      await pageProjectDetail();
+    } catch (e) { showToast(e.message, 'danger'); }
   }
 
   async function addTeam() {
@@ -1550,6 +1640,7 @@
     try {
       await WisetrackAPI.assignTeamMember(pid, { userId: Number($('#teamUserId').value), teamRole: $('#teamRole').value.trim() });
       showToast('Team member assigned');
+      await pageProjectDetail();
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -1758,12 +1849,24 @@
       const [purchases, actuals, variance] = await Promise.all([
         WisetrackAPI.getPurchases(pid), WisetrackAPI.getActuals(pid), WisetrackAPI.getVariance(pid)
       ]);
+      const explanations = await WisetrackAPI.getVarianceExplanations(pid).catch(() => []);
       $('#varianceBox').innerHTML = `
         <div class="grid g4">
           <div><div class="kpi-label">Approved</div><strong>₹${Number(variance.approvedBudget || 0).toLocaleString('en-IN')}</strong></div>
           <div><div class="kpi-label">Purchase</div><strong>₹${Number(variance.purchaseTotal || 0).toLocaleString('en-IN')}</strong></div>
           <div><div class="kpi-label">Actual</div><strong>₹${Number(variance.actualTotal || 0).toLocaleString('en-IN')}</strong></div>
           <div><div class="kpi-label">RAG</div><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus)}</span></div>
+        </div>
+        <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
+          <strong>Variance explanations (PM-24)</strong>
+          <div id="varExplainList" style="margin:8px 0;font-size:13px;">${(explanations || []).length
+            ? explanations.map(v => `<p style="margin:4px 0;"><b>${esc(v.varianceType || v.VarianceType)}</b> — ${esc(v.explanation || v.Explanation)}</p>`).join('')
+            : '<p style="color:var(--text-muted);margin:4px 0;">No explanations yet. Record why cost or schedule moved.</p>'}</div>
+          <div class="form-grid">
+            <div class="field"><label>Type</label><select id="varType"><option>Cost</option><option>Schedule</option></select></div>
+            <div class="field full"><label>Explanation *</label><textarea id="varText" rows="2" placeholder="e.g. MEP CC exceeded 80% after ducting redesign"></textarea></div>
+          </div>
+          <button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveVarianceExplanation()">Save explanation</button>
         </div>`;
       const rows = [
         ...(purchases || []).map(x => ({ ...x, _t: 'Purchase' })),
@@ -1773,6 +1876,21 @@
         <tr><td>${r.id}</td><td>${r._t}</td><td>₹${Number(r.amount || r.totalAmount || 0).toLocaleString('en-IN')}</td>
         <td>${esc(r.costDate || r.purchaseDate || r.createdAt || '—')}</td><td>${esc(r.remarks || r.notes || '—')}</td></tr>`
       ).join('') : emptyRow(5, 'No cost entries');
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function saveVarianceExplanation() {
+    const pid = await selectedProjectId();
+    const explanation = ($('#varText')?.value || '').trim();
+    if (!pid || !explanation) { showToast('Enter an explanation', 'danger'); return; }
+    try {
+      await WisetrackAPI.addVarianceExplanation({
+        projectId: Number(pid),
+        varianceType: $('#varType')?.value || 'Cost',
+        explanation
+      });
+      showToast('Variance explanation saved');
+      await pageCosts();
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -1968,7 +2086,8 @@
     
     el.innerHTML = pageHead(title, '/api/tasks', picker +
       (kind === 'milestones'
-        ? ` <button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates</button>
+        ? ` <button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>
+            <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>
             <button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>`
         : kind === 'daily'
         ? ` <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
@@ -2195,6 +2314,54 @@
         await WisetrackAPI.cloneTemplate({ templateId, projectId: pid });
       }
       closeModal(); showToast('Milestones cloned'); await pageTasks('milestones');
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function planBackwardFromHandover() {
+    const pid = await selectedProjectId();
+    if (!pid) { showToast('Select a project first', 'danger'); return; }
+    let handover = '';
+    try {
+      const p = await WisetrackAPI.getProject(pid);
+      handover = String(p.endDate || p.EndDate || '').slice(0, 10);
+    } catch (_) { /* date filled by user */ }
+    openModal('Plan backward from handover (PM-17)', `
+      <form onsubmit="WTPages.saveBackwardPlan(event)">
+        <input type="hidden" id="bwProj" value="${pid}">
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Creates the standard chain from the handover date backward: Procurement → Payment → Manufacture → Shipment → Arrival → Installation → Commissioning → Handover.</p>
+        <div class="form-grid">
+          <div class="field"><label>Handover / opening date *</label><input id="bwHandover" type="date" value="${esc(handover)}" required></div>
+          <div class="field"><label>Days per step</label><input id="bwDays" type="number" min="1" value="14"></div>
+        </div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Create chain</button></div>
+      </form>`);
+  }
+
+  async function saveBackwardPlan(e) {
+    e.preventDefault();
+    const pid = Number($('#bwProj').value);
+    const handover = $('#bwHandover').value;
+    const stepDays = Math.max(1, Number($('#bwDays').value) || 14);
+    if (!pid || !handover) { showToast('Handover date required', 'danger'); return; }
+    const steps = ['Procurement', 'Payment', 'Manufacture / readiness', 'Shipment', 'Arrival / transfer', 'Installation', 'Commissioning', 'Handover'];
+    const end = new Date(handover + 'T00:00:00');
+    try {
+      for (let i = 0; i < steps.length; i++) {
+        const due = new Date(end);
+        due.setDate(due.getDate() - ((steps.length - 1 - i) * stepDays));
+        const start = new Date(due);
+        start.setDate(start.getDate() - stepDays);
+        await WisetrackAPI.createMilestone({
+          projectId: pid,
+          name: steps[i],
+          description: 'Backward-scheduled from handover (PM-17)',
+          startDate: start.toISOString().slice(0, 10),
+          dueDate: due.toISOString().slice(0, 10)
+        });
+      }
+      closeModal();
+      showToast('Backward plan created');
+      await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2651,11 +2818,20 @@
         $('#reportOut').innerHTML = '<p style="color:var(--text-muted);margin:0">No portfolio projects found for your access.</p>';
         return;
       }
+  async function loadPortfolio() {
+    try {
+      const p = await WisetrackAPI.getPortfolioReport();
+      const projects = p?.projects || p?.Projects || (Array.isArray(p) ? p : []);
+      if (!projects.length) {
+        $('#reportOut').innerHTML = '<p style="color:var(--text-muted);margin:0">No portfolio projects found for your access.</p>';
+        return;
+      }
+      const showMoney = typeof wtCanViewModule !== 'function' || wtCanViewModule('Budgets') || wtCanViewModule('Costs');
       $('#reportOut').innerHTML = `
-        <h3 class="card-title" style="margin-bottom:10px">Portfolio status</h3>
+        <h3 class="card-title" style="margin-bottom:10px">${showMoney ? 'Portfolio status (PMO / Finance)' : 'Portfolio status (execution view — financials hidden)'}</h3>
         <div class="table-wrap"><table class="table">
           <thead><tr>
-            <th>Project</th><th>Status</th><th>Next Milestone</th><th>Schedule Risk</th><th>Budget RAG</th><th>Open Issues</th>
+            <th>Project</th><th>Status</th><th>Next Milestone</th><th>Schedule Risk</th>${showMoney ? '<th>Budget RAG</th>' : ''}<th>Open Issues</th>
           </tr></thead>
           <tbody>
             ${projects.map(row => {
@@ -2668,7 +2844,7 @@
                 <td><span class="badge blue">${esc(row.status || row.Status || '—')}</span></td>
                 <td>${esc(row.nextMilestone || row.NextMilestone || '—')}</td>
                 <td><span class="badge ${riskCls}">${esc(risk)}</span></td>
-                <td><span class="badge ${ragCls}">${esc(rag)}</span></td>
+                ${showMoney ? `<td><span class="badge ${ragCls}">${esc(rag)}</span></td>` : ''}
                 <td>${row.openIssues ?? row.OpenIssues ?? 0}</td>
               </tr>`;
             }).join('')}
@@ -2682,15 +2858,20 @@
     try {
       const rows = await WisetrackAPI.getComparableProjects({});
       const list = Array.isArray(rows) ? rows : [];
+  async function loadComparable() {
+    try {
+      const rows = await WisetrackAPI.getComparableProjects({});
+      const list = Array.isArray(rows) ? rows : [];
+      const showMoney = typeof wtCanViewModule !== 'function' || wtCanViewModule('Budgets') || wtCanViewModule('Costs');
       $('#reportOut').innerHTML = list.length ? `
-        <h3 class="card-title">Comparable completed projects</h3>
+        <h3 class="card-title">${showMoney ? 'Comparable completed projects' : 'Comparable projects (financials hidden for this user)'}</h3>
         <div class="table-wrap"><table class="table">
-          <thead><tr><th>Project</th><th>Type</th><th>Budget</th><th>Actual</th><th>Duration</th></tr></thead>
+          <thead><tr><th>Project</th><th>Type</th>${showMoney ? '<th>Budget</th><th>Actual</th>' : ''}<th>Duration</th></tr></thead>
           <tbody>${list.map(r => `<tr>
             <td>${esc(r.name || r.Name)}</td>
             <td>${esc(r.projectType || r.ProjectType || '—')}</td>
-            <td>₹${Number(r.approvedBudget || r.ApprovedBudget || 0).toLocaleString('en-IN')}</td>
-            <td>₹${Number(r.actualCost || r.ActualCost || 0).toLocaleString('en-IN')}</td>
+            ${showMoney ? `<td>₹${Number(r.approvedBudget || r.ApprovedBudget || 0).toLocaleString('en-IN')}</td>
+            <td>₹${Number(r.actualCost || r.ActualCost || 0).toLocaleString('en-IN')}</td>` : ''}
             <td>${r.durationDays ?? r.DurationDays ?? '—'} days</td>
           </tr>`).join('')}</tbody>
         </table></div>` : '<p>No comparable closed projects yet.</p>';
@@ -3165,13 +3346,14 @@
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
     openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, fillPermProjectSelect,
     openPropertyModal, saveProperty, deleteProperty, openTypeModal, saveType, deleteType,
-    addTeam,
+    addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
     openBudgetModal, saveBudget, reviseBudget, openCostCenterModal, saveCC, deleteCC,
-    openPurchaseModal, savePurchase, openActualModal, saveActual,
+    openPurchaseModal, savePurchase, openActualModal, saveActual, saveVarianceExplanation,
     boqFromMaster, boqImport, saveBoqImport, viewBoq,
     openMilestoneModal, saveMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, cloneMilestoneTemplate,
+    planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate,
     openCreateSubTaskModal: (p) => openCreateSubTaskModal(p),
     saveSubTask: (e) => handleCreateSubTask(e),

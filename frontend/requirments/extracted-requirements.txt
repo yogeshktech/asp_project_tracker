@@ -1,0 +1,54 @@
+Solution scope
+Multi-project workspace and access control
+PM-01 Project portfolio. Create and manage multiple concurrent projects with distinct owners, teams, budgets, schedules, and records.
+PM-02 User assignment. Assign each user to one or more projects; deny visibility to all other projects by default.
+PM-03 Granular permissions. During user setup, allow an administrator to grant view or edit rights by project and module. Field-level restrictions may be added where sensitive financial or commercial data requires them.
+PM-04 External access. Provide a controlled view for project owners and approved third parties, exposing only the projects and information explicitly authorized.
+PM-05 Auditability. Record material create, update, import, approval, permission, and report-generation actions with user and timestamp.
+Project setup, budgets, and cost centers
+PM-06 Project profile. Capture project name/code, owner, internal team, client or sponsor, start date, target completion date, status, currency, and relevant notes or attachments.
+Resort will be created. Under Resort, Parent Project will be created and under the Parent Project – Sub Projects will be created. Each Sub-Project will be considered as a separate project…
+Parent Project – MEP, Civil, New Development, Major Renovation etc. (we should be able to add/delete/modify)
+PM-07 Budget baseline. Set an approved budget for each project and distribute that value across any required number of cost centers. If Project A (Parent Project) will have sub-projects then the budget for the sub-projects need to be assigned on different CC. These Sub-Projects will be considered as a CC for the parent project.
+If 80% of the allocated amount for a CC is spent, then budget should show a flag (R-A-G status).
+R-A-G Status – Mail should be triggered as per Escalation Matrix.
+PM-08 Budget versions. Preserve the approved baseline while tracking authorized revisions, reasons, dates, and approvers.
+PM-09 Financial roll-up. Show cost-center and project totals with budget, current commitment or purchase cost, actual spend, forecast, and variance where source data is available.
+BOQ and item pricing
+PM-10 Standard BOQ import. Define an agreed Excel template and import a complete bill of quantities without line-by-line re-entry. Can we make it flexible and not depend on a standard template? we get this file from  3rd party , so we do not want to have standard file import.
+PM-11 Import validation. Validate required columns, item codes, units, quantities, prices, totals, duplicates, and malformed rows; provide a downloadable error report before committing data.
+PM-12 Item and price master. Maintain a large reusable catalog of materials or services with item code, description, unit, standard price, effective date, source, and optional category. (Item DB)
+Item , Unit , Purchase Price , Description , Image , Brand – each item should have these data
+Integration with RFQ App
+PM-13 BOQ creation in platform. Generate a project BOQ by selecting items from the price master, then allow controlled project-specific quantities and price adjustments.
+Item , Unit , Purchase Price , Quantity , Description , Image , Total , Brand , Remark Column, any attachment(Upload-able file option should also be there(any file))
+PM-14 BOQ versioning. Retain BOQ revisions and identify which version forms the current project baseline.
+Planning, execution, and reporting
+Milestones and schedule planning
+PM-15 Flexible milestones. Define project-specific milestones without forcing a fixed universal template.
+PM-16 Reusable templates. Save proven milestone structures for repeated project types and import or clone them into new projects. (Import Project Template from other app , Excel or Microsoft Project, PDF)
+PM-17 Backward scheduling. Plan from the required project completion date back through procurement, payment, manufacture/readiness, shipment, arrival, transfer, installation, commissioning, and handover activities as applicable.
+PM-18 Dependencies and ownership. Assign planned dates, responsible owner, dependency, status, and completion evidence to each milestone.
+Main Task will have sub-Task, Everyday the task needs to be updated. Only the % completion of the sub-task. There should be a dropdown for status of the sub-task, which the team at site need to select. There should be ‘Text Field’ which is not mandatory but if user wants then it should be filled. Attachment should be given. If ‘% completion’ needs to be changed then only the task-owner can do it. ’Remark’ field should be there where Site Team can write the reasons for delay or any other site issue. Site people should be able to upload their status from standard excel to the application.
+PM-19 Exception assistant. Identify overdue, at-risk, or inactive critical items/sub-task/task and show concise prompts such as items/sub-task/task not progressed within the prior seven days.
+PM-20 Configurable notifications. Provide in-app and email notifications for approaching dates, missed milestones, significant variance, and other agreed triggers, with controls to avoid alert fatigue.
+Cost capture and control
+PM-21 Purchase and actual cost input. Capture purchase or actual costs against the appropriate project, BOQ line, and cost center through manual entry, template import, or an agreed source-system integration.
+PM-22 Budget versus actual. Calculate project and cost-center variance and clearly distinguish under-budget and over-budget positions.
+PM-23 Comparable project analysis. Compare completed project cost and duration with similar prior projects, with filters for project type, period, client, scope, and other agreed attributes.
+PM-24 Variance explanation. Allow users to record reasons for major cost or schedule variance and make those reasons available in reports and future recommendations.
+Dashboards and reports
+PM-25 Portfolio dashboard. Show authorized projects, status, next critical milestone, schedule risk, budget position, and unresolved exceptions in one management view.
+PM-26 Project dashboard. Show the project's dates, milestone progress, budget and cost-center position, BOQ status, recent activity, risks, and outstanding actions.
+PM-27 Monthly reporting. Generate a consistent monthly project report for owners and stakeholders, with scope, progress, milestones, financials, risks, decisions, and next actions.
+PM-28 On-demand export. Generate branded PDF reports and retain a report history; spreadsheet export may be enabled for authorized analytical users.
+We should have options to choose whom this report needs to be sent. (Only Internal Team e-mails should be displayed. User should not be able to send this report to any external person from the app.)
+User should have flexibility to choose which column should be included in an exported report.
+Daily Report as per site-update and also until date how much is done.
+PM-29 Audience-specific reporting. Allow report sections and financial detail to vary by stakeholder permissions.
+PM-30 Project Completion Report (Handover Report) – Project Summary Report (Saji to share a sample)
+Closure of a Project – The Project Completion Report needs to be signed and uploaded (Mandatory requirement for closing a project). Only the Project Manager can close the close the project.
+Left Over Inventory needs to be updated then only a project can be closed.
+User should be able to view status of all projects in one Report.
+How Sub-Task will be created ? How the update will be captured ?
+Incident/Issue Tracker – This module needs to be added (What is the issue , Where is the issue, when it happened, Reported By, Impact ) – Mail should be triggered to all High-Priority stakeholders.

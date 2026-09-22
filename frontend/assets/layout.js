@@ -111,12 +111,15 @@ function wtBuildSidebar() {
     const active = page === item.href ? ' active' : '';
     html += `<a class="nav-link${active}" href="${item.href}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
   }
+  const storedName = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
+  const initials = storedName.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
+  const roleLabel = wtIsAdmin() ? 'Admin' : 'User';
   html += `</div>
     <div class="side-user">
-      <div class="avatar">U</div>
+      <div class="avatar">${initials}</div>
       <div class="user-meta">
-        <div class="user-name">User</div>
-        <div class="user-role-badge current-role-label">User</div>
+        <div class="user-name">${storedName.replace(/[<>]/g, '')}</div>
+        <div class="user-role-badge current-role-label">${roleLabel}</div>
       </div>
     </div>`;
   return html;
