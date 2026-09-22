@@ -2818,14 +2818,6 @@
         $('#reportOut').innerHTML = '<p style="color:var(--text-muted);margin:0">No portfolio projects found for your access.</p>';
         return;
       }
-  async function loadPortfolio() {
-    try {
-      const p = await WisetrackAPI.getPortfolioReport();
-      const projects = p?.projects || p?.Projects || (Array.isArray(p) ? p : []);
-      if (!projects.length) {
-        $('#reportOut').innerHTML = '<p style="color:var(--text-muted);margin:0">No portfolio projects found for your access.</p>';
-        return;
-      }
       const showMoney = typeof wtCanViewModule !== 'function' || wtCanViewModule('Budgets') || wtCanViewModule('Costs');
       $('#reportOut').innerHTML = `
         <h3 class="card-title" style="margin-bottom:10px">${showMoney ? 'Portfolio status (PMO / Finance)' : 'Portfolio status (execution view — financials hidden)'}</h3>
@@ -2854,10 +2846,6 @@
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
-  async function loadComparable() {
-    try {
-      const rows = await WisetrackAPI.getComparableProjects({});
-      const list = Array.isArray(rows) ? rows : [];
   async function loadComparable() {
     try {
       const rows = await WisetrackAPI.getComparableProjects({});
