@@ -92,6 +92,34 @@ function wtCurrentPage() {
   return (location.pathname.split('/').pop() || 'dashboard.html').toLowerCase();
 }
 
+function wtIsMobileNav() {
+  return window.matchMedia('(max-width: 960px)').matches;
+}
+
+function wtOpenNav() {
+  document.body.classList.add('nav-open');
+  document.documentElement.classList.add('nav-open');
+}
+
+function wtCloseNav() {
+  document.body.classList.remove('nav-open');
+  document.documentElement.classList.remove('nav-open');
+}
+
+function wtToggleNav() {
+  if (document.body.classList.contains('nav-open')) wtCloseNav();
+  else wtOpenNav();
+}
+
+function wtEnsureNavChrome() {
+  if (!document.querySelector('.side-backdrop')) {
+    const veil = document.createElement('div');
+    veil.className = 'side-backdrop';
+    veil.setAttribute('data-wt-nav-close', '1');
+    document.body.appendChild(veil);
+  }
+}
+
 function wtBuildSidebar() {
   const page = wtCurrentPage();
   let html = `
@@ -100,6 +128,7 @@ function wtBuildSidebar() {
         <div class="logo-badge">W</div>
         <div><div>WISETRACK</div><div class="logo-sub">API Console</div></div>
       </a>
+      <button type="button" class="side-close" data-wt-nav-close="1" aria-label="Close menu"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div class="side-scroll">`;
   for (const item of WT_NAV) {
@@ -129,13 +158,16 @@ function wtBuildTopbar() {
   const currentTheme = localStorage.getItem('WISETRACK_THEME') || 'blue';
   return `
     <div class="topbar-left">
+      <button type="button" class="nav-toggle" data-wt-nav-toggle="1" aria-label="Open menu">
+        <i class="fa-solid fa-bars"></i>
+      </button>
       <div class="resort-selector-wrap">
         <label>Resort:</label>
         <select class="resort-select" id="globalResortSelector" onchange="setSelectedResortId(this.value)"></select>
       </div>
       <div class="search-box">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="globalTableSearch" placeholder="Search tables, projects, items..." onkeyup="if(typeof globalFilterAllTables==='function') globalFilterAllTables(this.value)">
+        <input type="text" id="globalTableSearch" placeholder="Search..." onkeyup="if(typeof globalFilterAllTables==='function') globalFilterAllTables(this.value)">
       </div>
     </div>
     <div class="topbar-right">
@@ -159,6 +191,7 @@ function wtBuildTopbar() {
 }
 
 function wtApplyLayout() {
+  wtEnsureNavChrome();
   const side = document.querySelector('aside.side');
   if (side) side.innerHTML = wtBuildSidebar();
   const top = document.querySelector('header.topbar');
@@ -170,3 +203,32 @@ function wtApplyLayout() {
   // Remove leftover static footers / duplicate chrome that break layout
   document.querySelectorAll('.main > footer, .workflow-guide-banner').forEach(el => el.remove());
 }
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-wt-nav-toggle]')) {
+    e.preventDefault();
+    wtToggleNav();
+    return;
+  }
+  if (e.target.closest('[data-wt-nav-close]') || e.target.closest('.side-backdrop')) {
+    wtCloseNav();
+    return;
+  }
+  if (wtIsMobileNav() && e.target.closest('.side .nav-link')) {
+    wtCloseNav();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') wtCloseNav();
+});
+
+window.addEventListener('resize', () => {
+  if (!wtIsMobileNav()) wtCloseNav();
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (document.querySelector('aside.side') || document.querySelector('header.topbar')) {
+    wtApplyLayout();
+  }
+});

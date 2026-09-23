@@ -2003,8 +2003,11 @@ class UniversalTableEngine {
     this.tbody = tableEl.querySelector('tbody');
     if (!this.tbody) return;
 
+    const saved = Number(localStorage.getItem('WISETRACK_PAGE_SIZE') || 25);
+    const pageSize = [25, 50, 100, 200].includes(saved) ? saved : 25;
+
     this.options = {
-      pageSize: options.pageSize || 10,
+      pageSize: options.pageSize || pageSize,
       searchable: options.searchable !== false,
       sortable: options.sortable !== false,
       paginated: options.paginated !== false,
@@ -2022,69 +2025,77 @@ class UniversalTableEngine {
     this.init();
   }
 
+  destroy() {
+    if (this.tbody && this.allRows.length) {
+      this.tbody.innerHTML = '';
+      this.allRows.forEach(r => this.tbody.appendChild(r));
+    }
+    this.toolbar?.remove();
+    this.paginationEl?.remove();
+    if (this.table) {
+      delete this.table.dataset.engineInit;
+      delete this.table.dataset.engineId;
+    }
+  }
+
   init() {
-    // Only wrap if not already wrapped
-    const parent = this.table.parentElement;
+    if (!this.tbody) return;
     if (this.table.dataset.engineInit === 'true') return;
     this.table.dataset.engineInit = 'true';
 
-    // 1. Build Toolbar (Search & Page Size)
+    const wrap = this.table.closest('.table-wrap');
+    const host = wrap || this.table.parentNode;
+
     if (this.options.searchable || this.options.paginated) {
       this.toolbar = document.createElement('div');
       this.toolbar.className = 'table-toolbar';
+      const sizes = [25, 50, 100, 200];
       this.toolbar.innerHTML = `
         <div class="table-search">
           <i class="fa-solid fa-magnifying-glass" style="color:var(--text-muted);"></i>
-          <input type="text" placeholder="Search this table in real-time..." value="${this.searchQuery}">
+          <input type="text" placeholder="Search this table..." value="${this.searchQuery}">
         </div>
         <div class="table-page-size">
           <label>Rows per page:</label>
           <select class="table-size-select">
-            <option value="5" ${this.pageSize === 5 ? 'selected' : ''}>5</option>
-            <option value="10" ${this.pageSize === 10 ? 'selected' : ''}>10</option>
-            <option value="25" ${this.pageSize === 25 ? 'selected' : ''}>25</option>
-            <option value="50" ${this.pageSize === 50 ? 'selected' : ''}>50</option>
-            <option value="all">All</option>
+            ${sizes.map(n => `<option value="${n}" ${Number(this.pageSize) === n ? 'selected' : ''}>${n}</option>`).join('')}
           </select>
         </div>
       `;
-      this.table.parentNode.insertBefore(this.toolbar, this.table);
+      if (wrap) host.parentNode.insertBefore(this.toolbar, wrap);
+      else host.insertBefore(this.toolbar, this.table);
 
-      // Search Event Listener
       const searchInput = this.toolbar.querySelector('.table-search input');
       searchInput.addEventListener('input', (e) => {
         this.searchQuery = e.target.value.toLowerCase().trim();
         this.filter();
       });
 
-      // Page Size Listener
       const sizeSelect = this.toolbar.querySelector('.table-size-select');
       sizeSelect.addEventListener('change', (e) => {
-        this.pageSize = e.target.value === 'all' ? this.filteredRows.length : parseInt(e.target.value);
+        this.pageSize = parseInt(e.target.value, 10) || 25;
+        localStorage.setItem('WISETRACK_PAGE_SIZE', String(this.pageSize));
         this.currentPage = 1;
         this.render();
       });
     }
 
-    // 2. Setup Column Sorting on <th>
     if (this.options.sortable) {
       const headers = this.table.querySelectorAll('thead th');
       headers.forEach((th, idx) => {
-        // Skip action column from sort
         const text = th.textContent.trim().toLowerCase();
         if (text.includes('action') || text.includes('super admin')) return;
-
         th.classList.add('sortable');
         th.title = 'Click to sort';
         th.addEventListener('click', () => this.sort(idx, th));
       });
     }
 
-    // 3. Setup Pagination Footer
     if (this.options.paginated) {
       this.paginationEl = document.createElement('div');
       this.paginationEl.className = 'table-pagination';
-      this.table.parentNode.insertBefore(this.paginationEl, this.table.nextSibling);
+      if (wrap) host.parentNode.insertBefore(this.paginationEl, wrap.nextSibling);
+      else host.insertBefore(this.paginationEl, this.table.nextSibling);
     }
 
     this.render();
@@ -2188,16 +2199,69 @@ class UniversalTableEngine {
 
 window.__tableEngines = {};
 
+function isTableLoading(tbody) {
+  const rows = tbody ? tbody.querySelectorAll('tr') : [];
+  if (rows.length !== 1) return false;
+  return /loading/i.test((rows[0].textContent || '').trim());
+}
+
+function destroyTableEngine(table) {
+  const id = table?.dataset?.engineId;
+  if (id && window.__tableEngines[id]) {
+    window.__tableEngines[id].destroy();
+    delete window.__tableEngines[id];
+  }
+  if (table) {
+    delete table.dataset.engineId;
+    delete table.dataset.engineInit;
+  }
+}
+
 function initAllTables() {
-  const tables = document.querySelectorAll('.table');
-  tables.forEach((t, idx) => {
-    // Only init if has body rows and not already done
-    if (t.querySelector('tbody tr') && !t.dataset.engineId) {
-      const id = 'tbl_' + idx + '_' + Date.now();
-      t.dataset.engineId = id;
-      window.__tableEngines[id] = new UniversalTableEngine(t);
+  Object.keys(window.__tableEngines).forEach(id => {
+    const eng = window.__tableEngines[id];
+    if (!eng?.table || !document.body.contains(eng.table)) {
+      delete window.__tableEngines[id];
     }
   });
+
+  document.querySelectorAll('table.table').forEach((t) => {
+    const tbody = t.querySelector('tbody');
+    if (!tbody) return;
+    if (isTableLoading(tbody)) return;
+
+    const existingId = t.dataset.engineId;
+    const existing = existingId && window.__tableEngines[existingId];
+    if (existing) {
+      const currentRows = Array.from(tbody.querySelectorAll('tr'));
+      const overlap = currentRows.filter(tr => existing.allRows.includes(tr)).length;
+      if (overlap > 0) return;
+      if (currentRows.length === 1 && /No matching records/i.test(currentRows[0].textContent || '')) return;
+      destroyTableEngine(t);
+    }
+
+    const rows = tbody.querySelectorAll('tr');
+    if (!rows.length) return;
+
+    const saved = Number(localStorage.getItem('WISETRACK_PAGE_SIZE') || 25);
+    const pageSize = [25, 50, 100, 200].includes(saved) ? saved : 25;
+    const id = 'tbl_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+    t.dataset.engineId = id;
+    window.__tableEngines[id] = new UniversalTableEngine(t, { pageSize });
+  });
+}
+
+function watchTablePagination() {
+  const root = document.getElementById('apiPageRoot') || document.querySelector('.content') || document.body;
+  if (!root || root.dataset.tableWatch === 'true') return;
+  root.dataset.tableWatch = 'true';
+  let timer = null;
+  const obs = new MutationObserver(() => {
+    clearTimeout(timer);
+    timer = setTimeout(() => initAllTables(), 80);
+  });
+  obs.observe(root, { childList: true, subtree: true });
+  initAllTables();
 }
 
 function globalFilterAllTables(query) {
@@ -2349,5 +2413,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Initialize all tables with Search, Sort & Pagination
+  watchTablePagination();
   setTimeout(() => initAllTables(), 200);
+  setTimeout(() => initAllTables(), 800);
 });

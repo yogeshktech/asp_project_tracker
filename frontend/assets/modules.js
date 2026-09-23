@@ -2974,7 +2974,7 @@
     const el = root();
     el.innerHTML = pageHead('Audit Logs', '/api/audit') + tableWrap(['When', 'User', 'Action', 'Entity', 'Details'], 'auditBody');
     try {
-      const logs = await WisetrackAPI.getAuditLogs(null, null, 200);
+      const logs = await WisetrackAPI.getAuditLogs(null, null, 500);
       const rows = Array.isArray(logs) ? logs : [];
       $('#auditBody').innerHTML = rows.length ? rows.map(l => `
         <tr>
@@ -3318,6 +3318,8 @@
       };
       const fn = map[page];
       if (fn) await fn();
+      if (typeof watchTablePagination === 'function') watchTablePagination();
+      if (typeof initAllTables === 'function') initAllTables();
     } catch (err) {
       const el = root();
       el.innerHTML = `<div class="card" style="padding:24px;color:#991b1b">
