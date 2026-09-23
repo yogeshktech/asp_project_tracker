@@ -4,6 +4,7 @@ using project_tracker_madhu.Models;
 
 namespace project_tracker_madhu.Controllers
 {
+    [ApiExplorerSettings(IgnoreApi = true)]
     public class HomeController : Controller
     {
         private readonly ILogger<HomeController> _logger;

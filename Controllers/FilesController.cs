@@ -23,9 +23,13 @@ public class FilesController : ControllerBase
     }
 
     [HttpPost]
+    [Consumes("multipart/form-data")]
     [RequestSizeLimit(25_000_000)]
-    public async Task<IActionResult> Upload([FromForm] IFormFile file, [FromForm] string? module, [FromForm] long? relatedId)
+    public async Task<IActionResult> Upload([FromForm] FileUploadRequest request)
     {
+        var file = request.File;
+        var module = request.Module;
+        var relatedId = request.RelatedId;
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "A file is required." });
 
@@ -54,4 +58,11 @@ public class FilesController : ControllerBase
         await _audit.LogAsync(UserContext.GetUserId(User), "Create", "File", record.Id, original);
         return Ok(record);
     }
+}
+
+public class FileUploadRequest
+{
+    public IFormFile File { get; set; } = null!;
+    public string? Module { get; set; }
+    public long? RelatedId { get; set; }
 }

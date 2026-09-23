@@ -43,7 +43,17 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "Wisetrack API", Version = "v1" });
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Wisetrack API",
+        Version = "v1",
+        Description = "Engineering project tracking APIs. Authorize with JWT from POST /api/auth/login."
+    });
+    options.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace("+", ".", StringComparison.Ordinal));
+    options.DocInclusionPredicate((_, api) =>
+        !string.IsNullOrEmpty(api.HttpMethod) &&
+        api.RelativePath != null &&
+        api.RelativePath.StartsWith("api/", StringComparison.OrdinalIgnoreCase));
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -55,7 +65,7 @@ builder.Services.AddSwaggerGen(options =>
     });
     options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
-        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = new List<string>()
     });
 });
 builder.Services.AddCors(options =>
@@ -80,13 +90,6 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-app.UseSwagger();
-app.UseSwaggerUI(options =>
-{
-    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Wisetrack API v1");
-    options.RoutePrefix = "swagger";
-});
-
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
@@ -98,6 +101,12 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors("frontend");
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Wisetrack API v1");
+    options.RoutePrefix = "swagger";
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -138,6 +147,6 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.MapStaticAssets();
 app.MapControllers();
-app.MapGet("/", () => Results.Redirect("/app/login.html"));
+app.MapGet("/", () => Results.Redirect("/app/login.html")).ExcludeFromDescription();
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}").WithStaticAssets();
 app.Run();
