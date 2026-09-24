@@ -45,9 +45,10 @@ public class ItemService : IItemService
     public async Task<Item> CreateAsync(CreateItemRequest request, long? userId)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", "edit");
+        var itemCode = EntityCodes.Next((await _repository.GetAllAsync()).Select(i => i.ItemCode), EntityCodes.Item);
         var item = await _repository.AddAsync(new Item
         {
-            ItemCode = request.ItemCode,
+            ItemCode = itemCode,
             Name = request.Name,
             Description = request.Description,
             UnitId = request.UnitId,
@@ -67,7 +68,8 @@ public class ItemService : IItemService
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", "update");
         var item = await _repository.GetAsync(id);
         if (item == null) return null;
-        item.ItemCode = request.ItemCode;
+        if (string.IsNullOrWhiteSpace(item.ItemCode))
+            item.ItemCode = EntityCodes.Next((await _repository.GetAllAsync()).Select(i => i.ItemCode), EntityCodes.Item);
         item.Name = request.Name;
         item.Description = request.Description;
         item.UnitId = request.UnitId;
@@ -126,7 +128,8 @@ public class ItemService : IItemService
     public async Task<Unit> CreateUnitAsync(string code, string name, long? userId)
     {
         await EnsureMasterAsync(userId, "edit");
-        var unit = await _repository.AddUnitAsync(new Unit { Code = code, Name = name });
+        var unitCode = EntityCodes.Next((await _repository.GetUnitsAsync()).Select(u => u.Code), EntityCodes.Unit);
+        var unit = await _repository.AddUnitAsync(new Unit { Code = unitCode, Name = name });
         await _audit.LogAsync(userId, "Create", "Unit", unit.Id);
         return unit;
     }
@@ -136,7 +139,8 @@ public class ItemService : IItemService
         await EnsureMasterAsync(userId, "update");
         var unit = await _repository.GetUnitAsync(id);
         if (unit == null) return null;
-        unit.Code = code;
+        if (string.IsNullOrWhiteSpace(unit.Code))
+            unit.Code = EntityCodes.Next((await _repository.GetUnitsAsync()).Select(u => u.Code), EntityCodes.Unit);
         unit.Name = name;
         await _repository.UpdateUnitAsync(unit);
         await _audit.LogAsync(userId, "Update", "Unit", id);

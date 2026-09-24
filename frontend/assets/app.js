@@ -147,10 +147,7 @@ function openCreateResortModal() {
           <label>Resort / Property Name *</label>
           <input type="text" id="resortName" placeholder="e.g. Palm Grove Beach Resort, Kovalam" required>
         </div>
-        <div class="field">
-          <label>Resort Code *</label>
-          <input type="text" id="resortCode" placeholder="e.g. RES-KOV-05" required>
-        </div>
+        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (RST-001, RST-002…).</p>
         <div class="field">
           <label>Location / Region *</label>
           <input type="text" id="resortLocation" placeholder="e.g. Kovalam Beach, Kerala" required>
@@ -184,7 +181,7 @@ function openCreateResortModal() {
 async function handleCreateResort(e) {
   e.preventDefault();
   const name = document.getElementById('resortName').value;
-  const code = document.getElementById('resortCode').value;
+  const code = document.getElementById('resortCode')?.value || '';
   const location = document.getElementById('resortLocation').value;
   const gm = document.getElementById('resortGM').value;
   const budget = document.getElementById('resortBudget').value;
@@ -193,7 +190,7 @@ async function handleCreateResort(e) {
 
   try {
     if (typeof WisetrackAPI !== 'undefined' && WisetrackAPI.isLoggedIn()) {
-      await WisetrackAPI.createResort({ name, code, location, description: desc });
+      await WisetrackAPI.createResort({ name, location, description: desc });
       closeModal();
       showToast(`Resort "${name}" created via API!`);
       setTimeout(() => window.location.reload(), 400);
@@ -365,10 +362,7 @@ function openCreateProjectModal(preselectedParentId = null) {
           <label>Project / Sub-Project Title *</label>
           <input type="text" id="projectName" placeholder="e.g. Electrical 11kV Substation & Cable Laying" required>
         </div>
-        <div class="field">
-          <label>Project / WBS Code *</label>
-          <input type="text" id="projectCode" placeholder="e.g. GR-MEP-001-ELE-T3" required>
-        </div>
+        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (PRJ-001; sub-project PRJ-001-01).</p>
         <div class="field">
           <label>Discipline / Category *</label>
           <select id="projectDiscipline" required>
@@ -423,7 +417,7 @@ async function handleCreateProject(e) {
   const resortId = document.getElementById('projectResortId').value;
   const parentId = document.getElementById('projectParentId').value || null;
   const name = document.getElementById('projectName').value.trim();
-  const code = document.getElementById('projectCode').value.trim();
+  const code = document.getElementById('projectCode')?.value.trim() || '';
   const discipline = document.getElementById('projectDiscipline').value;
   const owner = document.getElementById('projectOwner').value;
   const budget = document.getElementById('projectBudget').value;
@@ -466,7 +460,6 @@ async function handleCreateProject(e) {
 
       await WisetrackAPI.createProject({
         name,
-        code,
         resortId: numResortId,
         parentProjectId: (numParentId && !isNaN(numParentId)) ? numParentId : null,
         description: desc,
@@ -1771,8 +1764,8 @@ async function openEditProjectModal(projectId) {
           <input type="text" id="editProjectName" value="${escapeHtmlAttr(p.name || p.title || '')}" required>
         </div>
         <div class="field">
-          <label>Project / WBS Code *</label>
-          <input type="text" id="editProjectCode" value="${escapeHtmlAttr(p.code || '')}" required>
+          <label>Code (auto)</label>
+          <input type="text" id="editProjectCode" value="${escapeHtmlAttr(p.code || '')}" readonly>
         </div>
         <div class="field">
           <label>Discipline / Category *</label>

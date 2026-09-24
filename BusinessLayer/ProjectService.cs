@@ -62,11 +62,12 @@ public class ProjectService : IProjectService
     public async Task<Resort> CreateResortAsync(CreateResortRequest request, long? userId)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "edit");
+        var code = EntityCodes.Next((await _repository.GetResortsAsync()).Select(r => r.Code), EntityCodes.Resort);
         var resort = await _repository.AddResortAsync(new Resort
         {
             Name = request.Name,
             Location = request.Location,
-            Code = request.Code,
+            Code = code,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         });
@@ -81,7 +82,8 @@ public class ProjectService : IProjectService
         if (resort == null) return null;
         resort.Name = request.Name;
         resort.Location = request.Location;
-        resort.Code = request.Code;
+        if (string.IsNullOrWhiteSpace(resort.Code))
+            resort.Code = EntityCodes.Next((await _repository.GetResortsAsync()).Select(r => r.Code), EntityCodes.Resort);
         resort.IsActive = request.IsActive;
         resort.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateResortAsync(resort);
@@ -100,11 +102,12 @@ public class ProjectService : IProjectService
 
     public async Task<Property> CreatePropertyAsync(CreatePropertyRequest request, long? userId)
     {
+        var code = EntityCodes.Next((await _repository.GetPropertiesAsync(null)).Select(p => p.Code), EntityCodes.Property);
         var property = await _repository.AddPropertyAsync(new Property
         {
             ResortId = request.ResortId,
             Name = request.Name,
-            Code = request.Code,
+            Code = code,
             Description = request.Description,
             Location = request.Location,
             IsActive = true,
@@ -120,7 +123,8 @@ public class ProjectService : IProjectService
         if (property == null) return null;
         property.ResortId = request.ResortId;
         property.Name = request.Name;
-        property.Code = request.Code;
+        if (string.IsNullOrWhiteSpace(property.Code))
+            property.Code = EntityCodes.Next((await _repository.GetPropertiesAsync(null)).Select(p => p.Code), EntityCodes.Property);
         property.Description = request.Description;
         property.Location = request.Location;
         property.IsActive = request.IsActive;
@@ -225,6 +229,7 @@ public class ProjectService : IProjectService
 
         var entity = FromDto(dto);
         entity.OwnerId ??= userId;
+        entity.Code = await NextProjectCodeAsync(dto.ParentProjectId);
         var project = await _repository.AddProjectAsync(entity);
         await _repository.AssignUserAsync(new ProjectUser
         {
@@ -267,6 +272,8 @@ public class ProjectService : IProjectService
         var project = await _repository.GetProjectAsync(id);
         if (project == null) return null;
         ApplyDto(project, dto);
+        if (string.IsNullOrWhiteSpace(project.Code))
+            project.Code = await NextProjectCodeAsync(project.ParentProjectId);
         project.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateProjectAsync(project);
         await _audit.LogAsync(userId, "Update", "Project", id);
@@ -376,6 +383,19 @@ public class ProjectService : IProjectService
         return milestones;
     }
 
+    private async Task<string> NextProjectCodeAsync(long? parentProjectId)
+    {
+        var codes = await _repository.ListProjectCodesAsync();
+        if (parentProjectId.HasValue)
+        {
+            var parent = await _repository.GetProjectAsync(parentProjectId.Value);
+            var parentCode = parent?.Code;
+            if (!string.IsNullOrWhiteSpace(parentCode))
+                return EntityCodes.NextChild(parentCode, codes);
+        }
+        return EntityCodes.Next(codes, EntityCodes.Project);
+    }
+
     private static Project FromDto(CreateProjectDto dto) => new()
     {
         ResortId = dto.ResortId,
@@ -388,7 +408,7 @@ public class ProjectService : IProjectService
         Currency = dto.Currency,
         AllowExternalView = dto.AllowExternalView,
         Name = dto.Name,
-        Code = dto.Code,
+        Code = null,
         Description = dto.Description,
         Status = dto.Status,
         StartDate = dto.StartDate,
@@ -409,7 +429,6 @@ public class ProjectService : IProjectService
         project.Currency = dto.Currency;
         project.AllowExternalView = dto.AllowExternalView;
         project.Name = dto.Name;
-        project.Code = dto.Code;
         project.Description = dto.Description;
         project.Status = dto.Status;
         project.StartDate = dto.StartDate;

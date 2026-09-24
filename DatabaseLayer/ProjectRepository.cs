@@ -27,6 +27,7 @@ public interface IProjectRepository
     Task<Project> AddProjectAsync(Project project);
     Task UpdateProjectAsync(Project project);
     Task DeleteProjectAsync(long id);
+    Task<List<string?>> ListProjectCodesAsync();
     Task AssignUserAsync(ProjectUser projectUser);
     Task RemoveUserAsync(long projectId, long userId);
     Task<List<MilestoneTemplate>> GetTemplatesAsync();
@@ -176,6 +177,9 @@ public class ProjectRepository : IProjectRepository
         _db.Projects.Remove(project);
         await _db.SaveChangesAsync();
     }
+
+    public Task<List<string?>> ListProjectCodesAsync() =>
+        _db.Projects.AsNoTracking().Select(p => p.Code).ToListAsync();
 
     public async Task AssignUserAsync(ProjectUser projectUser)
     {

@@ -1067,7 +1067,7 @@
         <div class="form-grid">
           <div class="field"><label>Resort *</label><select id="propResort" required>${resorts.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Name *</label><input id="propName" required></div>
-          <div class="field"><label>Code</label><input id="propCode"></div>
+          <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns (PRP-001).</p>
           <div class="field"><label>Location</label><input id="propLoc"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
@@ -1080,7 +1080,6 @@
       await WisetrackAPI.createProperty({
         resortId: Number($('#propResort').value),
         name: $('#propName').value.trim(),
-        code: $('#propCode').value.trim(),
         location: $('#propLoc').value.trim()
       });
       closeModal(); showToast('Property created'); await refreshProperties();
@@ -1689,7 +1688,7 @@
     openModal(id ? 'Edit Item' : 'Create Item', `
       <form onsubmit="WTPages.saveItem(event, ${id || 'null'})">
         <div class="form-grid">
-          <div class="field"><label>Code *</label><input id="itCode" value="${esc(it.itemCode || '')}" required></div>
+          ${id ? `<div class="field"><label>Code (auto)</label><input id="itCode" value="${esc(it.itemCode || '')}" readonly></div>` : `<p class="card-subtitle" style="grid-column:1/-1;margin:0">Item code auto-assigns on save (ITM-001).</p>`}
           <div class="field"><label>Name *</label><input id="itName" value="${esc(it.name || '')}" required></div>
           <div class="field"><label>Unit Price *</label><input id="itPrice" type="number" step="0.01" value="${it.unitPrice || 0}" required></div>
           <div class="field"><label>Unit</label><select id="itUnit"><option value="">—</option>${units.map(u => `<option value="${u.id}" ${it.unitId == u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
@@ -1705,7 +1704,7 @@
   async function saveItem(e, id) {
     e.preventDefault();
     const payload = {
-      itemCode: $('#itCode').value.trim(),
+      itemCode: $('#itCode')?.value.trim() || '',
       name: $('#itName').value.trim(),
       unitPrice: Number($('#itPrice').value),
       unitId: $('#itUnit').value ? Number($('#itUnit').value) : null,
@@ -1726,7 +1725,7 @@
     openModal('New Brand', `<form onsubmit="event.preventDefault();WisetrackAPI.createBrand(document.getElementById('bName').value).then(()=>{closeModal();showToast('Saved');WTPages.refreshItemsAll()}).catch(e=>showToast(e.message,'danger'))"><div class="field"><label>Name</label><input id="bName" required></div><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div></form>`);
   }
   function openUnitModal() {
-    openModal('New Unit', `<form onsubmit="event.preventDefault();WisetrackAPI.createUnit(document.getElementById('uCode').value,document.getElementById('uName').value).then(()=>{closeModal();showToast('Saved');WTPages.refreshItemsAll()}).catch(e=>showToast(e.message,'danger'))"><div class="form-grid"><div class="field"><label>Code</label><input id="uCode" required></div><div class="field"><label>Name</label><input id="uName" required></div></div><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div></form>`);
+    openModal('New Unit', `<form onsubmit="event.preventDefault();WisetrackAPI.createUnit('',document.getElementById('uName').value).then(()=>{closeModal();showToast('Saved');WTPages.refreshItemsAll()}).catch(e=>showToast(e.message,'danger'))"><div class="field"><label>Name *</label><input id="uName" required></div><p class="card-subtitle">Code auto-assigns (UNT-001).</p><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div></form>`);
   }
   function openCategoryModal() {
     openModal('New Category', `<form onsubmit="event.preventDefault();WisetrackAPI.createCategory(document.getElementById('cName').value,null).then(()=>{closeModal();showToast('Saved');WTPages.refreshItemsAll()}).catch(e=>showToast(e.message,'danger'))"><div class="field"><label>Name</label><input id="cName" required></div><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div></form>`);
@@ -1811,9 +1810,9 @@
       <form onsubmit="WTPages.saveCC(event)">
         <input type="hidden" id="ccProj" value="${pid}">
         <div class="form-grid">
-          <div class="field"><label>Code *</label><input id="ccCode" required></div>
           <div class="field"><label>Name *</label><input id="ccName" required></div>
         </div>
+        <p class="card-subtitle" style="margin:8px 0 0">Code auto-assigns (CC-001).</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
   }
@@ -1821,7 +1820,7 @@
   async function saveCC(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createCostCenter({ projectId: Number($('#ccProj').value), code: $('#ccCode').value.trim(), name: $('#ccName').value.trim() });
+      await WisetrackAPI.createCostCenter({ projectId: Number($('#ccProj').value), name: $('#ccName').value.trim() });
       closeModal(); showToast('Created'); await pageBudget();
     } catch (err) { showToast(err.message, 'danger'); }
   }

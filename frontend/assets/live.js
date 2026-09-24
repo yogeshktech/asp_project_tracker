@@ -340,12 +340,11 @@ async function loadAuditPage() {
 async function handleCreateResort(e) {
   e.preventDefault();
   const name = document.getElementById('resortName').value;
-  const code = document.getElementById('resortCode').value;
   const location = document.getElementById('resortLocation').value;
   try {
-    await WisetrackAPI.createResort({ name, code, location });
+    const saved = await WisetrackAPI.createResort({ name, location });
     closeModal();
-    showToast(`Resort "${name}" saved to API`);
+    showToast(`Resort "${name}" saved · ${saved.code || saved.Code || 'RST'}`);
     setTimeout(() => location.reload(), 400);
   } catch (err) {
     showToast(err.message, 'danger');
@@ -384,7 +383,6 @@ async function handleCreateProject(e) {
   const parentRaw = document.getElementById('projectParentId').value;
   const parentProjectId = parentRaw ? parseInt(parentRaw, 10) : null;
   const name = document.getElementById('projectName').value;
-  const code = document.getElementById('projectCode').value;
   const desc = document.getElementById('projectDesc')?.value || '';
   const startDate = document.getElementById('projectStartDate')?.value || null;
   const endDate = document.getElementById('projectEndDate')?.value || null;
@@ -397,11 +395,10 @@ async function handleCreateProject(e) {
   }
 
   try {
-    await WisetrackAPI.createProject({
+    const saved = await WisetrackAPI.createProject({
       resortId,
       parentProjectId,
       name,
-      code,
       description: desc,
       status: 'Draft',
       startDate: startDate || null,
@@ -409,7 +406,7 @@ async function handleCreateProject(e) {
     });
     closeModal();
     const label = level === 1 ? 'Level 1 Root Project' : level === 2 ? 'Level 2 Sub-Project' : level === 3 ? 'Level 3 Work Package' : `Level ${level} Child`;
-    showToast(`${label} "${name}" saved`);
+    showToast(`${label} "${name}" saved · ${saved.code || saved.Code || ''}`);
     setTimeout(() => location.reload(), 400);
   } catch (err) {
     showToast(err.message, 'danger');
@@ -486,10 +483,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
           <label>Project / Sub-Project Title *</label>
           <input type="text" id="projectName" required>
         </div>
-        <div class="field">
-          <label>Code</label>
-          <input type="text" id="projectCode">
-        </div>
+        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (PRJ-001; child PRJ-001-01).</p>
         <div class="field">
           <label>Start Date</label>
           <input type="date" id="projectStartDate">
@@ -522,10 +516,7 @@ async function openCreateResortModal() {
           <label>Resort Name *</label>
           <input type="text" id="resortName" required>
         </div>
-        <div class="field">
-          <label>Code</label>
-          <input type="text" id="resortCode">
-        </div>
+        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (RST-001, RST-002…).</p>
         <div class="field">
           <label>Location</label>
           <input type="text" id="resortLocation">
@@ -546,7 +537,7 @@ async function openEditResortModal(resortId) {
       <form onsubmit="handleEditResort(event, '${r.id}')">
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="editResortName" value="${esc(r.name)}" required></div>
-          <div class="field"><label>Code</label><input id="editResortCode" value="${esc(r.code || '')}"></div>
+          <div class="field"><label>Code (auto)</label><input id="editResortCode" value="${esc(r.code || '')}" readonly></div>
           <div class="field"><label>Location</label><input id="editResortLocation" value="${esc(r.location || '')}"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:16px;">

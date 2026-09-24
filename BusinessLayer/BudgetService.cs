@@ -98,7 +98,7 @@ public class BudgetService : IBudgetService
         var cc = await _repository.AddCostCenterAsync(new CostCenter
         {
             ProjectId = request.SubProjectId ?? request.ProjectId,
-            Code = request.Code,
+            Code = EntityCodes.Next((await _repository.GetCostCentersAsync(null)).Select(c => c.Code), EntityCodes.CostCenter),
             Name = request.Name,
             Description = request.Description,
             CreatedAt = DateTime.UtcNow
@@ -116,7 +116,8 @@ public class BudgetService : IBudgetService
         if (userId.HasValue && cc.ProjectId.HasValue)
             await _permissions.EnsureModuleAsync(userId.Value, cc.ProjectId.Value, "Budgets", "update");
         cc.ProjectId = request.SubProjectId ?? request.ProjectId;
-        cc.Code = request.Code;
+        if (string.IsNullOrWhiteSpace(cc.Code))
+            cc.Code = EntityCodes.Next((await _repository.GetCostCentersAsync(null)).Select(c => c.Code), EntityCodes.CostCenter);
         cc.Name = request.Name;
         cc.Description = request.Description;
         await _repository.UpdateCostCenterAsync(cc);
