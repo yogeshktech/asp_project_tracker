@@ -165,6 +165,10 @@ function wtBuildTopbar() {
         <label>Resort:</label>
         <select class="resort-select" id="globalResortSelector" onchange="setSelectedResortId(this.value)"></select>
       </div>
+      <div class="resort-selector-wrap">
+        <label>Project:</label>
+        <select class="resort-select" id="globalProjectSelector" onchange="onGlobalProjectChange(this.value)" title="Tasks and planning show only this project"></select>
+      </div>
       <div class="search-box">
         <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" id="globalTableSearch" placeholder="Search..." onkeyup="if(typeof globalFilterAllTables==='function') globalFilterAllTables(this.value)">

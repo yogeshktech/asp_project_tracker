@@ -58,8 +58,76 @@ async function fillResortSelector() {
 
 function setSelectedResortId(id) {
   localStorage.setItem('WISETRACK_SELECTED_RESORT', String(id));
+  localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
   if (typeof showToast === 'function') showToast('Resort switched', 'info');
   setTimeout(() => location.reload(), 200);
+}
+
+function wtProjectsAsTree(projects) {
+  const list = projects || [];
+  const byParent = new Map();
+  list.forEach(p => {
+    const key = Number(p.parentProjectId || p.parentId || 0);
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(p);
+  });
+  const out = [];
+  const seen = new Set();
+  function walk(parentId, depth) {
+    (byParent.get(parentId) || []).forEach(p => {
+      const id = Number(p.id);
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push({ ...p, _depth: depth });
+      walk(id, depth + 1);
+    });
+  }
+  walk(0, 0);
+  list.forEach(p => {
+    const id = Number(p.id);
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push({ ...p, _depth: 0 });
+    }
+  });
+  return out;
+}
+
+function wtPreferProject(projects) {
+  const list = projects || [];
+  if (!list.length) return null;
+  return list.find(p => /MEP/i.test(p.code || '') || /MEP/i.test(p.name || ''))
+    || list.find(p => p.parentProjectId && String(p.status || '').toLowerCase() === 'active')
+    || list.find(p => p.parentProjectId)
+    || list.find(p => String(p.status || '').toLowerCase() === 'active')
+    || list[0];
+}
+
+async function fillProjectSelector() {
+  const sel = document.getElementById('globalProjectSelector');
+  if (!sel) return;
+  try {
+    const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
+    const projects = await WisetrackAPI.getProjects(resortId || undefined).catch(() => []);
+    const tree = typeof wtProjectsAsTree === 'function' ? wtProjectsAsTree(projects) : (projects || []);
+    let cur = localStorage.getItem('WISETRACK_SELECTED_PROJECT') || '';
+    if (!cur || !tree.some(p => String(p.id) === String(cur))) {
+      const prefer = wtPreferProject(tree);
+      cur = prefer ? String(prefer.id) : '';
+      if (cur) localStorage.setItem('WISETRACK_SELECTED_PROJECT', cur);
+      else localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
+    }
+    sel.innerHTML = tree.length
+      ? tree.map(p => {
+          const pad = '\u00A0'.repeat(Math.max(0, Number(p._depth) || 0) * 2);
+          const mark = (Number(p._depth) || 0) > 0 ? '↳ ' : '';
+          const label = `${pad}${mark}${esc(p.name || p.title)} · ${esc(p.code || '#' + p.id)}`;
+          return `<option value="${p.id}" ${String(p.id) === String(cur) ? 'selected' : ''}>${label}</option>`;
+        }).join('')
+      : '<option value="">No projects</option>';
+  } catch (err) {
+    sel.innerHTML = `<option value="">${esc(err.message)}</option>`;
+  }
 }
 
 async function loadResortsPage() {
@@ -557,6 +625,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!requireAuth()) return;
   applyLoggedInUser();
   await fillResortSelector();
+  if (typeof fillProjectSelector === 'function') await fillProjectSelector();
 
   const page = (location.pathname.split('/').pop() || '').toLowerCase();
   if (page === 'resorts.html') await loadResortsPage();

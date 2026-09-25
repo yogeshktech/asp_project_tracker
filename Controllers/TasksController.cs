@@ -38,6 +38,20 @@ public class TasksController : ControllerBase
         return NoContent();
     }
 
+    [HttpPut("{id:long}/dependency")]
+    public async Task<IActionResult> SetDependency(long id, [FromBody] SetTaskDependencyRequest request)
+    {
+        await _taskService.SetTaskDependencyAsync(id, request, UserId);
+        return NoContent();
+    }
+
+    [HttpPut("subtasks/{id:long}/dependency")]
+    public async Task<IActionResult> SetSubTaskDependency(long id, [FromBody] SetTaskDependencyRequest request)
+    {
+        await _taskService.SetSubTaskDependencyAsync(id, request, UserId);
+        return NoContent();
+    }
+
     [HttpPost("subtasks")]
     public async Task<IActionResult> CreateSubTask([FromBody] CreateSubTaskRequest request) =>
         Ok(await _taskService.CreateSubTaskAsync(request, UserId));

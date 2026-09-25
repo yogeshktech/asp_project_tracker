@@ -355,6 +355,9 @@ CREATE TABLE tasks (
 CREATE TABLE sub_tasks (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     task_id      BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    parent_sub_task_id BIGINT REFERENCES sub_tasks(id) ON DELETE CASCADE,
+    depends_on_task_id BIGINT REFERENCES tasks(id) ON DELETE SET NULL,
+    depends_on_sub_task_id BIGINT REFERENCES sub_tasks(id) ON DELETE SET NULL,
     title        VARCHAR(250) NOT NULL,
     assigned_to  BIGINT REFERENCES users(id),
     due_date     DATE,
@@ -363,6 +366,8 @@ CREATE TABLE sub_tasks (
     remarks      TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS depends_on_sub_task_id BIGINT REFERENCES sub_tasks(id) ON DELETE SET NULL;
 
 CREATE TABLE task_updates (
     id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -196,12 +196,18 @@ public class TaskItemDto
     public bool CanDelete { get; set; }
     public bool CanEditPercent { get; set; }
     public string DisplayCode { get; set; } = string.Empty;
+    public long? DependsOnTaskId { get; set; }
+    public long? DependsOnSubTaskId { get; set; }
+    public string? DependsOnLabel { get; set; }
+    public bool IsBlocked { get; set; }
+    public string? BlockedReason { get; set; }
 }
 
 public class SubTaskItemDto
 {
     public long Id { get; set; }
     public long TaskId { get; set; }
+    public long? ParentSubTaskId { get; set; }
     public string Title { get; set; } = string.Empty;
     public long? AssignedTo { get; set; }
     public DateOnly? DueDate { get; set; }
@@ -211,6 +217,12 @@ public class SubTaskItemDto
     public bool CanDelete { get; set; }
     public bool CanEditPercent { get; set; }
     public string DisplayCode { get; set; } = string.Empty;
+    public long? DependsOnTaskId { get; set; }
+    public long? DependsOnSubTaskId { get; set; }
+    public string? DependsOnLabel { get; set; }
+    public bool IsBlocked { get; set; }
+    public string? BlockedReason { get; set; }
+    public List<SubTaskItemDto> Children { get; set; } = new();
 }
 
 public class TaskBulkImportResultDto

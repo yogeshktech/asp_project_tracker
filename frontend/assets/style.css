@@ -673,16 +673,19 @@ body {
 
 /* Header */
 header.topbar {
-  height: var(--header-h);
+  height: auto;
+  min-height: var(--header-h);
   background: var(--bg-header);
   border-bottom: 1px solid var(--border-color);
-  padding: 0 30px;
+  padding: 8px 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   position: sticky;
   top: 0;
   z-index: 40;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .topbar-left {
@@ -717,10 +720,12 @@ header.topbar {
   color: var(--text-main);
   outline: none;
   cursor: pointer;
+  max-width: 240px;
+  text-overflow: ellipsis;
 }
 
 .search-box {
-  width: 320px;
+  width: 220px;
   background: var(--bg-app);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
@@ -1283,6 +1288,62 @@ header.topbar {
 
 .subtask-title {
   padding-left: 22px !important;
+}
+
+.nest-empty {
+  color: var(--text-muted);
+  opacity: 0.45;
+}
+
+.nest-col {
+  min-width: 140px;
+  max-width: 260px;
+  vertical-align: top;
+}
+
+.nest-col.depth-task.is-filled {
+  background: #eff6ff;
+}
+
+.nest-col.depth-sub.is-filled {
+  background: #f0fdf4;
+}
+
+.nest-col.depth-child.is-filled {
+  background: #faf5ff;
+}
+
+.nest-col.depth-other.is-filled {
+  background: #fff7ed;
+}
+
+.nest-depth-2 td {
+  background: #fcfbff;
+}
+
+.nest-depth-3 td,
+.nest-depth-4 td {
+  background: #fffaf5;
+}
+
+.dep-line {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dep-line.blocked {
+  color: #b45309;
+}
+
+.dep-line.ready {
+  color: #047857;
+}
+
+button.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* N-Level Hierarchy / Tree View */

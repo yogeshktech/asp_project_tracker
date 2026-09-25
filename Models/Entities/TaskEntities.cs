@@ -26,6 +26,7 @@ public class ProjectTask
     public long ProjectId { get; set; }
     public long? MilestoneId { get; set; }
     public long? DependsOnTaskId { get; set; }
+    public long? DependsOnSubTaskId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public long? AssignedTo { get; set; }
@@ -48,6 +49,9 @@ public class SubTask
 {
     public long Id { get; set; }
     public long TaskId { get; set; }
+    public long? ParentSubTaskId { get; set; }
+    public long? DependsOnTaskId { get; set; }
+    public long? DependsOnSubTaskId { get; set; }
     public string Title { get; set; } = string.Empty;
     public long? AssignedTo { get; set; }
     public DateOnly? DueDate { get; set; }
@@ -57,6 +61,9 @@ public class SubTask
     public DateTime CreatedAt { get; set; }
     [JsonIgnore]
     public ProjectTask Task { get; set; } = null!;
+    [JsonIgnore]
+    public SubTask? Parent { get; set; }
+    public ICollection<SubTask> Children { get; set; } = new List<SubTask>();
 }
 
 [Table("task_updates")]

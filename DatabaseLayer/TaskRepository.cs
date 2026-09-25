@@ -65,6 +65,9 @@ public class TaskRepository : ITaskRepository
         var dependents = await _db.Tasks.Where(t => t.DependsOnTaskId == id).ToListAsync();
         foreach (var d in dependents)
             d.DependsOnTaskId = null;
+        var subWaiters = await _db.SubTasks.Where(s => s.DependsOnTaskId == id).ToListAsync();
+        foreach (var s in subWaiters)
+            s.DependsOnTaskId = null;
 
         var task = await _db.Tasks.Include(t => t.SubTasks).FirstOrDefaultAsync(t => t.Id == id)
             ?? throw new InvalidOperationException("Task not found");
@@ -74,9 +77,26 @@ public class TaskRepository : ITaskRepository
 
     public async Task DeleteSubTaskAsync(long id)
     {
-        var sub = await _db.SubTasks.FindAsync(id) ?? throw new InvalidOperationException("Sub-task not found");
-        _db.SubTasks.Remove(sub);
+        if (!await _db.SubTasks.AnyAsync(s => s.Id == id))
+            throw new InvalidOperationException("Sub-task not found");
+        await DeleteSubTaskTreeAsync(id);
         await _db.SaveChangesAsync();
+    }
+
+    private async Task DeleteSubTaskTreeAsync(long id)
+    {
+        var children = await _db.SubTasks.Where(s => s.ParentSubTaskId == id).Select(s => s.Id).ToListAsync();
+        foreach (var childId in children)
+            await DeleteSubTaskTreeAsync(childId);
+        var node = await _db.SubTasks.FindAsync(id);
+        if (node == null) return;
+        var taskWaiters = await _db.Tasks.Where(t => t.DependsOnSubTaskId == id).ToListAsync();
+        foreach (var t in taskWaiters)
+            t.DependsOnSubTaskId = null;
+        var subWaiters = await _db.SubTasks.Where(s => s.DependsOnSubTaskId == id).ToListAsync();
+        foreach (var s in subWaiters)
+            s.DependsOnSubTaskId = null;
+        _db.SubTasks.Remove(node);
     }
 
     public async Task<SubTask> AddSubTaskAsync(SubTask subTask)

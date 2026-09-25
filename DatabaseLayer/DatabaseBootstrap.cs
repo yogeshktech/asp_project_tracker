@@ -33,6 +33,8 @@ public static class DatabaseBootstrap
         }
 
         await EnsurePermissionColumnsAsync(db, logger);
+        await EnsureSubTaskNestingColumnAsync(db, logger);
+        await EnsureTaskDependencyColumnsAsync(db, logger);
         await DbSeeder.SeedAsync(db);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
         logger.LogInformation("Database seed completed.");
@@ -67,6 +69,37 @@ public static class DatabaseBootstrap
                 ON project_permissions (user_id, module)
                 WHERE project_id IS NULL
             """);
+    }
+
+    private static async Task EnsureSubTaskNestingColumnAsync(AppDbContext db, ILogger logger)
+    {
+        if (await ColumnExistsAsync(db, "sub_tasks", "parent_sub_task_id")) return;
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            ALTER TABLE sub_tasks
+                ADD COLUMN IF NOT EXISTS parent_sub_task_id BIGINT NULL REFERENCES sub_tasks(id) ON DELETE CASCADE
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """CREATE INDEX IF NOT EXISTS ix_sub_tasks_parent ON sub_tasks(parent_sub_task_id)""");
+        logger.LogInformation("Added parent_sub_task_id on sub_tasks for nested child tasks.");
+    }
+
+    private static async Task EnsureTaskDependencyColumnsAsync(AppDbContext db, ILogger logger)
+    {
+        if (!await ColumnExistsAsync(db, "tasks", "depends_on_sub_task_id"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE tasks ADD COLUMN IF NOT EXISTS depends_on_sub_task_id BIGINT NULL REFERENCES sub_tasks(id) ON DELETE SET NULL""");
+            logger.LogInformation("Added depends_on_sub_task_id on tasks.");
+        }
+        if (!await ColumnExistsAsync(db, "sub_tasks", "depends_on_task_id"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS depends_on_task_id BIGINT NULL REFERENCES tasks(id) ON DELETE SET NULL""");
+            await db.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS depends_on_sub_task_id BIGINT NULL REFERENCES sub_tasks(id) ON DELETE SET NULL""");
+            logger.LogInformation("Added dependency columns on sub_tasks.");
+        }
     }
 
     private static async Task<bool> ColumnExistsAsync(AppDbContext db, string table, string column)

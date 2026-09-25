@@ -85,6 +85,12 @@ public class AppDbContext : DbContext
             .HasForeignKey(x => x.TaskId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<SubTask>()
+            .HasOne(x => x.Parent)
+            .WithMany(x => x.Children)
+            .HasForeignKey(x => x.ParentSubTaskId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<Issue>()
             .HasOne(x => x.Reporter)
             .WithMany()

@@ -52,6 +52,9 @@
   async function loadProjectsList() {
     const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
     const apiProjects = await WisetrackAPI.getProjects(resortId || undefined).catch(() => []);
+    if (typeof WisetrackAPI !== 'undefined' && WisetrackAPI.isLoggedIn() && Array.isArray(apiProjects) && apiProjects.length) {
+      return apiProjects;
+    }
     let localProjects = [];
     try {
       localProjects = typeof getProjects === 'function' ? getProjects() : [];
@@ -94,7 +97,7 @@
     return pid;
   }
 
-  /** Selected project + descendant project ids (parent roll-up for tasks/milestones). */
+  /** Parent + descendant ids — used for BOQ / inventory roll-up only. Tasks use the selected project alone. */
   async function projectScopeIds(pid) {
     const projects = await loadProjectsList();
     const root = Number(pid);
@@ -120,8 +123,47 @@
     return Number.isFinite(n) ? n : 0;
   }
 
+  function projectsAsTree(projects) {
+    if (typeof wtProjectsAsTree === 'function') return wtProjectsAsTree(projects);
+    return projects || [];
+  }
+
+  function filterRowsForProject(rows, pid) {
+    const id = Number(pid);
+    if (!Number.isFinite(id)) return [];
+    return (rows || []).filter(r => Number(r.projectId || r.ProjectId || r._projectId) === id);
+  }
+
+  function wtRowBlocked(row) {
+    return !!(row?.isBlocked || row?.IsBlocked);
+  }
+  function wtRowBlockReason(row) {
+    return row?.blockedReason || row?.BlockedReason || '';
+  }
+  function wtDepLineHtml(row) {
+    const label = row?.dependsOnLabel || row?.DependsOnLabel;
+    if (!label && !wtRowBlocked(row)) return '';
+    const blocked = wtRowBlocked(row);
+    const text = blocked
+      ? (wtRowBlockReason(row) || `Waiting on ${label}`)
+      : `Depends on ${label}`;
+    return `<small class="dep-line ${blocked ? 'blocked' : 'ready'}">${blocked ? '⏳ ' : '🔗 '}${esc(text)}</small>`;
+  }
+  function wtDepBtnHtml(kind, id, row) {
+    if (typeof wtIsAdmin !== 'function' || !wtIsAdmin()) return '';
+    const has = !!(row?.dependsOnTaskId || row?.DependsOnTaskId || row?.dependsOnSubTaskId || row?.DependsOnSubTaskId);
+    return `<button class="btn sm" onclick="event.stopPropagation(); WTPages.openDependencyModal('${kind}', ${id})">${has ? 'Undepend' : 'Depend'}</button>`;
+  }
+  function wtUpdateBtnHtml(taskId, subId, row) {
+    if (wtRowBlocked(row)) {
+      return `<button class="btn sm" disabled title="${esc(wtRowBlockReason(row) || 'Waiting on dependency')}">Waiting</button>`;
+    }
+    const extra = subId ? `, ${subId}` : '';
+    return `<button class="btn sm" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${taskId}${extra})"><i class="fa-solid fa-pen"></i> Update</button>`;
+  }
+
   async function projectPickerHtml(selectId = 'ctxProjectId') {
-    const allProjects = await loadProjectsList();
+    const allProjects = projectsAsTree(await loadProjectsList());
     let cur = localStorage.getItem('WISETRACK_SELECTED_PROJECT') || '';
     if (!cur || !allProjects.some(p => String(p.id) === String(cur))) {
       const prefer = pickDefaultProject(allProjects);
@@ -129,10 +171,15 @@
       if (cur) localStorage.setItem('WISETRACK_SELECTED_PROJECT', cur);
     }
     const opts = allProjects.map(p => {
+      const depth = Number(p._depth) || (p.parentProjectId ? 1 : 0);
+      const mark = depth > 0 ? '↳ ' : '';
       const lvl = p.parentProjectId ? (p.level || 'Sub') : 'Parent';
-      return `<option value="${p.id}" ${String(p.id) === String(cur) ? 'selected' : ''}>${esc(p.name || p.title)} · ${esc(p.code || '#' + p.id)} (${esc(lvl)})</option>`;
+      return `<option value="${p.id}" ${String(p.id) === String(cur) ? 'selected' : ''}>${mark}${esc(p.name || p.title)} · ${esc(p.code || '#' + p.id)} (${esc(lvl)})</option>`;
     }).join('') || '<option value="">No projects</option>';
-    return `<select id="${selectId}" class="resort-select" style="min-width:260px;padding:8px;border:1px solid var(--border-color);border-radius:6px;" onchange="localStorage.setItem('WISETRACK_SELECTED_PROJECT',this.value);location.reload()">${opts}</select>`;
+    return `<label style="display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;padding:4px 10px;">
+      <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;white-space:nowrap;">Project</span>
+      <select id="${selectId}" class="resort-select" style="min-width:240px;max-width:360px;padding:6px;border:0;background:transparent;font-weight:700;" onchange="onGlobalProjectChange(this.value)">${opts}</select>
+    </label>`;
   }
 
   // ---------- ROLES & PERMISSIONS ----------
@@ -2082,8 +2129,12 @@
     const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
     const title = kind === 'milestones' ? 'Milestones' : kind === 'daily' ? 'Daily Site Progress Report (DSR)' : 'Tasks & Planning';
-    
-    el.innerHTML = pageHead(title, '/api/tasks', picker +
+    const selectedMeta = (await loadProjectsList()).find(p => String(p.id) === String(pid));
+    const selectedLabel = selectedMeta
+      ? `${selectedMeta.name || selectedMeta.title || 'Project'} (${selectedMeta.code || '#' + pid})`
+      : (pid ? `Project #${pid}` : 'No project');
+
+    el.innerHTML = pageHead(title, `Showing ${selectedLabel} only — other projects stay hidden`, picker +
       (kind === 'milestones'
         ? ` <button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>
             <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>
@@ -2091,20 +2142,23 @@
         : kind === 'daily'
         ? ` <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
-        : ` <button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub-Task</button>
+        : ` <button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub / Child</button>
             <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>
             <button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
-      + tableWrap(['ID', 'Title & Package', 'Status', 'Progress', 'Actions'], 'tasksBody')
+      + tableWrap(kind === 'milestones'
+        ? ['ID', 'Title & Package', 'Status', 'Progress', 'Actions']
+        : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
     
+    const nestCols = 8;
     if (!pid) {
-      $('#tasksBody').innerHTML = emptyRow(5, 'No project available. Create / open a project first.');
+      $('#tasksBody').innerHTML = emptyRow(kind === 'milestones' ? 5 : nestCols, 'No project available. Create / open a project first.');
       $('#excList').innerHTML = '<p style="color:var(--text-muted);font-size:12.5px;">Select a project to view exceptions.</p>';
       return;
     }
     try {
-      const scopeIds = await projectScopeIds(pid);
+      const scopeIds = [Number(pid)];
       const projects = await loadProjectsList();
       const nameOf = (id) => {
         const p = projects.find(x => Number(x.id) === Number(id));
@@ -2113,7 +2167,10 @@
 
       if (kind === 'milestones') {
         const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getMilestones(id).catch(() => [])));
-        const ms = batches.flatMap((rows, i) => (rows || []).map(m => ({ ...m, _projectId: scopeIds[i] })));
+        const ms = filterRowsForProject(
+          batches.flatMap((rows, i) => (rows || []).map(m => ({ ...m, _projectId: scopeIds[i] }))),
+          pid
+        );
         $('#tasksBody').innerHTML = ms.length ? ms.map(m => {
           const pct = progressOf(m);
           return `
@@ -2123,10 +2180,13 @@
             <td>${esc(m.status || '—')}</td>
             <td>${pct}%</td><td>—</td>
           </tr>`;
-        }).join('') : emptyRow(5, 'No milestones for this project (or its sub-projects)');
+        }).join('') : emptyRow(5, `No milestones for ${selectedLabel}. Other projects are hidden.`);
       } else {
         const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => [])));
-        const tasks = batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] })));
+        const tasks = filterRowsForProject(
+          batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] }))),
+          pid
+        );
         if (typeof wtApplyTaskDisplayCodes === 'function') wtApplyTaskDisplayCodes(tasks);
         const users = await WisetrackAPI.getUsers().catch(() => []);
         const userName = (id) => {
@@ -2153,6 +2213,31 @@
           return String(raw).replace(/([a-z])([A-Z])/g, '$1 $2');
         };
         
+        const dash = '<span class="nest-empty">—</span>';
+        const nestTitle = (s) => {
+          const due = s.dueDate || s.DueDate;
+          const dueLabel = due ? String(due).slice(0, 10) : 'No due date';
+          return `<strong>${esc(s.title || s.name)}</strong>
+            <small style="display:block;color:var(--text-muted)">Owner: ${esc(userName(s.assignedTo || s.AssignedTo))} · Due: ${esc(dueLabel)}</small>`;
+        };
+        const progressCell = (row, pct) => `
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="progress ${statusBadge(row.status, pct)}" style="width:60px;margin:0;"><i style="width:${pct}%"></i></div>
+              <b>${pct}%</b>
+            </div>
+          </td>`;
+        const nestCells = (depth, html) => {
+          const sub = depth === 1 ? html : dash;
+          const child = depth === 2 ? html : dash;
+          const other = depth >= 3
+            ? `<small style="display:block;color:var(--text-muted);font-weight:700;">L${depth}</small>${html}`
+            : dash;
+          return `<td class="nest-col depth-sub${depth === 1 ? ' is-filled' : ''}">${sub}</td>
+            <td class="nest-col depth-child${depth === 2 ? ' is-filled' : ''}">${child}</td>
+            <td class="nest-col depth-other${depth >= 3 ? ' is-filled' : ''}">${other}</td>`;
+        };
+
         $('#tasksBody').innerHTML = tasks.length ? tasks.flatMap(t => {
           const pct = progressOf(t);
           const status = (t.status || 'In Progress').toLowerCase();
@@ -2160,56 +2245,49 @@
           else if (status.includes('delay')) del++;
           else if (status.includes('block') || status.includes('critical')) crit++;
           else prog++;
-          const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t) : (t.subTasks || t.SubTasks || []);
+          const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(t) : [];
           const owner = userName(t.assignedTo || t.AssignedTo);
           const ownerLabel = userRole(t.assignedTo || t.AssignedTo);
           const parentRow = `
-            <tr>
+            <tr class="task-row">
               <td><code>${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t) : (t.displayCode || 'Task-' + t.id))}</code></td>
-              <td>
+              <td class="nest-col depth-task is-filled">
                 <strong>${esc(t.title || t.name)}</strong>
                 <small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small>
-                <small style="display:block;color:var(--text-muted);">Owner: ${esc(owner)}${ownerLabel ? ' · ' + esc(ownerLabel) : ''} · ${subs.length} sub-task${subs.length === 1 ? '' : 's'}</small>
+                <small style="display:block;color:var(--text-muted);">Owner: ${esc(owner)}${ownerLabel ? ' · ' + esc(ownerLabel) : ''}</small>
+                ${wtDepLineHtml(t)}
               </td>
-              <td><span class="badge ${statusBadge(t.status, pct)}">${esc(formatStatus(t.status))}</span></td>
-              <td>
-                <div style="display:flex;align-items:center;gap:6px;">
-                  <div class="progress ${statusBadge(t.status, pct)}" style="width:60px;margin:0;"><i style="width:${pct}%"></i></div>
-                  <b>${pct}%</b>
-                </div>
-              </td>
+              ${nestCells(0, dash)}
+              <td><span class="badge ${wtRowBlocked(t) ? 'amber' : statusBadge(t.status, pct)}">${wtRowBlocked(t) ? 'Waiting' : esc(formatStatus(t.status))}</span></td>
+              ${progressCell(t, pct)}
               <td class="table-actions">
-                <button class="btn sm" onclick="${kind === 'daily' ? `event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id})` : `event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id})`}"><i class="fa-solid fa-pen"></i> Update</button>
+                ${wtUpdateBtnHtml(t.id, null, t)}
                 ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-plus"></i> Sub-Task</button>` : ''}
+                ${kind === 'planning' ? wtDepBtnHtml('task', t.id, t) : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
               </td>
             </tr>`;
-          const subRows = (kind === 'planning' || kind === 'daily') ? subs.map((s, si) => {
+          const nestedRows = (kind === 'planning' || kind === 'daily') ? walked.map(({ node: s, depth, index }) => {
             const spct = progressOf(s);
-            const due = s.dueDate || s.DueDate;
-            const dueLabel = due ? String(due).slice(0, 10) : 'No due date';
+            const addLabel = depth <= 1 ? 'Child' : 'Other';
+            const code = esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s, index, depth) : (s.displayCode || 'Sub-' + s.id));
             return `
-              <tr class="subtask-row">
-                <td><code>${esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s, si) : (s.displayCode || 'Sub-' + s.id))}</code></td>
-                <td class="subtask-title">
-                  <strong>↳ ${esc(s.title || s.name)}</strong>
-                  <small>Owner: ${esc(userName(s.assignedTo || s.AssignedTo))} · Due: ${esc(dueLabel)}</small>
-                </td>
-                <td><span class="badge ${statusBadge(s.status, spct)}">${esc(formatStatus(s.status))}</span></td>
-                <td>
-                  <div style="display:flex;align-items:center;gap:6px;">
-                    <div class="progress ${statusBadge(s.status, spct)}" style="width:60px;margin:0;"><i style="width:${spct}%"></i></div>
-                    <b>${spct}%</b>
-                  </div>
-                </td>
+              <tr class="subtask-row nest-depth-${depth}">
+                <td><code>${code}</code></td>
+                <td class="nest-col depth-task">${dash}</td>
+                ${nestCells(depth, nestTitle(s) + wtDepLineHtml(s))}
+                <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
+                ${progressCell(s, spct)}
                 <td class="table-actions">
-                  <button class="btn sm" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${t.id}, ${s.id})"><i class="fa-solid fa-pen"></i> Update</button>
+                  ${wtUpdateBtnHtml(t.id, s.id, s)}
+                  ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i> ${addLabel}</button>` : ''}
+                  ${kind === 'planning' ? wtDepBtnHtml('sub', s.id, s) : ''}
                   ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
                 </td>
               </tr>`;
           }).join('') : '';
-          return [parentRow, subRows];
-        }).join('') : emptyRow(5, 'No tasks for this project (or its sub-projects)');
+          return [parentRow, nestedRows];
+        }).join('') : emptyRow(nestCols, `No tasks for ${selectedLabel}. Other projects are hidden.`);
 
         if (kind === 'daily') {
           if (typeof renderDailyReportCharts === 'function') {
@@ -2231,7 +2309,7 @@
       
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     } catch (e) {
-      $('#tasksBody').innerHTML = errRow(5, e);
+      $('#tasksBody').innerHTML = errRow(kind === 'milestones' ? 5 : 8, e);
       $('#excList').innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`;
       showToast(e.message, 'danger');
     }
@@ -2368,38 +2446,129 @@
     const pid = await selectedProjectId();
     const currentUserId = localStorage.getItem('WISETRACK_USER_ID') || '';
     let ownerOpts = '<option value="">Unassigned</option>';
+    let dependOpts = '<option value="">None — can start anytime</option>';
     try {
       const loaded = typeof wtLoadLiveTasksAndOwners === 'function'
         ? await wtLoadLiveTasksAndOwners()
-        : { owners: [] };
+        : { owners: [], tasks: [] };
       const owners = loaded.owners || [];
       ownerOpts = (owners.length ? owners : []).map(u => {
         const selected = String(u.id) === String(currentUserId) ? 'selected' : '';
         return `<option value="${u.id}" ${selected}>${esc(u.fullName)} (${esc(u.role || 'Team')})</option>`;
       }).join('') || `<option value="${esc(currentUserId)}" selected>Me</option>`;
+      dependOpts += wtBuildDependOptions(loaded.tasks || [], null, null);
     } catch (_) { /* keep fallback */ }
+    const adminDep = (typeof wtIsAdmin === 'function' && wtIsAdmin())
+      ? `<div class="field full"><label>Depends on (optional)</label><select id="tDepend">${dependOpts}</select>
+         <small style="color:var(--text-muted)">Until that item is finished, this task cannot be started.</small></div>`
+      : '';
     openModal('Create Task', `
       <form onsubmit="WTPages.saveTask(event)">
         <input type="hidden" id="tProj" value="${pid}">
         <div class="form-grid">
           <div class="field full"><label>Title *</label><input id="tTitle" required></div>
           <div class="field full"><label>Assign to user *</label><select id="tOwner">${ownerOpts}</select></div>
+          ${adminDep}
           <div class="field full"><label>Description</label><textarea id="tDesc"></textarea></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
   }
 
+  function wtBuildDependOptions(tasks, excludeKind, excludeId) {
+    let html = '';
+    (tasks || []).forEach(t => {
+      if (!(excludeKind === 'task' && Number(t.id) === Number(excludeId))) {
+        html += `<option value="task:${t.id}">${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t) : t.displayCode || t.title)} · ${esc(t.title || t.name)}</option>`;
+      }
+      const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(t) : [];
+      walked.forEach(({ node: s, depth }) => {
+        if (excludeKind === 'sub' && Number(s.id) === Number(excludeId)) return;
+        const pad = depth <= 1 ? '↳ ' : depth === 2 ? '↳↳ ' : '↳↳↳ ';
+        html += `<option value="sub:${s.id}">${pad}${esc(s.displayCode || s.title)} · ${esc(s.title || s.name)}</option>`;
+      });
+    });
+    return html;
+  }
+
+  function parseDependValue(raw) {
+    const v = String(raw || '').trim();
+    if (!v) return { dependsOnTaskId: null, dependsOnSubTaskId: null };
+    if (v.startsWith('sub:')) return { dependsOnTaskId: null, dependsOnSubTaskId: Number(v.slice(4)) || null };
+    if (v.startsWith('task:')) return { dependsOnTaskId: Number(v.slice(5)) || null, dependsOnSubTaskId: null };
+    return { dependsOnTaskId: null, dependsOnSubTaskId: null };
+  }
+
   async function saveTask(e) {
     e.preventDefault();
     try {
+      const dep = parseDependValue($('#tDepend')?.value);
       await WisetrackAPI.createTask({
         projectId: Number($('#tProj').value),
         title: $('#tTitle').value.trim(),
         description: $('#tDesc').value.trim(),
-        assignedTo: Number($('#tOwner')?.value) || Number(localStorage.getItem('WISETRACK_USER_ID')) || null
+        assignedTo: Number($('#tOwner')?.value) || Number(localStorage.getItem('WISETRACK_USER_ID')) || null,
+        dependsOnTaskId: dep.dependsOnTaskId,
+        dependsOnSubTaskId: dep.dependsOnSubTaskId
       });
       closeModal(); showToast('Task created'); await pageTasks('planning');
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function openDependencyModal(kind, id) {
+    if (typeof wtIsAdmin === 'function' && !wtIsAdmin()) {
+      showToast('Only Admin can depend / undepend tasks.', 'danger');
+      return;
+    }
+    const loaded = typeof wtLoadLiveTasksAndOwners === 'function'
+      ? await wtLoadLiveTasksAndOwners()
+      : { tasks: [] };
+    const tasks = loaded.tasks || [];
+    let current = '';
+    let title = '';
+    if (kind === 'task') {
+      const t = tasks.find(x => Number(x.id) === Number(id));
+      title = t ? (t.title || t.name || `Task ${id}`) : `Task ${id}`;
+      if (t?.dependsOnSubTaskId || t?.DependsOnSubTaskId) current = `sub:${t.dependsOnSubTaskId || t.DependsOnSubTaskId}`;
+      else if (t?.dependsOnTaskId || t?.DependsOnTaskId) current = `task:${t.dependsOnTaskId || t.DependsOnTaskId}`;
+    } else {
+      for (const t of tasks) {
+        const s = typeof wtFindSub === 'function' ? wtFindSub(t, id) : null;
+        if (!s) continue;
+        title = s.title || s.name || `Sub ${id}`;
+        if (s.dependsOnSubTaskId || s.DependsOnSubTaskId) current = `sub:${s.dependsOnSubTaskId || s.DependsOnSubTaskId}`;
+        else if (s.dependsOnTaskId || s.DependsOnTaskId) current = `task:${s.dependsOnTaskId || s.DependsOnTaskId}`;
+        break;
+      }
+    }
+    const opts = `<option value="">None — undepend (can start anytime)</option>` + wtBuildDependOptions(tasks, kind, id);
+    openModal('Task dependency (Admin)', `
+      <form onsubmit="WTPages.saveDependency(event, '${esc(kind)}', ${Number(id)})">
+        <p style="margin:0 0 12px;color:var(--text-muted);font-size:13px;">
+          <strong>${esc(title)}</strong> will not be allowed to start until the selected task / sub-task is finished.
+        </p>
+        <div class="field full">
+          <label>Wait for</label>
+          <select id="depTarget">${opts}</select>
+        </div>
+        <div class="modalfoot" style="padding:0;margin-top:12px">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn primary" type="submit">Save dependency</button>
+        </div>
+      </form>`);
+    const sel = document.getElementById('depTarget');
+    if (sel && current) sel.value = current;
+  }
+
+  async function saveDependency(e, kind, id) {
+    e.preventDefault();
+    try {
+      const payload = parseDependValue($('#depTarget')?.value);
+      if (kind === 'sub') await WisetrackAPI.setSubTaskDependency(id, payload);
+      else await WisetrackAPI.setTaskDependency(id, payload);
+      closeModal();
+      showToast(payload.dependsOnTaskId || payload.dependsOnSubTaskId ? 'Dependency saved' : 'Dependency removed — can start anytime');
+      await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2413,7 +2582,7 @@
   }
 
   async function deleteSubTask(id, title) {
-    if (!confirm(`Delete sub-task "${title || id}"?`)) return;
+    if (!confirm(`Delete sub-task "${title || id}" and any nested child tasks?`)) return;
     try {
       await WisetrackAPI.deleteSubTask(id);
       showToast('Sub-task deleted');
@@ -2434,8 +2603,9 @@
 
     const findTask = (id) => tasks.find(t => Number(t.id) === Number(id));
     const findSub = (task, id) => {
-      const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(task || {}) : (task?.subTasks || []);
-      return (subs || []).find(s => Number(s.id) === Number(id));
+      if (typeof wtFindSub === 'function') return wtFindSub(task, id);
+      const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(task || {}) : [];
+      return walked.map(x => x.node).find(s => Number(s.id) === Number(id)) || null;
     };
 
     let selectedTask = taskId ? findTask(taskId) : null;
@@ -2452,11 +2622,13 @@
 
     const buildSubOpts = (tid) => {
       const t = findTask(tid);
-      const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t || {}) : (t?.subTasks || []);
-      if (!subs.length) return '<option value="">No sub-task (update main task)</option>';
-      return `<option value="">Main task only</option>` + subs.map(s =>
-        `<option value="${s.id}" ${Number(s.id) === Number(subTaskId) ? 'selected' : ''}>${esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s) : (s.displayCode || s.title))} · ${esc(s.title || s.name)}</option>`
-      ).join('');
+      const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(t || {}) : [];
+      if (!walked.length) return '<option value="">No nested tasks (update main task)</option>';
+      return `<option value="">Main task only</option>` + walked.map(({ node: s, depth, index }) => {
+        const pad = depth <= 1 ? '↳ ' : depth === 2 ? '↳↳ ' : '↳↳↳ ';
+        const code = typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s, index, depth) : (s.displayCode || s.title);
+        return `<option value="${s.id}" ${Number(s.id) === Number(subTaskId) ? 'selected' : ''}>${pad}${esc(code)} · ${esc(s.title || s.name)}</option>`;
+      }).join('');
     };
 
     const pct = Number(isSub
@@ -2568,7 +2740,7 @@
     const el = root();
     const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Issues & Escalation', 'What / Where / When / Impact — high-priority mail to stakeholders', picker +
+    el.innerHTML = pageHead('Issues & Escalation', 'Selected project only — other projects’ issues stay hidden', picker +
       ` <button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>`)
       + tableWrap(['ID', 'What', 'Where', 'When', 'Impact', 'Reported By', 'Priority', 'Status', 'Actions'], 'issuesBody');
     if (!pid) {
@@ -2576,9 +2748,9 @@
       return;
     }
     try {
-      const scopeIds = await projectScopeIds(pid);
+      const scopeIds = [Number(pid)];
       const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getIssues(id).catch(() => [])));
-      const issues = batches.flat();
+      const issues = filterRowsForProject(batches.flat(), pid);
       $('#issuesBody').innerHTML = issues.length ? issues.map(i => `
         <tr>
           <td>${i.id}</td>
@@ -3031,7 +3203,7 @@
         <div class="flow-rail">
           <a class="flow-node" href="users.html"><div class="fn" style="background:#1d4ed8">1</div><div class="ft">Users & Access</div><div class="fs">Admin / user checkboxes</div></a>
           <span class="flow-arrow">➜</span>
-          <a class="flow-node" href="project-detail.html"><div class="fn" style="background:#6d28d9">2</div><div class="ft">Team Assign</div><div class="fs">PM-02 / PM-04</div></a>
+          <a class="flow-node" href="project-detail.html"><div class="fn" style="background:#6d28d9">2</div><div class="ft">Project Assign</div><div class="fs">PM-02 / PM-04</div></a>
           <span class="flow-arrow">➜</span>
           <a class="flow-node" href="projects.html"><div class="fn" style="background:#7c3aed">3</div><div class="ft">N-Level Projects</div><div class="fs">PM-01 / PM-06</div></a>
           <span class="flow-arrow">➜</span>
@@ -3282,6 +3454,7 @@
       if (typeof wtApplyLayout === 'function') wtApplyLayout();
       if (typeof applyLoggedInUser === 'function') await applyLoggedInUser();
       if (typeof fillResortSelector === 'function') await fillResortSelector();
+      if (typeof fillProjectSelector === 'function') await fillProjectSelector();
 
       const page = (location.pathname.split('/').pop() || '').toLowerCase();
       if (typeof wtPageAllowed === 'function' && page && !wtPageAllowed(page) && page !== 'login.html') {
@@ -3344,7 +3517,8 @@
     openMilestoneModal, saveMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate,
-    openCreateSubTaskModal: (p) => openCreateSubTaskModal(p),
+    openDependencyModal, saveDependency,
+    openCreateSubTaskModal: (p, s) => openCreateSubTaskModal(p, s),
     saveSubTask: (e) => handleCreateSubTask(e),
     refreshPlanning: () => pageTasks('planning'),
     openIssueModal, saveIssue, commentIssue, escalateIssue,

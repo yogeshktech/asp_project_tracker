@@ -116,8 +116,17 @@ function getSelectedProjectId() {
 }
 
 function setSelectedProjectId(projectId) {
-  if (!projectId) return;
+  if (!projectId) {
+    localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
+    return;
+  }
   localStorage.setItem('WISETRACK_SELECTED_PROJECT', String(projectId));
+}
+
+function onGlobalProjectChange(projectId) {
+  setSelectedProjectId(projectId);
+  if (typeof showToast === 'function') showToast('Showing this project only', 'info');
+  setTimeout(() => location.reload(), 150);
 }
 
 // Role Switcher Handler
@@ -786,9 +795,10 @@ async function openAddDailyReportModal(taskId, subTaskId) {
   const opts = [];
   tasks.forEach(t => {
     opts.push(`<option value="${t.id}">${wtTaskCode(t)} · ${wtEscHtml(t.title || t.name)}</option>`);
-    const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t) : [];
-    subs.forEach((s, j) => {
-      opts.push(`<option value="${t.id}:${s.id}">↳ ${wtSubTaskCode(t, s, j)} · ${wtEscHtml(s.title || s.name)}</option>`);
+    const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(t) : [];
+    walked.forEach(({ node: s, depth, index }) => {
+      const pad = depth <= 1 ? '↳ ' : depth === 2 ? '↳↳ ' : '↳↳↳ ';
+      opts.push(`<option value="${t.id}:${s.id}">${pad}${wtSubTaskCode(t, s, index, depth)} · ${wtEscHtml(s.title || s.name)}</option>`);
     });
   });
 
@@ -1011,12 +1021,54 @@ function wtSubTasksOf(task) {
   return wtAsArray(task?.subTasks || task?.SubTasks || task?.subtasks);
 }
 
+function wtNestSubTasks(list) {
+  const arr = wtAsArray(list).map(s => ({ ...s, children: wtAsArray(s.children || s.Children) }));
+  if (!arr.length) return [];
+  const nestedFromApi = arr.some(s => (s.children || []).length);
+  if (nestedFromApi) {
+    return arr.filter(s => !Number(s.parentSubTaskId || s.ParentSubTaskId || 0));
+  }
+  const byId = new Map();
+  arr.forEach(s => byId.set(Number(s.id), { ...s, children: [] }));
+  const roots = [];
+  byId.forEach(s => {
+    const pid = Number(s.parentSubTaskId || s.ParentSubTaskId || 0);
+    if (pid && byId.has(pid)) byId.get(pid).children.push(s);
+    else roots.push(s);
+  });
+  return roots;
+}
+
+function wtWalkSubs(task) {
+  const out = [];
+  function walk(nodes, depth) {
+    (nodes || []).forEach((s, i) => {
+      out.push({ node: s, depth, index: i });
+      walk(s.children || [], depth + 1);
+    });
+  }
+  walk(wtNestSubTasks(wtSubTasksOf(task)), 1);
+  return out;
+}
+
+function wtFindSub(task, subId) {
+  return wtWalkSubs(task).map(x => x.node).find(s => Number(s.id) === Number(subId)) || null;
+}
+
 function wtTaskCode(task, index) {
   return task?.displayCode || task?.DisplayCode || `Task-${(index ?? 0) + 1}`;
 }
 
-function wtSubTaskCode(task, sub, subIndex) {
-  return sub?.displayCode || sub?.DisplayCode || `${wtTaskCode(task)}-Sub-${(subIndex ?? 0) + 1}`;
+function wtNestLabel(depth) {
+  if (depth <= 1) return 'Sub';
+  if (depth === 2) return 'Child';
+  return 'L' + depth;
+}
+
+function wtSubTaskCode(task, sub, subIndex, depth) {
+  if (sub?.displayCode || sub?.DisplayCode) return sub.displayCode || sub.DisplayCode;
+  const d = depth || 1;
+  return `${wtTaskCode(task)}-${wtNestLabel(d)}-${(subIndex ?? 0) + 1}`;
 }
 
 function wtApplyTaskDisplayCodes(tasks) {
@@ -1030,10 +1082,15 @@ function wtApplyTaskDisplayCodes(tasks) {
     list.sort((a, b) => Number(a.id) - Number(b.id));
     list.forEach((t, i) => {
       t.displayCode = t.displayCode || t.DisplayCode || `Task-${i + 1}`;
-      const subs = typeof wtSubTasksOf === 'function' ? wtSubTasksOf(t) : (t.subTasks || []);
-      [...subs].sort((a, b) => Number(a.id) - Number(b.id)).forEach((s, j) => {
-        s.displayCode = s.displayCode || s.DisplayCode || `${t.displayCode}-Sub-${j + 1}`;
-      });
+      const nested = wtNestSubTasks(wtSubTasksOf(t));
+      t.subTasks = nested;
+      const stamp = (nodes, parentCode, depth) => {
+        (nodes || []).forEach((s, j) => {
+          s.displayCode = s.displayCode || s.DisplayCode || `${parentCode}-${wtNestLabel(depth)}-${j + 1}`;
+          stamp(s.children || [], s.displayCode, depth + 1);
+        });
+      };
+      stamp(nested, t.displayCode, 1);
     });
   });
   return tasks;
@@ -1063,14 +1120,15 @@ async function wtLoadLiveTasksAndOwners() {
 
   const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
   const projects = await WisetrackAPI.getProjects(resortId).catch(() => []);
-  const scopeIds = wtProjectScopeIds(projects, pid);
+  const scopeIds = [Number(pid)];
   const [taskBatches, teamBatches, allUsers] = await Promise.all([
     Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => []))),
     Promise.all(scopeIds.map(id => (typeof WisetrackAPI.getProjectTeam === 'function' ? WisetrackAPI.getProjectTeam(id) : Promise.resolve([])).catch(() => []))),
     WisetrackAPI.getUsers().catch(() => [])
   ]);
 
-  const tasks = taskBatches.flatMap((rows, i) => wtAsArray(rows).map(t => ({ ...t, _projectId: scopeIds[i] })));
+  const tasks = taskBatches.flatMap((rows, i) => wtAsArray(rows).map(t => ({ ...t, _projectId: scopeIds[i] })))
+    .filter(t => Number(t.projectId || t.ProjectId || t._projectId) === Number(pid));
   wtApplyTaskDisplayCodes(tasks);
   const seen = new Set();
   const owners = [];
@@ -1096,7 +1154,7 @@ async function wtLoadLiveTasksAndOwners() {
   return { pid, tasks, owners, projects };
 }
 
-async function openCreateSubTaskModal(parentTaskId = '') {
+async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
   if (typeof WisetrackAPI === 'undefined' || !WisetrackAPI.isLoggedIn()) {
     showToast('Please login first.', 'danger');
     return;
@@ -1116,33 +1174,47 @@ async function openCreateSubTaskModal(parentTaskId = '') {
     const p = (projects || []).find(x => Number(x.id) === Number(id));
     return p ? (p.code || p.name || `#${id}`) : `#${id}`;
   };
-  const selectedId = parentTaskId ? String(parentTaskId) : '';
+  const selectedTaskId = parentTaskId ? String(parentTaskId) : '';
+  const selectedSubId = parentSubTaskId ? String(parentSubTaskId) : '';
+  const selectedValue = selectedSubId ? `${selectedTaskId}:${selectedSubId}` : selectedTaskId;
   const parentOpts = tasks.map(t => {
-    const selected = selectedId && String(t.id) === selectedId ? 'selected' : '';
-    return `<option value="${t.id}" ${selected}>${wtEscHtml(wtTaskCode(t))} · ${wtEscHtml(t.title || t.name)} (${wtEscHtml(nameOf(t._projectId || t.projectId))})</option>`;
+    const taskSelected = selectedValue && String(t.id) === String(selectedValue) ? 'selected' : '';
+    const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(t) : [];
+    const childOpts = walked.map(({ node: s, depth }) => {
+      const val = `${t.id}:${s.id}`;
+      const sel = String(val) === String(selectedValue) ? 'selected' : '';
+      const pad = '\u00A0'.repeat(Math.max(0, depth) * 2);
+      const mark = depth <= 1 ? '↳ Sub' : depth === 2 ? '↳↳ Child' : `↳↳↳ L${depth}`;
+      return `<option value="${val}" ${sel}>${pad}${mark} · ${wtEscHtml(wtSubTaskCode(t, s, 0, depth))} · ${wtEscHtml(s.title || s.name)}</option>`;
+    }).join('');
+    return `<option value="${t.id}" ${taskSelected}>${wtEscHtml(wtTaskCode(t))} · ${wtEscHtml(t.title || t.name)} (${wtEscHtml(nameOf(t._projectId || t.projectId))})</option>${childOpts}`;
   }).join('');
   const ownerOpts = owners.length
     ? owners.map(u => `<option value="${u.id}">${wtEscHtml(u.fullName)} (${wtEscHtml(u.role)})</option>`).join('')
     : '<option value="">No users found</option>';
-  const preselected = tasks.find(t => String(t.id) === selectedId);
+  const preselected = tasks.find(t => String(t.id) === selectedTaskId);
   const defaultDue = String(preselected?.dueDate || preselected?.DueDate || '').slice(0, 10);
+  const nestHint = selectedSubId
+    ? 'Child / nested task under the selected sub-task'
+    : 'Sub-task under the selected main task (or pick a sub-task to nest deeper)';
 
-  openModal('Create New Sub-Task under Main Task', `
+  openModal('Create nested task (Task → Sub → Child)', `
     <form onsubmit="handleCreateSubTask(event)">
       <div class="form-grid">
         <div class="field full">
-          <label>Sub-Task Title *</label>
-          <input type="text" id="subTaskTitle" placeholder="e.g. Pull 350m XLPE Cable in Shaft 2" required>
+          <label>Title *</label>
+          <input type="text" id="subTaskTitle" placeholder="e.g. Get GM approval" required>
         </div>
-        <div class="field">
-          <label>Parent Main Task *</label>
+        <div class="field full">
+          <label>Nest under *</label>
           <select id="subTaskParent" required>
-            ${selectedId ? '' : '<option value="">Select which task this sub-task belongs to</option>'}
+            ${selectedValue ? '' : '<option value="">Select task / sub-task / child</option>'}
             ${parentOpts}
           </select>
+          <small style="color:var(--text-muted);display:block;margin-top:4px">${wtEscHtml(nestHint)}</small>
         </div>
         <div class="field">
-          <label>Responsible Sub-Task Owner (PM / Lead) *</label>
+          <label>Owner *</label>
           <select id="subTaskOwner" required>${ownerOpts}</select>
         </div>
         <div class="field">
@@ -1158,44 +1230,47 @@ async function openCreateSubTaskModal(parentTaskId = '') {
           </select>
         </div>
         <div class="field full">
-          <label>Deliverables & Technical Notes</label>
-          <textarea id="subTaskNotes" placeholder="Specify requirements, safety clearances, and inspection check items..."></textarea>
+          <label>Notes</label>
+          <textarea id="subTaskNotes" placeholder="Requirements, checks, handover notes..."></textarea>
         </div>
       </div>
       <div class="modalfoot" style="padding-left:0;padding-right:0;padding-bottom:0;margin-top:16px;">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn primary">＋ Create Sub-Task</button>
+        <button type="submit" class="btn primary">＋ Create</button>
       </div>
     </form>`);
 }
 
 async function handleCreateSubTask(e) {
   e.preventDefault();
-  const taskId = Number(document.getElementById('subTaskParent')?.value);
+  const raw = (document.getElementById('subTaskParent')?.value || '').trim();
+  const parts = raw.split(':');
+  const taskId = Number(parts[0]);
+  const parentSubTaskId = parts[1] ? Number(parts[1]) : null;
   const title = (document.getElementById('subTaskTitle')?.value || '').trim();
   const assignedTo = Number(document.getElementById('subTaskOwner')?.value) || null;
   const dueDate = document.getElementById('subTaskDueDate')?.value || null;
   const status = (document.getElementById('subTaskInitStatus')?.value || 'NotStarted').replace(/\s+/g, '');
   const remarks = (document.getElementById('subTaskNotes')?.value || '').trim();
   if (!taskId) {
-    showToast('Select the parent main task.', 'danger');
+    showToast('Select the parent task or sub-task.', 'danger');
     return;
   }
   if (!title) {
-    showToast('Enter a sub-task title.', 'danger');
+    showToast('Enter a title.', 'danger');
     return;
   }
   try {
-    await WisetrackAPI.createSubTask({ taskId, title, assignedTo, dueDate, status, remarks });
+    await WisetrackAPI.createSubTask({ taskId, parentSubTaskId, title, assignedTo, dueDate, status, remarks });
     closeModal();
-    showToast(`Sub-task "${title}" created`);
+    showToast(`"${title}" created`);
     if (window.WTPages && typeof WTPages.refreshPlanning === 'function') {
       await WTPages.refreshPlanning();
     } else {
       location.reload();
     }
   } catch (err) {
-    showToast(err.message || 'Could not create sub-task', 'danger');
+    showToast(err.message || 'Could not create nested task', 'danger');
   }
 }
 
