@@ -125,8 +125,8 @@ function wtBuildSidebar() {
   let html = `
     <div class="side-header">
       <a href="dashboard.html" class="logo">
-        <div class="logo-badge">W</div>
-        <div><div>WISETRACK</div><div class="logo-sub">API Console</div></div>
+        <div class="logo-badge"><i class="fa-solid fa-compass-drafting"></i></div>
+        <div><div>WISETRACK</div><div class="logo-sub">Project Control Suite</div></div>
       </a>
       <button type="button" class="side-close" data-wt-nav-close="1" aria-label="Close menu"><i class="fa-solid fa-xmark"></i></button>
     </div>
@@ -142,7 +142,7 @@ function wtBuildSidebar() {
   }
   const storedName = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
   const initials = storedName.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
-  const roleLabel = wtIsAdmin() ? 'Admin' : 'User';
+  const roleLabel = wtIsAdmin() ? 'Project Admin' : (localStorage.getItem('WISETRACK_ROLE') || 'User');
   html += `</div>
     <div class="side-user">
       <div class="avatar">${initials}</div>
@@ -150,6 +150,7 @@ function wtBuildSidebar() {
         <div class="user-name">${storedName.replace(/[<>]/g, '')}</div>
         <div class="user-role-badge current-role-label">${roleLabel}</div>
       </div>
+      <a href="login.html" title="Sign Out" style="color:var(--sidebar-muted); font-size:13px; margin-left:auto; padding:4px;"><i class="fa-solid fa-arrow-right-from-bracket"></i></a>
     </div>`;
   return html;
 }
@@ -161,17 +162,18 @@ function wtBuildTopbar() {
       <button type="button" class="nav-toggle" data-wt-nav-toggle="1" aria-label="Open menu">
         <i class="fa-solid fa-bars"></i>
       </button>
-      <div class="resort-selector-wrap">
-        <label>Resort:</label>
+      <div class="resort-selector-wrap" title="Current Resort Scope">
+        <label><i class="fa-solid fa-hotel" style="color:var(--primary); font-size:11px;"></i> Resort:</label>
         <select class="resort-select" id="globalResortSelector" onchange="setSelectedResortId(this.value)"></select>
       </div>
-      <div class="resort-selector-wrap">
-        <label>Project:</label>
-        <select class="resort-select" id="globalProjectSelector" onchange="onGlobalProjectChange(this.value)" title="Tasks and planning show only this project"></select>
+      <div class="resort-selector-wrap" title="Active Project Scope">
+        <label><i class="fa-solid fa-layer-group" style="color:var(--primary); font-size:11px;"></i> Project:</label>
+        <select class="resort-select" id="globalProjectSelector" onchange="onGlobalProjectChange(this.value)" title="Tasks and planning scope"></select>
       </div>
       <div class="search-box">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="globalTableSearch" placeholder="Search..." onkeyup="if(typeof globalFilterAllTables==='function') globalFilterAllTables(this.value)">
+        <input type="text" id="globalTableSearch" placeholder="Search records..." onkeyup="if(typeof globalFilterAllTables==='function') globalFilterAllTables(this.value)">
+        <span style="font-size:10px; font-weight:700; background:var(--border-light); padding:1px 5px; border-radius:4px; border:1px solid var(--border-color); color:var(--text-muted); flex-shrink:0;">⌘K</span>
       </div>
     </div>
     <div class="topbar-right">
@@ -179,18 +181,18 @@ function wtBuildTopbar() {
       <div class="theme-switcher" title="Switch Theme Palette">
         <i class="fa-solid fa-palette"></i>
         <select id="globalThemeSelector" onchange="setGlobalTheme(this.value)">
-          <option value="blue" ${currentTheme === 'blue' ? 'selected' : ''}>🔵 Blue</option>
-          <option value="red" ${currentTheme === 'red' ? 'selected' : ''}>🔴 Red</option>
-          <option value="green" ${currentTheme === 'green' ? 'selected' : ''}>🟢 Green</option>
-          <option value="yellow" ${currentTheme === 'yellow' ? 'selected' : ''}>🟡 Yellow</option>
-          <option value="white" ${currentTheme === 'white' ? 'selected' : ''}>⚪ White</option>
-          <option value="dark" ${currentTheme === 'dark' ? 'selected' : ''}>⚫ Dark</option>
-          <option value="light" ${currentTheme === 'light' ? 'selected' : ''}>🟣 Light</option>
+          <option value="blue" ${currentTheme === 'blue' ? 'selected' : ''}>🔵 Sapphire</option>
+          <option value="red" ${currentTheme === 'red' ? 'selected' : ''}>🔴 Ruby</option>
+          <option value="green" ${currentTheme === 'green' ? 'selected' : ''}>🟢 Emerald</option>
+          <option value="yellow" ${currentTheme === 'yellow' ? 'selected' : ''}>🟡 Amber</option>
+          <option value="white" ${currentTheme === 'white' ? 'selected' : ''}>⚪ Studio</option>
+          <option value="dark" ${currentTheme === 'dark' ? 'selected' : ''}>⚫ Obsidian</option>
+          <option value="light" ${currentTheme === 'light' ? 'selected' : ''}>🟣 Amethyst</option>
         </select>
       </div>
-      <span class="badge blue" style="font-size:11px;">Live API</span>
-      <a href="notifications.html" class="header-action-btn" title="Inbox"><i class="fa-solid fa-bell"></i></a>
-      <a href="login.html" class="header-action-btn" title="Logout" style="color:#ef4444;"><i class="fa-solid fa-right-from-bracket"></i></a>
+      <span class="badge green" style="font-size:11px; padding:4px 10px;"><i class="fa-solid fa-circle-dot" style="font-size:9px;"></i> Live API</span>
+      <a href="notifications.html" class="header-action-btn" title="Notifications & Escalations"><i class="fa-solid fa-bell"></i></a>
+      <a href="login.html" class="header-action-btn" title="Sign Out" style="color:#ef4444;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>`;
 }
 

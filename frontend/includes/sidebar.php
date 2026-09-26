@@ -7,10 +7,10 @@ if (!isset($currentPage)) {
 <aside class="side">
   <div class="side-header">
     <a href="index.php?page=dashboard" class="logo">
-      <div class="logo-badge">W</div>
+      <div class="logo-badge"><i class="fa-solid fa-compass-drafting"></i></div>
       <div>
         <div>WISETRACK</div>
-        <div class="logo-sub">Project Control</div>
+        <div class="logo-sub">Engineering Suite</div>
       </div>
     </a>
   </div>
