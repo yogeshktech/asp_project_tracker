@@ -1,6 +1,7 @@
 // Full API UI modules — replaces page .content with live Swagger-backed screens
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
+  const detailValue = value => value == null || (typeof value === 'string' && !value.trim()) ? 'N/A' : esc(value);
 
   function root() {
     let el = document.getElementById('apiPageRoot');
@@ -1542,7 +1543,7 @@
             </div>
             <h3 style="font-size:15px; font-weight:800; margin:10px 0 4px;">${esc(p.name || p.title)}</h3>
             ${parentObj ? `<div style="font-size:11px; color:#6b21a8; background:#faf5ff; padding:3px 6px; border-radius:4px; margin-bottom:6px;">↳ Parent: <b>${esc(parentObj.name)}</b></div>` : ''}
-            <div style="font-size:11.5px; color:var(--text-muted);">Code: <code>${detailValue(p.code)}</code> · ${esc(p.discipline || 'General')}</div>
+            <div style="font-size:11.5px; color:var(--text-muted);">Code: <code>${esc(p.code || '')}</code> · ${esc(p.discipline || 'General')}</div>
             <p style="font-size:12px; color:var(--text-muted); margin:10px 0; min-height:36px;">${esc(p.desc || 'Engineering deliverable package with milestones and technical specifications.')}</p>
             <div class="progress ${progColor}"><i style="width:${prog}%"></i></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
@@ -1657,7 +1658,6 @@
       ? formatBudgetValue(profileVariance.currentCommitment ?? profileVariance.purchaseTotal, profileVariance.currency || p.currency || 'INR') : 'N/A';
     p.startDate = p.startDate || 'N/A';
     p.endDate = p.endDate || 'N/A';
-    const detailValue = value => value == null || (typeof value === 'string' && !value.trim()) ? 'N/A' : esc(value);
     const prog = p.progress !== undefined ? p.progress : (p.progressPercent || 0);
     const progColor = prog >= 80 ? 'green' : (prog >= 50 ? 'blue' : 'amber');
     const lvl = Number(p.level) || 1;
