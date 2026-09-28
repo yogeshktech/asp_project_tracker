@@ -22,8 +22,8 @@ public class Budget
     public string Name { get; set; } = string.Empty;
     public decimal ApprovedAmount { get; set; }
     public string Currency { get; set; } = "INR";
-    public decimal RagAmberPercent { get; set; } = 10;
-    public decimal RagRedPercent { get; set; } = 20;
+    public decimal RagAmberPercent { get; set; } = 80;
+    public decimal RagRedPercent { get; set; } = 100;
     public string Status { get; set; } = "Draft";
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

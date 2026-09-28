@@ -1101,8 +1101,13 @@
       const list = await WisetrackAPI.getProjectTypes();
       body.innerHTML = list.length ? list.map(t => `
         <tr>
-          <td>${t.id}</td><td>${esc(t.name)}</td><td>${esc(t.description || '—')}</td>
-          <td><button class="btn sm danger" onclick="WTPages.deleteType(${t.id})"><i class="fa-solid fa-trash"></i></button></td>
+          <td>${t.id}</td><td><strong>${esc(t.name)}</strong></td><td>${esc(t.description || '—')}</td>
+          <td>
+            <div class="table-actions">
+              <button class="btn sm" onclick="WTPages.openEditTypeModal(${t.id}, '${esc(t.name).replace(/'/g, "\\'")}', '${esc(t.description || '').replace(/'/g, "\\'")}')" title="Modify"><i class="fa-solid fa-pen"></i> Edit</button>
+              <button class="btn sm danger" onclick="WTPages.deleteType(${t.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </td>
         </tr>`).join('') : emptyRow(4, 'No types');
     } catch (e) { body.innerHTML = errRow(4, e); }
   }
@@ -1140,14 +1145,41 @@
   }
 
   function openTypeModal() {
-    openModal('Create Project Type', `
+    openModal('Create Project Type / Discipline', `
       <form onsubmit="WTPages.saveType(event)">
         <div class="form-grid">
-          <div class="field full"><label>Name *</label><input id="typeName" required></div>
-          <div class="field full"><label>Description</label><input id="typeDesc"></div>
+          <div class="field full"><label>Name *</label><input id="typeName" required placeholder="e.g. MEP, Civil, Renovation..."></div>
+          <div class="field full"><label>Description</label><input id="typeDesc" placeholder="Scope description..."></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
       </form>`);
+  }
+
+  function openEditTypeModal(id, name, desc) {
+    openModal('Modify Project Type / Discipline', `
+      <form onsubmit="WTPages.updateType(event, ${id})">
+        <div class="form-grid">
+          <div class="field full"><label>Name *</label><input id="editTypeName" value="${esc(name)}" required></div>
+          <div class="field full"><label>Description</label><input id="editTypeDesc" value="${esc(desc)}"></div>
+        </div>
+        <div class="modalfoot" style="padding:0;margin-top:16px">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn primary" type="submit">Update Discipline</button>
+        </div>
+      </form>`);
+  }
+
+  async function updateType(e, id) {
+    e.preventDefault();
+    try {
+      await WisetrackAPI.updateProjectType(id, {
+        name: $('#editTypeName').value.trim(),
+        description: $('#editTypeDesc').value.trim()
+      });
+      closeModal();
+      showToast('Project type modified successfully');
+      await refreshTypes();
+    } catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function saveType(e) {
@@ -2035,8 +2067,8 @@
       <form onsubmit="WTPages.saveBoqImport(event)">
         <input type="hidden" id="boqProj" value="${pid}">
         <div class="field"><label>Title *</label><input id="boqTitle" value="Imported BOQ" required></div>
-        <div class="field"><label>CSV / TSV from 3rd party (any column names)</label>
-          <input type="file" id="boqFile" accept=".csv,.txt,.tsv">
+        <div class="field"><label>Excel / CSV / TSV from 3rd party (any column names)</label>
+          <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv">
         </div>
         <div class="field"><label>Or paste rows</label>
           <textarea id="boqJson" rows="8" placeholder="Item Code,Description,Qty,Rate&#10;ITM-1,Cable tray,10,1500"></textarea>
@@ -2052,13 +2084,23 @@
   async function saveBoqImport(e, commitFlag) {
     e.preventDefault();
     try {
-      let text = ($('#boqJson').value || '').trim();
       const file = $('#boqFile')?.files?.[0];
-      if (file) text = await file.text();
-      let lines;
-      if (text.startsWith('[')) {
-        lines = JSON.parse(text);
+      const commit = commitFlag !== false;
+      let result;
+      if (file && /\.xlsx$/i.test(file.name)) {
+        const form = new FormData();
+        form.append('projectId', $('#boqProj').value);
+        form.append('title', $('#boqTitle').value.trim());
+        form.append('commit', String(commit));
+        form.append('file', file);
+        result = await WisetrackAPI.importBoqFile(form);
       } else {
+        let text = ($('#boqJson').value || '').trim();
+        if (file) text = await file.text();
+        let lines;
+        if (text.startsWith('[')) {
+          lines = JSON.parse(text);
+        } else {
         const rows = typeof wtParseFlexibleTable === 'function' ? wtParseFlexibleTable(text) : [];
         lines = rows.map((r, i) => ({
           itemCode: (typeof wtPick === 'function' ? wtPick(r, ['itemcode', 'code', 'item', 'sku']) : r.itemcode) || null,
@@ -2070,14 +2112,14 @@
           remarks: (typeof wtPick === 'function' ? wtPick(r, ['remarks', 'remark', 'notes']) : r.remarks) || null,
           lineNo: i + 1
         }));
+        }
+        result = await WisetrackAPI.importBoq({
+          projectId: Number($('#boqProj').value),
+          title: $('#boqTitle').value.trim(),
+          commit,
+          lines
+        });
       }
-      const commit = commitFlag !== false;
-      const result = await WisetrackAPI.importBoq({
-        projectId: Number($('#boqProj').value),
-        title: $('#boqTitle').value.trim(),
-        commit,
-        lines
-      });
       if (!result.isValid && (result.errors || []).length) {
         const csv = 'Row,Field,Message\n' + result.errors.map(er =>
           `${er.row || er.Row},"${er.field || er.Field}","${er.message || er.Message}"`).join('\n');
@@ -3051,9 +3093,15 @@
   async function saveReport(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createReport({ name: $('#rName').value.trim(), reportType: $('#rType').value.trim() });
+      const report = await WisetrackAPI.createReport({ name: $('#rName').value.trim(), reportType: $('#rType').value.trim(), selectedColumns: 'project,status,progress,rag,milestones,issues' });
+      await WisetrackAPI.downloadReportCsv(report.id || report.Id);
       closeModal(); showToast('Saved'); await pageReports();
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function downloadReport(id) {
+    try { await WisetrackAPI.downloadReportCsv(id); showToast('Report CSV downloaded'); }
+    catch (err) { showToast(err.message, 'danger'); }
   }
 
   // ---------- CLOSURE / INVENTORY ----------
@@ -3507,13 +3555,13 @@
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
     openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, fillPermProjectSelect,
-    openPropertyModal, saveProperty, deleteProperty, openTypeModal, saveType, deleteType,
+    openPropertyModal, saveProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
     openBudgetModal, saveBudget, reviseBudget, openCostCenterModal, saveCC, deleteCC,
     openPurchaseModal, savePurchase, openActualModal, saveActual, saveVarianceExplanation,
-    boqFromMaster, boqImport, saveBoqImport, viewBoq,
+    boqFromMaster, boqImport, saveBoqImport, viewBoq, downloadReport,
     openMilestoneModal, saveMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate,

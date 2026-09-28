@@ -13,7 +13,7 @@ public interface IBudgetService
     Task<Budget> CreateAsync(CreateBudgetRequest request, long? userId);
     Task<BudgetVersion> ReviseAsync(long budgetId, decimal totalAmount, string? remarks, long? userId, long? approverId);
     Task<CostCenter> CreateCostCenterAsync(CreateCostCenterRequest request, long? userId);
-    Task<List<CostCenter>> GetCostCentersAsync(long? projectId);
+    Task<List<CostCenter>> GetCostCentersAsync(long userId, long? projectId);
     Task<CostCenter?> UpdateCostCenterAsync(long id, UpdateCostCenterRequest request, long? userId);
     Task DeleteCostCenterAsync(long id, long? userId);
     Task AllocateAsync(CreateAllocationRequest request, long? userId);
@@ -107,7 +107,17 @@ public class BudgetService : IBudgetService
         return cc;
     }
 
-    public Task<List<CostCenter>> GetCostCentersAsync(long? projectId) => _repository.GetCostCentersAsync(projectId);
+    public async Task<List<CostCenter>> GetCostCentersAsync(long userId, long? projectId)
+    {
+        if (await _permissions.IsAdminAsync(userId)) return await _repository.GetCostCentersAsync(projectId);
+        var allowed = await _permissions.GetAccessibleProjectIdsAsync(userId);
+        var centers = await _repository.GetCostCentersAsync(projectId);
+        var visible = new List<CostCenter>();
+        foreach (var center in centers)
+            if (center.ProjectId.HasValue && allowed.Contains(center.ProjectId.Value)
+                && await _permissions.CanViewModuleAsync(userId, center.ProjectId.Value, "Budgets")) visible.Add(center);
+        return visible;
+    }
 
     public async Task<CostCenter?> UpdateCostCenterAsync(long id, UpdateCostCenterRequest request, long? userId)
     {
@@ -136,6 +146,11 @@ public class BudgetService : IBudgetService
 
     public async Task AllocateAsync(CreateAllocationRequest request, long? userId)
     {
+        var budget = await _repository.GetAsync(request.BudgetId) ?? throw new InvalidOperationException("Budget not found.");
+        var center = await _repository.GetCostCenterAsync(request.CostCenterId) ?? throw new InvalidOperationException("Cost center not found.");
+        if (center.ProjectId != budget.ProjectId)
+            throw new InvalidOperationException("A budget can only be allocated to a cost center in the same project.");
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, budget.ProjectId, "Budgets", "edit");
         await _repository.AddAllocationAsync(new BudgetAllocation
         {
             BudgetId = request.BudgetId,

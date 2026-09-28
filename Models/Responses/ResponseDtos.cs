@@ -150,6 +150,7 @@ public class ProjectStatusRowDto
     public string ScheduleRisk { get; set; } = string.Empty;
     public string BudgetRag { get; set; } = string.Empty;
     public int OpenIssues { get; set; }
+    public decimal ProgressPercent { get; set; }
 }
 
 public class DailySiteReportDto

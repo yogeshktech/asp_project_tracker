@@ -282,14 +282,12 @@ public class TaskService : ITaskService
         if (userId.HasValue && !await _permissions.CanViewProjectAsync(userId.Value, task.ProjectId))
             throw new UnauthorizedAccessException("No permission to update this project.");
 
-        var canEditModule = userId.HasValue && await _permissions.CanUpdateModuleAsync(userId.Value, task.ProjectId, "Tasks");
         var isAdmin = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
         SubTask? sub = null;
         if (request.SubTaskId.HasValue)
             sub = task.SubTasks.FirstOrDefault(s => s.Id == request.SubTaskId);
 
-        var canChangePercent = isAdmin || canEditModule
-            || (sub != null ? sub.AssignedTo == userId || task.AssignedTo == userId : task.AssignedTo == userId);
+        var canChangePercent = isAdmin || task.AssignedTo == userId;
 
         if (request.CompletionPercent.HasValue && !canChangePercent)
             throw new UnauthorizedAccessException("Only the task owner can change % completion.");

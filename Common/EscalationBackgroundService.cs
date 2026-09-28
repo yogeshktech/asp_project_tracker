@@ -49,6 +49,7 @@ public class EscalationBackgroundService : BackgroundService
 
         foreach (var task in overdueTasks)
         {
+            if (await WasRecentlyNotifiedAsync(db, "TaskDelay", "Task", task.Id)) continue;
             var userIds = task.Project.ProjectUsers.Select(pu => pu.UserId).Distinct().ToList();
             if (task.AssignedTo.HasValue) userIds.Add(task.AssignedTo.Value);
             userIds = userIds.Distinct().ToList();
@@ -79,6 +80,7 @@ public class EscalationBackgroundService : BackgroundService
 
         foreach (var task in inactiveTasks)
         {
+            if (await WasRecentlyNotifiedAsync(db, "TaskInactive", "Task", task.Id)) continue;
             var userIds = task.Project.ProjectUsers.Select(pu => pu.UserId).Distinct().ToList();
             if (userIds.Count == 0) continue;
             await notifications.SendAsync(new CreateNotificationRequest
@@ -103,9 +105,10 @@ public class EscalationBackgroundService : BackgroundService
             spent += await db.ActualCosts.Where(c => c.CostCenterId == alloc.CostCenterId).SumAsync(c => c.Amount);
             if (alloc.AllocatedAmount <= 0) continue;
             var pct = spent / alloc.AllocatedAmount * 100;
-            if (pct < 80) continue;
+            if (pct < alloc.Budget.RagAmberPercent) continue;
+            if (await WasRecentlyNotifiedAsync(db, "BudgetRag", "CostCenter", alloc.CostCenterId)) continue;
 
-            var rag = pct >= 100 ? "Red" : "Amber";
+            var rag = pct >= alloc.Budget.RagRedPercent ? "Red" : "Amber";
             var userIds = alloc.Budget.Project.ProjectUsers.Select(pu => pu.UserId).Distinct().ToList();
             if (alloc.Budget.Project.OwnerId.HasValue) userIds.Add(alloc.Budget.Project.OwnerId.Value);
             userIds = userIds.Distinct().ToList();
@@ -125,4 +128,8 @@ public class EscalationBackgroundService : BackgroundService
                 $"Cost center '{alloc.CostCenter.Name}' on project '{alloc.Budget.Project.Name}' is at {pct:F1}% spend.");
         }
     }
+
+    private static Task<bool> WasRecentlyNotifiedAsync(AppDbContext db, string type, string relatedType, long relatedId) =>
+        db.Notifications.AnyAsync(n => n.Type == type && n.RelatedType == relatedType
+            && n.RelatedId == relatedId && n.CreatedAt >= DateTime.UtcNow.AddHours(-24));
 }

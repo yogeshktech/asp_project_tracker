@@ -22,6 +22,13 @@ public class ReportsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateReportRequest request) =>
         Ok(await _reportService.CreateAsync(request, UserId));
 
+    [HttpGet("{id:long}/export.csv")]
+    public async Task<IActionResult> ExportCsv(long id)
+    {
+        var (content, fileName) = await _reportService.ExportCsvAsync(UserId, id);
+        return File(content, "text/csv; charset=utf-8", fileName);
+    }
+
     [HttpGet("portfolio")]
     public async Task<IActionResult> Portfolio() =>
         Ok(await _reportService.GetPortfolioReportAsync(UserId));
@@ -35,5 +42,5 @@ public class ReportsController : ControllerBase
 
     [HttpPost("comparable")]
     public async Task<IActionResult> Comparable([FromBody] ReportFilterDto filter) =>
-        Ok(await _reportService.GetComparableProjectsAsync(filter));
+        Ok(await _reportService.GetComparableProjectsAsync(UserId, filter));
 }

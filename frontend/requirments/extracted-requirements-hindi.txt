@@ -1,0 +1,638 @@
+# Solution Scope – समाधान का दायरा
+
+## Multi-Project Workspace और Access Control
+
+### मल्टी-प्रोजेक्ट वर्कस्पेस और एक्सेस कंट्रोल
+
+**PM-01 Project Portfolio – प्रोजेक्ट पोर्टफोलियो**
+एक साथ कई projects बनाने और manage करने की सुविधा होनी चाहिए। प्रत्येक project के लिए अलग-अलग owner, team, budget, schedule और records होने चाहिए।
+
+**PM-02 User Assignment – यूज़र असाइनमेंट**
+प्रत्येक user को एक या एक से अधिक projects में assign किया जा सके। Default रूप से user को उन projects के अलावा किसी अन्य project को देखने की अनुमति नहीं होनी चाहिए जिनमें उसे assign किया गया है।
+
+**PM-03 Granular Permissions – विस्तृत Permissions**
+User setup करते समय administrator को project और module के आधार पर **View** या **Edit** rights देने की सुविधा होनी चाहिए। जहाँ sensitive financial या commercial data हो, वहाँ आवश्यकता के अनुसार **field-level restrictions** भी लगाए जा सकें।
+
+**PM-04 External Access – बाहरी Access**
+Project owners और approved third parties के लिए controlled access उपलब्ध होना चाहिए। उन्हें केवल वही projects और information दिखाई देनी चाहिए जिनके लिए उन्हें explicitly authorization दिया गया है।
+
+**PM-05 Auditability – Audit Trail**
+महत्वपूर्ण **Create, Update, Import, Approval, Permission और Report Generation** जैसी सभी activities का record रखा जाना चाहिए, जिसमें user और timestamp की जानकारी हो।
+
+---
+
+# Project Setup, Budgets और Cost Centers
+
+## Project Setup, Budget और Cost Center Management
+
+**PM-06 Project Profile – Project की जानकारी**
+प्रत्येक project में निम्न जानकारी capture की जानी चाहिए:
+
+* Project Name
+* Project Code
+* Project Owner
+* Internal Team
+* Client / Sponsor
+* Start Date
+* Target Completion Date
+* Status
+* Currency
+* Relevant Notes
+* Attachments
+
+### Project Hierarchy
+
+**Resort बनाया जाएगा।**
+
+Resort के अंदर:
+
+```text
+Resort
+   ↓
+Parent Project
+   ↓
+Sub-Projects
+```
+
+हर **Sub-Project को एक अलग project** माना जाएगा।
+
+Parent Project के उदाहरण:
+
+* MEP
+* Civil
+* New Development
+* Major Renovation
+* अन्य project types
+
+इन Parent Project types को system में **Add / Delete / Modify** करने की सुविधा होनी चाहिए।
+
+---
+
+## PM-07 Budget Baseline – Budget तय करना
+
+प्रत्येक project के लिए एक approved budget निर्धारित किया जाना चाहिए और उस budget को आवश्यकता के अनुसार अलग-अलग **Cost Centers (CC)** में distribute किया जा सके।
+
+यदि **Project A एक Parent Project** है और उसके अंदर Sub-Projects हैं, तो Sub-Projects का budget अलग-अलग Cost Centers में assign किया जाना चाहिए।
+
+इस स्थिति में:
+
+```text
+Parent Project
+       ↓
+Sub-Project 1 → Cost Center 1
+Sub-Project 2 → Cost Center 2
+Sub-Project 3 → Cost Center 3
+```
+
+इन Sub-Projects को Parent Project के लिए **Cost Centers** के रूप में माना जाएगा।
+
+यदि किसी Cost Center का **80% allocated budget खर्च हो जाता है**, तो system में budget के लिए **R-A-G (Red-Amber-Green) status/flag** दिखाई देना चाहिए।
+
+### R-A-G Status और Email Alert
+
+R-A-G status के अनुसार **Escalation Matrix** के आधार पर email trigger होना चाहिए।
+
+---
+
+## PM-08 Budget Versions – Budget Version Management
+
+Approved baseline budget को सुरक्षित रखा जाना चाहिए।
+
+यदि budget में कोई authorized revision किया जाता है, तो system को निम्न जानकारी maintain करनी चाहिए:
+
+* Revised Budget
+* Revision का कारण
+* Revision Date
+* Approver
+* Previous Budget Version
+* Current Approved Version
+
+इससे सभी budget revisions का historical record उपलब्ध रहेगा।
+
+---
+
+## PM-09 Financial Roll-up – Financial Summary
+
+System में Cost Center और Project level पर financial summary दिखाई जानी चाहिए।
+
+जहाँ source data उपलब्ध हो, वहाँ निम्न जानकारी दिखाई जाए:
+
+* Budget
+* Current Commitment / Purchase Cost
+* Actual Spend
+* Forecast
+* Variance
+
+यह information अलग-अलग Cost Centers से लेकर पूरे Project तक roll-up होनी चाहिए।
+
+---
+
+# BOQ और Item Pricing
+
+## PM-10 Standard BOQ Import – BOQ Import
+
+एक agreed Excel template के माध्यम से पूरी **Bill of Quantities (BOQ)** को बिना line-by-line data entry के import करने की सुविधा होनी चाहिए।
+
+**लेकिन requirement के अनुसार system को केवल एक fixed/standard Excel template पर depend नहीं करना चाहिए।**
+
+क्योंकि BOQ file **third-party sources से प्राप्त होती है**, इसलिए system में अलग-अलग formats की Excel files को handle करने की flexibility होनी चाहिए।
+
+अर्थात:
+
+> System को third-party से आने वाली BOQ files के लिए flexible import mechanism प्रदान करना चाहिए, ताकि हर बार एक fixed standard Excel format की आवश्यकता न हो।
+
+---
+
+## PM-11 Import Validation – Import Validation
+
+BOQ import करते समय system को data validate करना चाहिए, जैसे:
+
+* Required columns
+* Item Codes
+* Units
+* Quantities
+* Prices
+* Total Amount
+* Duplicate Items
+* Malformed / Invalid Rows
+
+यदि कोई error हो तो data commit करने से पहले user को **downloadable error report** उपलब्ध होनी चाहिए।
+
+---
+
+## PM-12 Item and Price Master – Item Database
+
+एक बड़ी reusable **Item / Price Master Database** maintain की जानी चाहिए।
+
+प्रत्येक item में निम्न जानकारी होनी चाहिए:
+
+* Item
+* Unit
+* Purchase Price
+* Description
+* Image
+* Brand
+* Item Code
+* Standard Price
+* Effective Date
+* Source
+* Category (Optional)
+
+इस database को future projects में दोबारा उपयोग किया जा सके।
+
+---
+
+# Integration with RFQ App
+
+## PM-13 BOQ Creation in Platform – Platform में BOQ बनाना
+
+Project BOQ को platform के अंदर **Item/Price Master** से items select करके बनाया जा सके।
+
+Project-specific requirements के अनुसार quantity और price में controlled adjustments करने की सुविधा होनी चाहिए।
+
+BOQ में निम्न fields होने चाहिए:
+
+* Item
+* Unit
+* Purchase Price
+* Quantity
+* Description
+* Image
+* Total
+* Brand
+* Remark
+* Attachment
+
+**Attachment में किसी भी प्रकार की file upload करने की सुविधा होनी चाहिए।**
+
+---
+
+## PM-14 BOQ Versioning – BOQ Version Management
+
+BOQ की सभी revisions को retain किया जाना चाहिए।
+
+System में यह identify किया जा सके कि वर्तमान में कौन-सा BOQ version **current project baseline** है।
+
+उदाहरण:
+
+```text
+BOQ Version 1
+      ↓
+BOQ Version 2
+      ↓
+BOQ Version 3
+      ↓
+Current Baseline
+```
+
+---
+
+# Planning, Execution और Reporting
+
+## Milestones और Schedule Planning
+
+### PM-15 Flexible Milestones – Flexible Milestones
+
+हर project के लिए अलग-अलग milestones define करने की सुविधा होनी चाहिए।
+
+System को किसी एक fixed/universal milestone template को सभी projects पर force नहीं करना चाहिए।
+
+---
+
+### PM-16 Reusable Templates – Reusable Project Templates
+
+पहले से बनाए गए successful/proven milestone structures को template के रूप में save किया जा सके।
+
+इन templates को नए projects में:
+
+* Import
+* Clone
+* Reuse
+
+किया जा सके।
+
+Project Template को निम्न sources से import करने की आवश्यकता हो सकती है:
+
+* Other Application
+* Excel
+* Microsoft Project
+* PDF
+
+---
+
+### PM-17 Backward Scheduling – Backward Scheduling
+
+यदि project की required completion date पहले से निर्धारित है, तो उस date से पीछे की ओर schedule plan किया जा सके।
+
+उदाहरण:
+
+```text
+Project Completion
+       ↓
+Handover
+       ↓
+Commissioning
+       ↓
+Installation
+       ↓
+Transfer
+       ↓
+Arrival
+       ↓
+Shipment
+       ↓
+Manufacture / Readiness
+       ↓
+Payment
+       ↓
+Procurement
+```
+
+Project की आवश्यकता के अनुसार applicable activities शामिल की जाएँ।
+
+---
+
+### PM-18 Dependencies and Ownership – Dependencies और Ownership
+
+प्रत्येक milestone/task के लिए निम्न जानकारी assign की जा सके:
+
+* Planned Date
+* Responsible Owner
+* Dependency
+* Status
+* Completion Evidence
+
+---
+
+# Main Task और Sub-Task Management
+
+एक **Main Task** के अंदर multiple **Sub-Tasks** बनाए जा सकें।
+
+हर दिन Sub-Task की progress update करनी होगी।
+
+### Daily Sub-Task Update
+
+Site team को daily basis पर निम्न information update करने की सुविधा होनी चाहिए:
+
+* **% Completion**
+* **Status Dropdown**
+* **Text Field** – Optional
+* **Attachment Upload**
+* **Remark**
+
+यदि `% Completion` को change करना है, तो यह केवल **Task Owner** ही कर सके।
+
+### Site Team Remarks
+
+Site team को **Remark** field में निम्न जानकारी लिखने की सुविधा होनी चाहिए:
+
+* Delay का reason
+* Site issue
+* Other relevant information
+
+### Excel Status Upload
+
+Site team को standard Excel file के माध्यम से अपना daily status application में upload करने की सुविधा होनी चाहिए।
+
+---
+
+## PM-19 Exception Assistant – Exception Management
+
+System को ऐसे important items identify करने चाहिए जो:
+
+* Overdue हैं
+* At-risk हैं
+* Inactive हैं
+* Critical हैं
+* पिछले 7 दिनों में progress नहीं हुई है
+
+System concise prompts/alerts दिखा सके, जैसे:
+
+> "यह Task/Sub-Task पिछले 7 दिनों से progress नहीं हुआ है।"
+
+---
+
+## PM-20 Configurable Notifications – Notifications
+
+System में **In-App और Email Notifications** उपलब्ध होनी चाहिए।
+
+Notifications निम्न situations में trigger हो सकती हैं:
+
+* Approaching Dates
+* Missed Milestones
+* Significant Budget Variance
+* Other agreed triggers
+
+Notifications को configurable होना चाहिए ताकि unnecessary alerts के कारण **alert fatigue** न हो।
+
+---
+
+# Cost Capture और Cost Control
+
+## PM-21 Purchase और Actual Cost Input
+
+Purchase या actual cost को निम्न levels पर capture किया जा सके:
+
+* Project
+* BOQ Line
+* Cost Center
+
+Cost data निम्न तरीकों से enter किया जा सके:
+
+* Manual Entry
+* Template Import
+* Agreed Source-System Integration
+
+---
+
+## PM-22 Budget vs Actual
+
+System को Project और Cost Center दोनों levels पर:
+
+* Budget
+* Actual Cost
+* Variance
+
+calculate करना चाहिए।
+
+System में clearly दिखना चाहिए कि project:
+
+* Under Budget है
+* Over Budget है
+
+---
+
+## PM-23 Comparable Project Analysis – Comparable Projects
+
+Completed projects की cost और duration की तुलना similar previous projects से की जा सके।
+
+Comparison के लिए filters उपलब्ध होने चाहिए:
+
+* Project Type
+* Period
+* Client
+* Scope
+* Other agreed attributes
+
+---
+
+## PM-24 Variance Explanation – Variance का कारण
+
+यदि cost या schedule में significant variance है, तो users को उसका reason record करने की सुविधा होनी चाहिए।
+
+ये reasons future reports और future recommendations में भी available होने चाहिए।
+
+---
+
+# Dashboards और Reports
+
+## PM-25 Portfolio Dashboard
+
+Management के लिए एक centralized Portfolio Dashboard होना चाहिए जिसमें authorized projects की information एक जगह दिखाई दे:
+
+* Project Status
+* Next Critical Milestone
+* Schedule Risk
+* Budget Position
+* Unresolved Exceptions
+
+User को केवल वही projects दिखाई दें जिनकी उसे authorization है।
+
+---
+
+## PM-26 Project Dashboard
+
+हर project का अलग dashboard होना चाहिए जिसमें:
+
+* Project Dates
+* Milestone Progress
+* Budget Position
+* Cost Center Position
+* BOQ Status
+* Recent Activity
+* Risks
+* Outstanding Actions
+
+दिखाए जाएँ।
+
+---
+
+## PM-27 Monthly Reporting – Monthly Project Report
+
+हर महीने एक consistent **Monthly Project Report** generate किया जा सके।
+
+Report में शामिल हो:
+
+* Project Scope
+* Progress
+* Milestones
+* Financials
+* Risks
+* Decisions
+* Next Actions
+
+---
+
+## PM-28 On-Demand Export – Report Export
+
+User आवश्यकता के अनुसार branded **PDF Reports** generate कर सके।
+
+Generated reports की history भी retain की जानी चाहिए।
+
+Authorized analytical users के लिए spreadsheet export की सुविधा भी हो सकती है।
+
+### Report Recipient Selection
+
+User को यह select करने की सुविधा होनी चाहिए कि report किसे भेजनी है।
+
+लेकिन:
+
+> Report भेजने के लिए केवल **Internal Team के email addresses** दिखाई देने चाहिए।
+
+User application से किसी **external person/email address** को report send नहीं कर सके।
+
+### Custom Report Columns
+
+User को flexibility होनी चाहिए कि exported report में कौन-कौन से columns शामिल करने हैं।
+
+अर्थात user:
+
+```text
+☑ Item
+☑ Quantity
+☑ Purchase Price
+☑ Total
+☐ Image
+☐ Brand
+☑ Remark
+```
+
+जैसे columns select करके customized report export कर सके।
+
+### Daily Report
+
+Site updates के आधार पर **Daily Report** generate होनी चाहिए।
+
+Report में यह भी दिखना चाहिए कि किसी निर्धारित date तक project/task/sub-task का कितना काम complete हुआ है।
+
+---
+
+## PM-29 Audience-Specific Reporting
+
+Stakeholder की permissions के अनुसार report में:
+
+* अलग-अलग sections
+* Financial details
+* Project information
+
+दिखाई जा सके।
+
+अर्थात हर stakeholder को उसकी authorization के अनुसार report दिखाई जाए।
+
+---
+
+# PM-30 Project Completion Report / Handover Report
+
+Project complete होने पर **Project Completion Report / Handover Report** generate की जानी चाहिए।
+
+Project Summary Report का sample **Saji द्वारा share किया जाएगा।**
+
+### Project Closure
+
+Project को close करने के लिए **Project Completion Report पर signature होना और signed report को upload करना mandatory** होना चाहिए।
+
+केवल **Project Manager** को project close करने की permission होनी चाहिए।
+
+### Leftover Inventory
+
+Project close करने से पहले:
+
+> **Left Over Inventory को update करना mandatory होना चाहिए।**
+
+जब तक leftover inventory update नहीं होती, project close नहीं किया जा सके।
+
+---
+
+# Project Status Report
+
+User को एक consolidated report/dashboard में **सभी projects का status** देखने की सुविधा होनी चाहिए।
+
+उदाहरण:
+
+```text
+Project       Status        Progress
+-------------------------------------
+Project A     On Track       75%
+Project B     At Risk        55%
+Project C     Delayed        40%
+Project D     Completed     100%
+```
+
+User को केवल authorized projects दिखाई देने चाहिए।
+
+---
+
+# Sub-Task Management
+
+System में यह स्पष्ट होना चाहिए कि:
+
+### Sub-Task कैसे बनाया जाएगा?
+
+Main Task के अंदर Sub-Task create करने की सुविधा होनी चाहिए।
+
+```text
+Main Task
+   │
+   ├── Sub-Task 1
+   ├── Sub-Task 2
+   ├── Sub-Task 3
+   └── Sub-Task 4
+```
+
+### Sub-Task का Update कैसे Capture होगा?
+
+Site Team daily basis पर Sub-Task का update कर सके:
+
+* % Completion
+* Status
+* Text Update
+* Remark
+* Attachment
+* Delay Reason
+* Site Issue
+
+लेकिन `% Completion` को modify करने की permission केवल **Task Owner** के पास होगी।
+
+---
+
+# Incident / Issue Tracker
+
+System में एक अलग **Incident / Issue Tracker Module** भी होना चाहिए।
+
+हर incident/issue के लिए निम्न information capture की जाए:
+
+* **What is the issue?** – समस्या क्या है?
+* **Where is the issue?** – समस्या कहाँ हुई?
+* **When did it happen?** – समस्या कब हुई?
+* **Reported By** – समस्या किसने report की?
+* **Impact** – समस्या का impact क्या है?
+* **Priority** – Priority क्या है?
+
+### High-Priority Issue Notification
+
+यदि कोई issue **High Priority** का है, तो system को सभी संबंधित **High-Priority Stakeholders** को email notification भेजनी चाहिए।
+
+```text
+Incident / Issue
+       ↓
+Issue Details
+       ↓
+Priority
+       ↓
+High Priority?
+    ↓       ↓
+   YES      NO
+    ↓
+Email to High-Priority
+Stakeholders
+```

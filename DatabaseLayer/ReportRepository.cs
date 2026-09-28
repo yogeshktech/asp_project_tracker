@@ -11,16 +11,18 @@ public interface IReportRepository
     Task<Report> AddAsync(Report report, IEnumerable<string> emails);
     Task<List<Report>> GetAllAsync();
     Task<List<Report>> GetByUserAsync(long userId);
+    Task<Report?> GetAsync(long reportId);
     Task<List<string>> GetInternalUserEmailsAsync(IEnumerable<long> userIds);
+    Task<List<string>> GetProjectInternalUserEmailsAsync(long projectId, IEnumerable<long> userIds);
     Task<int> CountProjectsAsync(IEnumerable<long>? projectIds = null);
     Task<int> CountOpenIssuesAsync(IEnumerable<long>? projectIds = null);
     Task<int> CountOverdueTasksAsync(IEnumerable<long>? projectIds = null);
     Task<decimal> SumApprovedBudgetAsync(IEnumerable<long>? projectIds = null);
     Task<decimal> SumActualCostAsync(IEnumerable<long>? projectIds = null);
     Task<List<Project>> RecentProjectsAsync(int take, IEnumerable<long>? projectIds = null);
-    Task<PortfolioReportDto> GetPortfolioReportAsync(long userId);
+    Task<PortfolioReportDto> GetPortfolioReportAsync(IEnumerable<long> projectIds);
     Task<DailySiteReportDto> GetDailySiteReportAsync(long projectId, DateOnly date);
-    Task<List<ComparableProjectDto>> GetComparableProjectsAsync(ReportFilterDto filter);
+    Task<List<ComparableProjectDto>> GetComparableProjectsAsync(ReportFilterDto filter, IEnumerable<long> allowedProjectIds);
     Task<List<ExceptionItemDto>> GetExceptionsAsync(IEnumerable<long> projectIds);
 }
 
@@ -45,8 +47,20 @@ public class ReportRepository : IReportRepository
     public Task<List<Report>> GetByUserAsync(long userId) =>
         _db.Reports.Include(r => r.Recipients).Where(r => r.CreatedBy == userId).AsNoTracking().ToListAsync();
 
+    public Task<Report?> GetAsync(long reportId) =>
+        _db.Reports.Include(r => r.Recipients).AsNoTracking().FirstOrDefaultAsync(r => r.Id == reportId);
+
     public Task<List<string>> GetInternalUserEmailsAsync(IEnumerable<long> userIds) =>
         _db.Users.Where(u => userIds.Contains(u.Id) && u.IsInternal).Select(u => u.Email).ToListAsync();
+
+    public Task<List<string>> GetProjectInternalUserEmailsAsync(long projectId, IEnumerable<long> userIds)
+    {
+        var ids = userIds.Distinct().ToList();
+        return _db.Users.Where(u => ids.Contains(u.Id) && u.IsInternal
+            && (_db.ProjectUsers.Any(pu => pu.ProjectId == projectId && pu.UserId == u.Id)
+                || _db.Projects.Any(p => p.Id == projectId && p.OwnerId == u.Id)))
+            .Select(u => u.Email).ToListAsync();
+    }
 
     public Task<int> CountProjectsAsync(IEnumerable<long>? projectIds = null)
     {
@@ -91,12 +105,9 @@ public class ReportRepository : IReportRepository
         return q.OrderByDescending(p => p.CreatedAt).Take(take).AsNoTracking().ToListAsync();
     }
 
-    public async Task<PortfolioReportDto> GetPortfolioReportAsync(long userId)
+    public async Task<PortfolioReportDto> GetPortfolioReportAsync(IEnumerable<long> allowedProjectIds)
     {
-        var projectIds = await _db.ProjectUsers.Where(pu => pu.UserId == userId).Select(pu => pu.ProjectId)
-            .Union(_db.Projects.Where(p => p.OwnerId == userId).Select(p => p.Id))
-            .Distinct()
-            .ToListAsync();
+        var projectIds = allowedProjectIds.Distinct().ToList();
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var projects = await _db.Projects.Where(p => projectIds.Contains(p.Id)).AsNoTracking().ToListAsync();
@@ -123,7 +134,8 @@ public class ReportRepository : IReportRepository
                 NextMilestone = nextMilestone,
                 ScheduleRisk = overdue ? "High" : "Low",
                 BudgetRag = rag,
-                OpenIssues = await _db.Issues.CountAsync(i => i.ProjectId == p.Id && i.Status == "Open")
+                OpenIssues = await _db.Issues.CountAsync(i => i.ProjectId == p.Id && i.Status == "Open"),
+                ProgressPercent = await _db.Tasks.Where(t => t.ProjectId == p.Id).Select(t => (decimal?)t.CompletionPercent).AverageAsync() ?? 0
             });
         }
 
@@ -154,11 +166,16 @@ public class ReportRepository : IReportRepository
         };
     }
 
-    public async Task<List<ComparableProjectDto>> GetComparableProjectsAsync(ReportFilterDto filter)
+    public async Task<List<ComparableProjectDto>> GetComparableProjectsAsync(ReportFilterDto filter, IEnumerable<long> allowedProjectIds)
     {
-        var q = _db.Projects.Include(p => p.ProjectType).Where(p => p.Status == "Closed").AsQueryable();
+        var allowed = allowedProjectIds.Distinct().ToList();
+        if (allowed.Count == 0) return new();
+        var q = _db.Projects.Include(p => p.ProjectType).Where(p => p.Status == "Closed" && allowed.Contains(p.Id)).AsQueryable();
         if (filter.ProjectId.HasValue) q = q.Where(p => p.Id != filter.ProjectId);
         if (!string.IsNullOrWhiteSpace(filter.Client)) q = q.Where(p => p.ClientName == filter.Client);
+        if (!string.IsNullOrWhiteSpace(filter.ProjectType)) q = q.Where(p => p.ProjectType != null && p.ProjectType.Name == filter.ProjectType);
+        if (filter.FromDate.HasValue) q = q.Where(p => p.EndDate.HasValue && p.EndDate.Value >= filter.FromDate.Value);
+        if (filter.ToDate.HasValue) q = q.Where(p => p.EndDate.HasValue && p.EndDate.Value <= filter.ToDate.Value);
 
         var projects = await q.Take(20).AsNoTracking().ToListAsync();
         var result = new List<ComparableProjectDto>();

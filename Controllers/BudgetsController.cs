@@ -29,7 +29,7 @@ public class BudgetsController : ControllerBase
 
     [HttpGet("cost-centers")]
     public async Task<IActionResult> CostCenters([FromQuery] long? projectId) =>
-        Ok(await _budgetService.GetCostCentersAsync(projectId));
+        Ok(await _budgetService.GetCostCentersAsync(UserId, projectId));
 
     [HttpPost("cost-centers")]
     public async Task<IActionResult> CreateCostCenter([FromBody] CreateCostCenterRequest request) =>

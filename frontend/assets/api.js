@@ -31,9 +31,10 @@ const WisetrackAPI = {
   },
 
   async _fetch(url, options = {}) {
+    const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const res = await fetch(`${API_BASE}${url}`, {
       ...options,
-      headers: { ...this._headers(), ...(options.headers || {}) }
+      headers: { ...this._headers(!isForm), ...(options.headers || {}) }
     });
 
     if (res.status === 401) {
@@ -204,6 +205,7 @@ const WisetrackAPI = {
   getBoqs(projectId) { return this.get(`/boq/project/${projectId}`); },
   getBoq(id) { return this.get(`/boq/${id}`); },
   importBoq(data) { return this.post('/boq/import', data); },
+  importBoqFile(data) { return this._fetch('/boq/import-file', { method: 'POST', body: data }).then(r => r.json().then(v => { if (!r.ok) throw new Error(v.message || 'BOQ import failed'); return v; })); },
   createBoqFromMaster(projectId, itemIds) { return this.post('/boq/from-master', { projectId, itemIds }); },
 
   // Tasks
@@ -246,6 +248,12 @@ const WisetrackAPI = {
   // Reports
   getReports() { return this.get('/reports'); },
   createReport(data) { return this.post('/reports', data); },
+  async downloadReportCsv(id) {
+    const res = await fetch(`${API_BASE}/reports/${id}/export.csv`, { headers: this._headers(false) });
+    if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || 'Report export failed'); }
+    const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    a.href = url; a.download = `wisetrack-report-${id}.csv`; a.click(); URL.revokeObjectURL(url);
+  },
   getPortfolioReport() { return this.get('/reports/portfolio'); },
   getDailyReport(projectId, date) { return this.get(`/reports/daily/${projectId}${date ? '?date=' + date : ''}`); },
   getComparableProjects(filter) { return this.post('/reports/comparable', filter); },

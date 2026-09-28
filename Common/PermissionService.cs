@@ -47,9 +47,12 @@ public class PermissionService : IPermissionService
     public async Task<bool> CanViewProjectAsync(long userId, long projectId)
     {
         if (await IsAdminAsync(userId)) return true;
+        if (!await ExternalUserCanAccessProjectAsync(userId, projectId)) return false;
         var chain = await GetProjectAndAncestorIdsAsync(projectId);
         return await _db.ProjectPermissions.AnyAsync(p =>
-            p.UserId == userId && p.ProjectId != null && chain.Contains(p.ProjectId.Value) && p.CanView);
+                   p.UserId == userId && p.ProjectId != null && chain.Contains(p.ProjectId.Value) && p.CanView)
+               || await _db.ProjectUsers.AnyAsync(pu => pu.UserId == userId && pu.ProjectId == projectId)
+               || await _db.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == userId);
     }
 
     public Task<bool> CanViewModuleAsync(long userId, long projectId, string module) =>
@@ -88,6 +91,9 @@ public class PermissionService : IPermissionService
             .Select(p => p.ProjectId!.Value)
             .Distinct()
             .ToListAsync();
+        permitted.AddRange(await _db.ProjectUsers.Where(pu => pu.UserId == userId).Select(pu => pu.ProjectId).ToListAsync());
+        permitted.AddRange(await _db.Projects.Where(p => p.OwnerId == userId).Select(p => p.Id).ToListAsync());
+        permitted = permitted.Distinct().ToList();
         if (permitted.Count == 0) return new();
 
         var all = await _db.Projects.AsNoTracking().Select(p => new { p.Id, p.ParentProjectId }).ToListAsync();
@@ -103,7 +109,10 @@ public class PermissionService : IPermissionService
             }
         } while (grew);
 
-        return allowed.ToList();
+        var result = allowed.ToList();
+        if (!await _db.Users.Where(u => u.Id == userId).Select(u => u.IsInternal).FirstOrDefaultAsync())
+            result = await _db.Projects.Where(p => result.Contains(p.Id) && p.AllowExternalView).Select(p => p.Id).ToListAsync();
+        return result;
     }
 
     public Task<bool> IsProjectManagerAsync(long userId, long projectId) =>
@@ -112,6 +121,7 @@ public class PermissionService : IPermissionService
     private async Task<bool> HasRightAsync(long userId, long projectId, string module, string right)
     {
         if (await IsAdminAsync(userId)) return true;
+        if (!IsGlobalModule(module) && projectId > 0 && !await ExternalUserCanAccessProjectAsync(userId, projectId)) return false;
 
         IQueryable<Models.Entities.ProjectPermission> q = _db.ProjectPermissions
             .Where(p => p.UserId == userId && p.Module == module);
@@ -134,6 +144,13 @@ public class PermissionService : IPermissionService
             "delete" => await q.AnyAsync(p => p.CanDelete),
             _ => false
         };
+    }
+
+    private async Task<bool> ExternalUserCanAccessProjectAsync(long userId, long projectId)
+    {
+        var isInternal = await _db.Users.Where(u => u.Id == userId).Select(u => u.IsInternal).FirstOrDefaultAsync();
+        if (isInternal) return true;
+        return await _db.Projects.AnyAsync(p => p.Id == projectId && p.AllowExternalView);
     }
 
     private async Task<List<long>> GetProjectAndAncestorIdsAsync(long projectId)
