@@ -1,4 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using project_tracker_madhu.Common;
+using project_tracker_madhu.DatabaseLayer.Context;
 using project_tracker_madhu.DatabaseLayer.Projects;
 using project_tracker_madhu.DatabaseLayer.Tasks;
 using project_tracker_madhu.DatabaseLayer.Users;
@@ -46,14 +48,16 @@ public class ProjectService : IProjectService
     private readonly IUserRepository _users;
     private readonly IPermissionService _permissions;
     private readonly IAuditService _audit;
+    private readonly AppDbContext _db;
 
-    public ProjectService(IProjectRepository repository, ITaskRepository tasks, IUserRepository users, IPermissionService permissions, IAuditService audit)
+    public ProjectService(IProjectRepository repository, ITaskRepository tasks, IUserRepository users, IPermissionService permissions, IAuditService audit, AppDbContext db)
     {
         _repository = repository;
         _tasks = tasks;
         _users = users;
         _permissions = permissions;
         _audit = audit;
+        _db = db;
     }
 
     public Task<List<Resort>> GetResortsAsync() => _repository.GetResortsAsync();
@@ -179,6 +183,7 @@ public class ProjectService : IProjectService
         var projects = await _repository.GetProjectsAsync(allowed, resortId, parentId);
         var list = new List<ProjectResponseDto>();
         foreach (var project in projects) list.Add(await MapForUserAsync(project, userId));
+        await PopulateProjectBudgetsAsync(list, userId);
         AssignNumericLevels(list);
         return list;
     }
@@ -189,6 +194,7 @@ public class ProjectService : IProjectService
         var all = (await _repository.GetHierarchyAsync(resortId)).Where(p => allowed.Contains(p.Id)).ToList();
         var mapped = new List<ProjectResponseDto>();
         foreach (var project in all) mapped.Add(await MapForUserAsync(project, userId));
+        await PopulateProjectBudgetsAsync(mapped, userId);
         AssignNumericLevels(mapped);
         var byParent = mapped.GroupBy(p => p.ParentProjectId ?? 0L).ToDictionary(g => g.Key, g => g.ToList());
 
@@ -209,6 +215,7 @@ public class ProjectService : IProjectService
         var project = await _repository.GetProjectAsync(id);
         if (project == null) return null;
         var dto = await MapForUserAsync(project, userId);
+        await PopulateProjectBudgetsAsync(new List<ProjectResponseDto> { dto }, userId);
         // Compute depth by walking parents
         var depth = 1;
         var cursor = project.ParentProjectId;
@@ -479,10 +486,57 @@ public class ProjectService : IProjectService
                 case "description": dto.Description = null; break;
                 case "profilenotes": dto.ProfileNotes = null; break;
                 case "ownerid": dto.OwnerId = null; dto.OwnerName = null; break;
+                case "budget": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
+                case "projectbudgetamount": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
+                case "budgetcurrency": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
+                case "projectbudgetcurrency": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
                 case "startdate": dto.StartDate = null; break;
                 case "enddate": dto.EndDate = null; break;
             }
         return dto;
+    }
+
+    private async Task PopulateProjectBudgetsAsync(List<ProjectResponseDto> projects, long userId)
+    {
+        if (projects.Count == 0) return;
+        var canViewBudget = new HashSet<long>();
+        foreach (var project in projects)
+            if (await _permissions.CanViewModuleAsync(userId, project.Id, "Budgets")) canViewBudget.Add(project.Id);
+
+        var parentIds = projects.Where(p => p.ParentProjectId.HasValue).Select(p => p.ParentProjectId.Value).Distinct();
+        var permittedParents = new HashSet<long>();
+        foreach (var parentId in parentIds)
+            if (!canViewBudget.Contains(parentId) && await _permissions.CanViewModuleAsync(userId, parentId, "Budgets"))
+                permittedParents.Add(parentId);
+        var budgetProjectIds = canViewBudget.Concat(permittedParents).Distinct().ToList();
+        if (budgetProjectIds.Count == 0) return;
+
+        var budgets = await _db.Budgets.AsNoTracking().Where(b => budgetProjectIds.Contains(b.ProjectId))
+            .Select(b => new { b.Id, b.ProjectId, b.ApprovedAmount, b.Currency }).ToListAsync();
+        var budgetIds = budgets.Select(b => b.Id).ToList();
+        var allocations = await _db.BudgetAllocations.AsNoTracking().Where(a => budgetIds.Contains(a.BudgetId))
+            .Select(a => new { ParentId = a.Budget.ProjectId, CostProjectId = a.CostCenter.ProjectId, Amount = a.AllocatedAmount, Currency = a.Budget.Currency })
+            .ToListAsync();
+
+        foreach (var project in projects.Where(p => canViewBudget.Contains(p.Id)))
+        {
+            var ownBudgets = budgets.Where(b => b.ProjectId == project.Id).ToList();
+            var parentAllocations = project.ParentProjectId.HasValue &&
+                (canViewBudget.Contains(project.ParentProjectId.Value) || permittedParents.Contains(project.ParentProjectId.Value))
+                ? allocations.Where(a => a.ParentId == project.ParentProjectId.Value && a.CostProjectId == project.Id).ToList()
+                : allocations.Where(a => false).ToList();
+            var allocatedFromParent = parentAllocations.Sum(a => a.Amount);
+            if (allocatedFromParent > 0)
+            {
+                project.ProjectBudgetAmount = allocatedFromParent;
+                project.ProjectBudgetCurrency = parentAllocations[0].Currency;
+            }
+            else if (ownBudgets.Count > 0)
+            {
+                project.ProjectBudgetAmount = ownBudgets.Sum(b => b.ApprovedAmount);
+                project.ProjectBudgetCurrency = ownBudgets[0].Currency;
+            }
+        }
     }
 
     private static bool ProjectFieldChanged(Project p, UpdateProjectDto dto, string field) => field.ToLowerInvariant() switch

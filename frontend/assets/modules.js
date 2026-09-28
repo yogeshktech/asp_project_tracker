@@ -49,6 +49,18 @@
     return `<tr><td colspan="${colspan}">${esc(msg)}</td></tr>`;
   }
 
+  function formatBudgetValue(amount, currency = 'INR') {
+    if (amount == null || !Number.isFinite(Number(amount))) return 'Not set';
+    const value = Number(amount);
+    const code = String(currency || 'INR').toUpperCase();
+    if (code === 'INR' && Math.abs(value) >= 10000000) return `₹${(value / 10000000).toFixed(2)} Cr`;
+    return `${code === 'INR' ? '₹' : `${code} `}${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  }
+
+  function projectBudgetLabel(project) {
+    return formatBudgetValue(project.projectBudgetAmount, project.projectBudgetCurrency || project.currency || 'INR');
+  }
+
   async function loadProjectsList() {
     const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
     const apiProjects = await WisetrackAPI.getProjects(resortId || undefined).catch(() => []);
@@ -980,7 +992,7 @@
             </td>
             <td><span class="badge blue">${esc(p.disc || p.discipline || 'Engineering')}</span></td>
             <td><b>${esc(p.ownerName || p.pm || 'Project Lead')}</b></td>
-            <td>${p.budget || '₹10.00 Cr'}</td>
+            <td>${p.projectBudgetDisplay || projectBudgetLabel(p)}</td>
             <td>${p.spent || '₹6.50 Cr'}</td>
             <td>
               <div style="display:flex;align-items:center;gap:8px;">
@@ -1241,9 +1253,9 @@
             <span class="kpi-sub">Civil, MEP, HVAC, Fitouts</span>
           </div>
           <div class="kpi">
-            <span class="kpi-label">Allocated Budget</span>
-            <span class="kpi-value" id="projBudgetTotal">₹48.50 Cr</span>
-            <span class="kpi-sub" id="projSpentTotal">₹34.20 Cr Committed</span>
+            <span class="kpi-label">Approved Budget Total</span>
+            <span class="kpi-value" id="projBudgetTotal">Loading...</span>
+            <span class="kpi-sub" id="projSpentTotal">Root project budget baselines</span>
           </div>
         </div>
 
@@ -1355,11 +1367,24 @@
       // Filter by resort
       const filteredProjects = filterVal === 'all' ? projects : projects.filter(p => String(p.resortId) === String(filterVal) || String(p.resortId) === `RES-${filterVal}`);
       const matchedResort = allResortsRaw.find(r => String(r.id) === String(filterVal)) || { name: 'Grand Oasis Resort & Spa, Goa', code: 'RES-GOA-01' };
+      filteredProjects.forEach(p => { p.projectBudgetDisplay = projectBudgetLabel(p); });
+      const rootBudgetRows = filteredProjects.filter(p => !(p.parentProjectId ?? p.parentId));
+      const rootBudgetTotals = new Map();
+      for (const p of rootBudgetRows) {
+        if (p.projectBudgetAmount == null) continue;
+        const currency = String(p.projectBudgetCurrency || p.currency || 'INR').toUpperCase();
+        rootBudgetTotals.set(currency, (rootBudgetTotals.get(currency) || 0) + Number(p.projectBudgetAmount));
+      }
+      const portfolioBudgetLabel = rootBudgetTotals.size
+        ? [...rootBudgetTotals].map(([currency, amount]) => formatBudgetValue(amount, currency)).join(' + ')
+        : 'Not set';
 
       // Update KPI strip
       $('#projResortLabel').textContent = filterVal === 'all' ? 'All Resorts Portfolio' : matchedResort.name;
       $('#projResortCode').textContent = filterVal === 'all' ? `${filteredProjects.length} Total Packages` : (matchedResort.code || 'RES');
       $('#projActiveCount').textContent = `${filteredProjects.length} Packages`;
+      $('#projBudgetTotal').textContent = portfolioBudgetLabel;
+      $('#projSpentTotal').textContent = `${rootBudgetRows.filter(p => p.projectBudgetAmount != null).length} root project budget baseline(s)`;
 
       // 1. Render Recursive N-Level Tree View
       const treeRoot = $('#wbsTreeView');
@@ -1424,7 +1449,7 @@
                     ${levelPill}
                     <strong style="font-size:14px;">${esc(node.name || node.title)}</strong>
                   </div>
-                  <small style="color:var(--text-muted); font-size:11.5px;">${relationTxt} · WBS: <code>${esc(node.code || '')}</code> · Discipline: <b>${esc(node.discipline || node.disc || 'General')}</b> · Lead: <b>${esc(node.owner || node.ownerName || 'Lead PM')}</b> · Budget: <b>${node.budget || '₹5.00 Cr'}</b></small>
+                  <small style="color:var(--text-muted); font-size:11.5px;">${relationTxt} · WBS: <code>${esc(node.code || '')}</code> · Discipline: <b>${esc(node.discipline || node.disc || 'General')}</b> · Lead: <b>${esc(node.owner || node.ownerName || 'Lead PM')}</b> · Budget: <b>${esc(node.projectBudgetDisplay)}</b></small>
                 </div>
                 <div class="tree-meta">
                   <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>
@@ -1447,7 +1472,7 @@
               <span style="font-size:16px;"><i class="fa-solid fa-hotel"></i></span>
               <div class="tree-title">
                 <strong style="font-size:14px;">${esc(matchedResort.name || 'Master Resort Destination')} (${esc(matchedResort.code || 'RES')})</strong>
-                <small>Master Resort Property · Total CapEx Budget: ${matchedResort.budget || '₹48.50 Cr'} · ${filteredProjects.length} Nested Packages</small>
+                <small>Master Resort Property · Total CapEx Budget: ${esc(portfolioBudgetLabel)} · ${filteredProjects.length} Nested Packages</small>
               </div>
               <div class="tree-meta">
                 <button class="btn sm primary" onclick="openCreateProjectModal();"><i class="fa-solid fa-plus"></i> Add Level-1 Major Project</button>
@@ -1481,7 +1506,7 @@
             <td><code>${esc(p.code || 'PRJ-01')}</code></td>
             <td><span class="badge blue">${esc(p.discipline || p.disc || 'Civil Structure')}</span></td>
             <td><b>${esc(p.owner || p.ownerName || 'Lead PM')}</b></td>
-            <td>${p.budget || '₹5.00 Cr'}</td>
+            <td>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</td>
             <td>
               <div style="display:flex; align-items:center; gap:6px;">
                 <div class="progress ${progColor}" style="width:50px; margin:0;"><i style="width:${prog}%"></i></div>
@@ -1517,12 +1542,12 @@
             </div>
             <h3 style="font-size:15px; font-weight:800; margin:10px 0 4px;">${esc(p.name || p.title)}</h3>
             ${parentObj ? `<div style="font-size:11px; color:#6b21a8; background:#faf5ff; padding:3px 6px; border-radius:4px; margin-bottom:6px;">↳ Parent: <b>${esc(parentObj.name)}</b></div>` : ''}
-            <div style="font-size:11.5px; color:var(--text-muted);">Code: <code>${esc(p.code || '')}</code> · ${esc(p.discipline || 'General')}</div>
+            <div style="font-size:11.5px; color:var(--text-muted);">Code: <code>${detailValue(p.code)}</code> · ${esc(p.discipline || 'General')}</div>
             <p style="font-size:12px; color:var(--text-muted); margin:10px 0; min-height:36px;">${esc(p.desc || 'Engineering deliverable package with milestones and technical specifications.')}</p>
             <div class="progress ${progColor}"><i style="width:${prog}%"></i></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
               <span><b>${prog}%</b> complete</span>
-              <span>Budget: <b>${p.budget || '₹5.00 Cr'}</b></span>
+              <span>Budget: <b>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</b></span>
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:10px;">
               <div class="btn-group">
@@ -1614,18 +1639,25 @@
 
     const numericPid = Number(p.id);
     let profileBudget = null;
+    let profileVariance = null;
     let profileFiles = [];
     try {
-      const [budgets, files] = await Promise.all([
+      const [budgets, files, variance] = await Promise.all([
         WisetrackAPI.getBudgets(numericPid).catch(() => []),
-        WisetrackAPI.getProjectFiles(numericPid).catch(() => [])
+        WisetrackAPI.getProjectFiles(numericPid).catch(() => []),
+        WisetrackAPI.getVariance(numericPid).catch(() => null)
       ]);
       profileBudget = budgets?.[0] || null;
       profileFiles = files || [];
+      profileVariance = variance;
     } catch (_) { /* optional profile resources */ }
-    p.budget = profileBudget ? `${profileBudget.currency || p.currency || 'INR'} ${Number(profileBudget.approvedAmount || 0).toLocaleString('en-IN')}` : 'Not set';
-    p.startDate = p.startDate || '—';
-    p.endDate = p.endDate || '—';
+    p.budget = p.projectBudgetAmount != null ? projectBudgetLabel(p)
+      : profileBudget?.approvedAmount != null ? formatBudgetValue(profileBudget.approvedAmount, profileBudget.currency || p.currency || 'INR') : 'N/A';
+    p.spent = profileVariance && (profileVariance.currentCommitment != null || profileVariance.purchaseTotal != null)
+      ? formatBudgetValue(profileVariance.currentCommitment ?? profileVariance.purchaseTotal, profileVariance.currency || p.currency || 'INR') : 'N/A';
+    p.startDate = p.startDate || 'N/A';
+    p.endDate = p.endDate || 'N/A';
+    const detailValue = value => value == null || (typeof value === 'string' && !value.trim()) ? 'N/A' : esc(value);
     const prog = p.progress !== undefined ? p.progress : (p.progressPercent || 0);
     const progColor = prog >= 80 ? 'green' : (prog >= 50 ? 'blue' : 'amber');
     const lvl = Number(p.level) || 1;
@@ -1641,8 +1673,8 @@
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
         <div>
           <div style="margin-bottom:4px;">${levelBadge}</div>
-          <h3 style="font-size:18px; font-weight:800; margin:0 0 4px;">${esc(p.name || p.title)}</h3>
-          <p style="color:var(--text-muted); font-size:12px; margin:0;">Code: <code>${esc(p.code || '')}</code> · Discipline: <b>${esc(p.discipline || p.disc || 'General')}</b></p>
+          <h3 style="font-size:18px; font-weight:800; margin:0 0 4px;">${detailValue(p.name || p.title)}</h3>
+          <p style="color:var(--text-muted); font-size:12px; margin:0;">Code: <code>${detailValue(p.code)}</code> · Discipline: <b>${detailValue(p.discipline || p.disc)}</b></p>
         </div>
         <span class="badge ${p.healthBadge || (prog>=80?'green':prog>=50?'blue':'amber')}">${esc(p.health || p.status || 'Active')}</span>
       </div>
@@ -1656,22 +1688,22 @@
       </div>
 
       <div class="grid g2" style="background:var(--bg-app); border:1px solid var(--border-color); border-radius:8px; padding:12px; margin-bottom:14px; font-size:12.5px;">
-        <div><b>Allocated Budget:</b> ${esc(p.budget || '₹5.00 Cr')}</div>
-        <div><b>Committed Spent:</b> ${esc(p.spent || '₹0.00 Cr')}</div>
-        <div><b>Project Owner:</b> ${esc(p.ownerName || 'Not assigned')}</div>
-        <div><b>Client:</b> ${esc(p.clientName || '—')}</div>
-        <div><b>Sponsor:</b> ${esc(p.sponsor || '—')}</div>
-        <div><b>Currency:</b> ${esc(p.currency || 'INR')}</div>
-        <div><b>Status:</b> ${esc(p.status || 'Draft')}</div>
-        <div><b>Schedule:</b> ${esc(p.startDate || '2026-09-01')} ➔ ${esc(p.endDate || '2026-12-31')}</div>
+        <div><b>Allocated Budget:</b> ${detailValue(p.projectBudgetDisplay || (p.projectBudgetAmount != null || profileBudget?.approvedAmount != null ? projectBudgetLabel(p) : null))}</div>
+        <div><b>Committed Spent:</b> ${detailValue(p.spent)}</div>
+        <div><b>Project Owner:</b> ${detailValue(p.ownerName || p.owner)}</div>
+        <div><b>Client:</b> ${detailValue(p.clientName)}</div>
+        <div><b>Sponsor:</b> ${detailValue(p.sponsor)}</div>
+        <div><b>Currency:</b> ${detailValue(p.currency)}</div>
+        <div><b>Status:</b> ${detailValue(p.status)}</div>
+        <div><b>Schedule:</b> ${detailValue(p.startDate)} ➔ ${detailValue(p.endDate)}</div>
       </div>
 
       <div>
         <strong style="font-size:12px; color:var(--text-muted); text-transform:uppercase;">Scope & Deliverables:</strong>
-        <p style="font-size:13px; margin:6px 0 0; line-height:1.5;">${esc(p.description || '—')}</p>
+        <p style="font-size:13px; margin:6px 0 0; line-height:1.5;">${detailValue(p.description)}</p>
       </div>
-      <div style="margin-top:12px"><strong style="font-size:12px;color:var(--text-muted);text-transform:uppercase">Relevant Notes</strong><p style="white-space:pre-wrap">${esc(p.profileNotes || '—')}</p></div>
-      <div style="margin-top:12px"><strong style="font-size:12px;color:var(--text-muted);text-transform:uppercase">Attachments</strong>${profileFiles.length ? `<ul>${profileFiles.map(f => `<li>${esc(f.fileName)} <button class="btn sm" onclick="WisetrackAPI.downloadProjectFile(${f.id}).catch(e=>showToast(e.message,'danger'))">Download</button></li>`).join('')}</ul>` : '<p>None</p>'}</div>
+      <div style="margin-top:12px"><strong style="font-size:12px;color:var(--text-muted);text-transform:uppercase">Relevant Notes</strong><p style="white-space:pre-wrap">${detailValue(p.profileNotes)}</p></div>
+      <div style="margin-top:12px"><strong style="font-size:12px;color:var(--text-muted);text-transform:uppercase">Attachments</strong>${profileFiles.length ? `<ul>${profileFiles.map(f => `<li>${detailValue(f.fileName)} <button class="btn sm" onclick="WisetrackAPI.downloadProjectFile(${f.id}).catch(e=>showToast(e.message,'danger'))">Download</button></li>`).join('')}</ul>` : '<p>N/A</p>'}</div>
       
       <div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn sm primary" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i> + Add Sub-Package</button>

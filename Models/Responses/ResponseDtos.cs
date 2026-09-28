@@ -73,6 +73,8 @@ public class ProjectResponseDto
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public string? ProfileNotes { get; set; }
+    public decimal? ProjectBudgetAmount { get; set; }
+    public string? ProjectBudgetCurrency { get; set; }
     public string Level { get; set; } = "Project";
     public List<ProjectResponseDto> SubProjects { get; set; } = new();
 }
