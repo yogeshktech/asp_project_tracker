@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace project_tracker_madhu.Models.Entities;
 
@@ -39,10 +40,17 @@ public class BudgetVersion
     public long BudgetId { get; set; }
     public int VersionNo { get; set; }
     public decimal TotalAmount { get; set; }
+    public string Currency { get; set; } = "INR";
     public string? Remarks { get; set; }
     public long? CreatedBy { get; set; }
+    public long? ApproverId { get; set; }
     public DateTime CreatedAt { get; set; }
+    [JsonIgnore]
     public Budget Budget { get; set; } = null!;
+    [JsonIgnore]
+    public User? Approver { get; set; }
+    [NotMapped]
+    public string? ApproverName { get; set; }
 }
 
 [Table("budget_allocations")]

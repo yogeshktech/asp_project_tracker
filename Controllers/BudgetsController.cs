@@ -23,9 +23,13 @@ public class BudgetsController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateBudgetRequest request) =>
         Ok(await _budgetService.CreateAsync(request, UserId));
 
+    [HttpPut("{id:long}")]
+    public async Task<IActionResult> Update(long id, [FromBody] UpdateBudgetRequest request) =>
+        Ok(await _budgetService.UpdateAsync(id, request, UserId));
+
     [HttpPost("{id:long}/revise")]
     public async Task<IActionResult> Revise(long id, [FromBody] BudgetVersionRequest request) =>
-        Ok(await _budgetService.ReviseAsync(id, request.TotalAmount, request.Remarks, UserId, request.ApproverId));
+        Ok(await _budgetService.ReviseAsync(id, request.TotalAmount, request.Remarks, UserId));
 
     [HttpGet("cost-centers")]
     public async Task<IActionResult> CostCenters([FromQuery] long? projectId) =>

@@ -1756,6 +1756,10 @@ function escapeHtmlAttr(str) {
 // 7. Edit Project / Sub-Project (Accurate Data Pre-population)
 async function openEditProjectModal(projectId) {
   let p = null;
+  let profileUsers = [];
+  let projectTeam = [];
+  let projectBudgets = [];
+  let projectFiles = [];
   let projects = getProjects();
   let resorts = getResorts();
 
@@ -1776,6 +1780,15 @@ async function openEditProjectModal(projectId) {
       }
       const apiResorts = await WisetrackAPI.getResorts().catch(() => []);
       if (apiResorts?.length) resorts = apiResorts;
+      const numericId = Number.parseInt(projectId, 10);
+      if (!Number.isNaN(numericId)) {
+        [profileUsers, projectTeam, projectBudgets, projectFiles] = await Promise.all([
+          WisetrackAPI.getUsers().catch(() => []),
+          WisetrackAPI.getProjectTeam(numericId).catch(() => []),
+          WisetrackAPI.getBudgets(numericId).catch(() => []),
+          WisetrackAPI.getProjectFiles(numericId).catch(() => [])
+        ]);
+      }
     } catch (err) {
       console.warn('API getProject for edit:', err);
     }
@@ -1796,6 +1809,14 @@ async function openEditProjectModal(projectId) {
   window.__editingProject = p;
 
   const currentResort = p.resortId || 'RES-GOA-01';
+  const selectedTeamIds = new Set((projectTeam || []).map(m => Number(m.userId)));
+  const profileUserOptions = (profileUsers || []).filter(u => u.isActive !== false)
+    .map(u => `<option value="${u.id}" ${selectedTeamIds.has(Number(u.id)) ? 'selected' : ''}>${escapeHtmlAttr(u.fullName || u.email)}</option>`).join('');
+  const selectedBudget = projectBudgets?.[0] || null;
+  p.budget = selectedBudget ? String(selectedBudget.approvedAmount ?? 0) : '0';
+  const attachmentRows = (projectFiles || []).map(f => `<li>${escapeHtmlAttr(f.fileName)} <button type="button" class="btn sm" onclick="WisetrackAPI.downloadProjectFile(${f.id}).catch(e=>showToast(e.message,'danger'))">Download</button></li>`).join('') || '<li>No attachments yet.</li>';
+  window.__editingTeam = projectTeam || [];
+  window.__editingBudget = selectedBudget;
 
   // Build parent options for hierarchy repositioning or viewing (exclude self and self's children)
   const resortProjects = projects.filter(item => (String(item.resortId) === String(currentResort) || String(item.resortId) === `RES-${currentResort}`) && String(item.id) !== String(p.id));
@@ -1839,8 +1860,8 @@ async function openEditProjectModal(projectId) {
           <input type="text" id="editProjectName" value="${escapeHtmlAttr(p.name || p.title || '')}" required>
         </div>
         <div class="field">
-          <label>Code (auto)</label>
-          <input type="text" id="editProjectCode" value="${escapeHtmlAttr(p.code || '')}" readonly>
+          <label>Project Code</label>
+          <input type="text" id="editProjectCode" value="${escapeHtmlAttr(p.code || '')}" required>
         </div>
         <div class="field">
           <label>Discipline / Category *</label>
@@ -1857,16 +1878,24 @@ async function openEditProjectModal(projectId) {
           </select>
         </div>
         <div class="field">
-          <label>Project Manager / Assignee *</label>
-          <input type="text" id="editProjectOwner" value="${escapeHtmlAttr(p.owner || p.ownerName || 'Rahul Sharma')}" required>
+          <label>Project Owner</label>
+          <select id="editProjectOwnerId"><option value="">No owner</option>${(profileUsers || []).filter(u => u.isActive !== false).map(u => `<option value="${u.id}" ${Number(p.ownerId) === Number(u.id) ? 'selected' : ''}>${escapeHtmlAttr(u.fullName || u.email)}</option>`).join('')}</select>
         </div>
+        <div class="field"><label>Client</label><input type="text" id="editProjectClient" value="${escapeHtmlAttr(p.clientName || '')}"></div>
+        <div class="field"><label>Sponsor</label><input type="text" id="editProjectSponsor" value="${escapeHtmlAttr(p.sponsor || '')}"></div>
+        <div class="field"><label>Currency</label><select id="editProjectCurrency"><option value="INR" ${(p.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${p.currency === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
         <div class="field">
           <label>Allocated Budget *</label>
-          <input type="text" id="editProjectBudget" value="${escapeHtmlAttr(p.budget || '₹5.00 Cr')}" required>
+          <input type="number" min="0" step="0.01" id="editProjectBudget" value="${escapeHtmlAttr(p.budget || '0')}" required>
         </div>
+        <div class="field"><label>Budget Name</label><input type="text" id="editProjectBudgetName" value="${escapeHtmlAttr(selectedBudget?.name || 'Initial Project Budget')}"></div>
+        <div class="field"><label>Budget Currency</label><select id="editProjectBudgetCurrency"><option value="INR" ${(selectedBudget?.currency || p.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option><option value="USD" ${(selectedBudget?.currency || p.currency) === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${(selectedBudget?.currency || p.currency) === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
         <div class="field">
           <label>Project Health / Status *</label>
           <select id="editProjectHealth">
+            <option value="Draft" ${p.status === 'Draft' ? 'selected' : ''}>Draft</option>
+            <option value="Active" ${p.status === 'Active' ? 'selected' : ''}>Active</option>
+            <option value="Not Start" ${(p.health || p.status) === 'Not Start' ? 'selected' : ''}>🟢 Not Start</option>
             <option value="On Track" ${(p.health || p.status) === 'On Track' ? 'selected' : ''}>🟢 On Track</option>
             <option value="At Risk" ${(p.health || p.status) === 'At Risk' ? 'selected' : ''}>🟠 At Risk</option>
             <option value="Delayed" ${(p.health || p.status) === 'Delayed' ? 'selected' : ''}>🔴 Delayed</option>
@@ -1880,16 +1909,20 @@ async function openEditProjectModal(projectId) {
         </div>
         <div class="field">
           <label>Start Date</label>
-          <input type="date" id="editProjectStartDate" value="${p.startDate || '2026-09-01'}">
+          <input type="date" id="editProjectStartDate" value="${p.startDate || ''}">
         </div>
         <div class="field">
           <label>Target Handover Date</label>
-          <input type="date" id="editProjectEndDate" value="${p.endDate || '2026-12-31'}">
+          <input type="date" id="editProjectEndDate" value="${p.endDate || ''}">
         </div>
         <div class="field full">
           <label>Scope of Work / Deliverables</label>
           <textarea id="editProjectDesc">${escapeHtmlAttr(p.desc || p.description || '')}</textarea>
         </div>
+        <div class="field full"><label>Relevant Notes</label><textarea id="editProjectNotes">${escapeHtmlAttr(p.profileNotes || '')}</textarea></div>
+        <div class="field full"><label>Internal Team</label><select id="editProjectTeam" multiple size="5">${profileUserOptions}</select></div>
+        <div class="field full"><label>Current Attachments</label><ul>${attachmentRows}</ul></div>
+        <div class="field full"><label>Add Attachments</label><input type="file" id="editProjectAttachments" multiple></div>
       </div>
       <div class="modalfoot" style="padding:0;margin-top:16px;">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
@@ -1906,9 +1939,8 @@ async function handleEditProject(e, projectId) {
   const code = document.getElementById('editProjectCode').value.trim();
   const resortId = document.getElementById('editProjectResortId').value;
   const parentId = document.getElementById('editProjectParentId').value || null;
-  const discipline = document.getElementById('editProjectDiscipline').value;
-  const owner = document.getElementById('editProjectOwner').value.trim();
-  const budget = document.getElementById('editProjectBudget').value.trim();
+  const ownerId = Number(document.getElementById('editProjectOwnerId')?.value || 0) || null;
+  const budgetAmount = Number(document.getElementById('editProjectBudget')?.value || 0);
   const health = document.getElementById('editProjectHealth').value;
   const progress = parseInt(document.getElementById('editProjectProgress').value) || 0;
   const startDate = document.getElementById('editProjectStartDate').value || "2026-09-01";
@@ -1935,21 +1967,40 @@ async function handleEditProject(e, projectId) {
         await WisetrackAPI.updateProject(numId, {
           resortId: parseInt(resortId, 10) || orig.resortId,
           parentProjectId: parentId ? parseInt(parentId, 10) : (orig.parentProjectId ?? null),
-          ownerId: orig.ownerId ?? null,
+          ownerId,
           projectTypeId: orig.projectTypeId ?? null,
           propertyId: orig.propertyId ?? null,
-          clientName: orig.clientName ?? null,
-          sponsor: orig.sponsor ?? null,
-          currency: orig.currency || 'INR',
+          clientName: document.getElementById('editProjectClient').value.trim() || null,
+          sponsor: document.getElementById('editProjectSponsor').value.trim() || null,
+          currency: document.getElementById('editProjectCurrency').value,
           allowExternalView: !!orig.allowExternalView,
           name,
           code,
           description: desc,
           status: health,
-          startDate: startDate || null,
-          endDate: endDate || null,
-          profileNotes: orig.profileNotes ?? null
+          startDate: document.getElementById('editProjectStartDate').value || null,
+          endDate: document.getElementById('editProjectEndDate').value || null,
+          profileNotes: document.getElementById('editProjectNotes').value.trim() || null
         });
+        const desiredTeam = new Set([...document.getElementById('editProjectTeam').selectedOptions].map(o => Number(o.value)));
+        if (ownerId) desiredTeam.add(ownerId);
+        const originalTeam = window.__editingTeam || [];
+        for (const member of originalTeam) if (!desiredTeam.has(Number(member.userId))) await WisetrackAPI.removeTeamMember(numId, member.userId);
+        for (const memberId of desiredTeam)
+          await WisetrackAPI.assignTeamMember(numId, { userId: memberId, teamRole: memberId === ownerId ? 'Owner' : 'Member' });
+        const existingBudget = window.__editingBudget;
+        const budgetName = document.getElementById('editProjectBudgetName').value.trim() || 'Initial Project Budget';
+        const budgetCurrency = document.getElementById('editProjectBudgetCurrency').value;
+        if (existingBudget) {
+          const amountChanged = Number(existingBudget.approvedAmount) !== Number(budgetAmount);
+          const currencyChanged = String(existingBudget.currency || 'INR').toUpperCase() !== String(budgetCurrency || 'INR').toUpperCase();
+          const baselineChanged = amountChanged || currencyChanged;
+          const revisionReason = baselineChanged ? prompt('Enter the reason for this approved budget/currency revision:') : null;
+          if (baselineChanged && !revisionReason?.trim()) throw new Error('A revision reason is required to change the approved budget or currency.');
+          await WisetrackAPI.updateBudget(existingBudget.id, { name: budgetName, approvedAmount: budgetAmount, currency: budgetCurrency, remarks: revisionReason?.trim() || null });
+        }
+        else if (budgetAmount > 0) await WisetrackAPI.createBudget({ projectId: numId, name: budgetName, approvedAmount: budgetAmount, currency: budgetCurrency });
+        for (const file of [...(document.getElementById('editProjectAttachments')?.files || [])]) await WisetrackAPI.uploadFile(file, 'Project', numId);
       }
     }
   } catch (err) {
@@ -1965,9 +2016,7 @@ async function handleEditProject(e, projectId) {
     resortId: String(resortId),
     parentId: parentId ? String(parentId) : null,
     level,
-    discipline,
-    owner,
-    budget,
+    owner: window.__editingProject?.ownerName || '',
     spent: idx !== -1 ? (projects[idx].spent || "₹0.00 Cr") : "₹0.00 Cr",
     health,
     healthBadge: health === 'On Track' || health === 'Completed' ? 'green' : health === 'At Risk' ? 'amber' : 'red',

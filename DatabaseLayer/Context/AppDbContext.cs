@@ -69,6 +69,8 @@ public class AppDbContext : DbContext
             .HasOne(x => x.Permission).WithMany().HasForeignKey(x => x.PermissionId);
 
         modelBuilder.Entity<ProjectUser>().HasKey(x => new { x.ProjectId, x.UserId });
+        modelBuilder.Entity<BudgetVersion>()
+            .HasOne(x => x.Approver).WithMany().HasForeignKey(x => x.ApproverId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<Project>()
             .HasMany(x => x.SubProjects)
             .WithOne(x => x.ParentProject)

@@ -231,7 +231,7 @@ public class ProjectService : IProjectService
 
         var entity = FromDto(dto);
         entity.OwnerId ??= userId;
-        entity.Code = await NextProjectCodeAsync(dto.ParentProjectId);
+        entity.Code = string.IsNullOrWhiteSpace(dto.Code) ? await NextProjectCodeAsync(dto.ParentProjectId) : dto.Code.Trim();
         var project = await _repository.AddProjectAsync(entity);
         var initialTeam = (dto.TeamUserIds ?? new()).Append(userId).Append(entity.OwnerId.Value).Distinct();
         foreach (var memberId in initialTeam)
@@ -292,7 +292,7 @@ public class ProjectService : IProjectService
 
     public async Task AssignUserAsync(long userId, long projectId, AssignProjectUserRequest request)
     {
-        if (!await _permissions.CanEditModuleAsync(userId, projectId, "Users"))
+        if (!await _permissions.CanUpdateModuleAsync(userId, projectId, "Projects"))
             throw new UnauthorizedAccessException("No permission to assign users.");
         await _repository.AssignUserAsync(new ProjectUser
         {
@@ -305,7 +305,7 @@ public class ProjectService : IProjectService
 
     public async Task RemoveUserAsync(long userId, long projectId, long memberUserId)
     {
-        if (!await _permissions.CanEditModuleAsync(userId, projectId, "Users"))
+        if (!await _permissions.CanUpdateModuleAsync(userId, projectId, "Projects"))
             throw new UnauthorizedAccessException("No permission.");
         await _repository.RemoveUserAsync(projectId, memberUserId);
         await _audit.LogAsync(userId, "RemoveUser", "Project", projectId, $"User {memberUserId}");
@@ -431,6 +431,7 @@ public class ProjectService : IProjectService
         project.Currency = dto.Currency;
         project.AllowExternalView = dto.AllowExternalView;
         project.Name = dto.Name;
+        project.Code = dto.Code;
         project.Description = dto.Description;
         project.Status = dto.Status;
         project.StartDate = dto.StartDate;

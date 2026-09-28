@@ -24,13 +24,18 @@ public class BudgetRepository : IBudgetRepository
     private readonly AppDbContext _db;
     public BudgetRepository(AppDbContext db) => _db = db;
 
-    public Task<List<Budget>> GetByProjectAsync(long projectId) =>
-        _db.Budgets.Include(b => b.Allocations).ThenInclude(a => a.CostCenter)
-            .Include(b => b.Versions)
+    public async Task<List<Budget>> GetByProjectAsync(long projectId)
+    {
+        var budgets = await _db.Budgets.Include(b => b.Allocations).ThenInclude(a => a.CostCenter)
+            .Include(b => b.Versions).ThenInclude(v => v.Approver)
             .Where(b => b.ProjectId == projectId).AsNoTracking().ToListAsync();
+        foreach (var version in budgets.SelectMany(b => b.Versions))
+            version.ApproverName = version.Approver?.FullName;
+        return budgets;
+    }
 
     public Task<Budget?> GetAsync(long id) =>
-        _db.Budgets.Include(b => b.Allocations).Include(b => b.Versions)
+        _db.Budgets.Include(b => b.Allocations).Include(b => b.Versions).ThenInclude(v => v.Approver)
             .FirstOrDefaultAsync(b => b.Id == id);
 
     public async Task<Budget> AddAsync(Budget budget)
@@ -42,7 +47,7 @@ public class BudgetRepository : IBudgetRepository
 
     public async Task UpdateAsync(Budget budget)
     {
-        _db.Budgets.Update(budget);
+        _db.Entry(budget).State = EntityState.Modified;
         await _db.SaveChangesAsync();
     }
 
@@ -71,7 +76,8 @@ public class BudgetRepository : IBudgetRepository
     public Task<List<CostCenter>> GetCostCentersAsync(long? projectId)
     {
         var q = _db.CostCenters.AsNoTracking().AsQueryable();
-        if (projectId.HasValue) q = q.Where(c => c.ProjectId == projectId);
+        if (projectId.HasValue) q = q.Where(c => c.ProjectId == projectId ||
+            (c.ProjectId.HasValue && _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId)));
         return q.ToListAsync();
     }
 

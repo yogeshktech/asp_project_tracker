@@ -81,14 +81,15 @@ public class CostService : ICostService
 
     public async Task<CostVarianceDto> GetVarianceAsync(long userId, long projectId)
     {
-        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Costs"))
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Costs")
+            && !await _permissions.CanViewModuleAsync(userId, projectId, "Budgets"))
             throw new UnauthorizedAccessException("No permission.");
 
         var approved = await _repository.GetApprovedBudgetAsync(projectId);
         var allocated = await _repository.GetAllocatedBudgetAsync(projectId);
-        var purchases = (await _repository.GetPurchasesAsync(projectId)).Sum(x => x.Amount);
-        var actuals = (await _repository.GetActualsAsync(projectId)).Sum(x => x.Amount);
-        var variance = approved - actuals;
+        var (purchases, actuals) = await _repository.GetProjectCostTotalsAsync(projectId);
+        var forecast = purchases + actuals;
+        var variance = approved - forecast;
         var percent = approved == 0 ? 0 : Math.Abs(variance) / approved * 100;
         var ccRollups = await _repository.GetCostCenterRollupsAsync(projectId);
         var worstRag = ccRollups.Count == 0 ? "Green" :
@@ -98,11 +99,15 @@ public class CostService : ICostService
         return new CostVarianceDto
         {
             ProjectId = projectId,
+            Currency = await _repository.GetProjectCurrencyAsync(projectId),
+            Budget = approved,
+            CurrentCommitment = purchases,
+            ActualSpend = actuals,
             ApprovedBudget = approved,
             AllocatedBudget = allocated,
             PurchaseTotal = purchases,
             ActualTotal = actuals,
-            ForecastTotal = actuals + purchases * 0.1m,
+            ForecastTotal = forecast,
             VarianceAmount = variance,
             VariancePercent = Math.Round(percent, 2),
             RagStatus = worstRag,

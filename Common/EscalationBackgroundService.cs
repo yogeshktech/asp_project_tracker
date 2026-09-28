@@ -99,33 +99,52 @@ public class EscalationBackgroundService : BackgroundService
             .Include(a => a.CostCenter)
             .ToListAsync();
 
-        foreach (var alloc in allocations)
+        foreach (var group in allocations.GroupBy(a => new { a.BudgetId, a.CostCenterId }))
         {
-            var spent = await db.PurchaseCosts.Where(c => c.CostCenterId == alloc.CostCenterId).SumAsync(c => c.Amount);
-            spent += await db.ActualCosts.Where(c => c.CostCenterId == alloc.CostCenterId).SumAsync(c => c.Amount);
-            if (alloc.AllocatedAmount <= 0) continue;
-            var pct = spent / alloc.AllocatedAmount * 100;
-            if (pct < alloc.Budget.RagAmberPercent) continue;
-            if (await WasRecentlyNotifiedAsync(db, "BudgetRag", "CostCenter", alloc.CostCenterId)) continue;
-
-            var rag = pct >= alloc.Budget.RagRedPercent ? "Red" : "Amber";
-            var userIds = alloc.Budget.Project.ProjectUsers.Select(pu => pu.UserId).Distinct().ToList();
-            if (alloc.Budget.Project.OwnerId.HasValue) userIds.Add(alloc.Budget.Project.OwnerId.Value);
-            userIds = userIds.Distinct().ToList();
-
-            await notifications.SendAsync(new CreateNotificationRequest
+            var allocation = group.First();
+            var budget = allocation.Budget;
+            var totalAllocated = group.Sum(a => a.AllocatedAmount);
+            if (totalAllocated <= 0) continue;
+            var expenses = await db.PurchaseCosts.Where(c => c.CostCenterId == allocation.CostCenterId)
+                .Select(c => new { c.Amount, c.CreatedAt })
+                .Concat(db.ActualCosts.Where(c => c.CostCenterId == allocation.CostCenterId)
+                    .Select(c => new { c.Amount, c.CreatedAt }))
+                .OrderBy(c => c.CreatedAt).ToListAsync();
+            var spent = expenses.Sum(c => c.Amount);
+            var rules = await db.EscalationRules.Where(r => r.IsActive &&
+                (r.TriggerType == "BudgetRagAmber" || r.TriggerType == "BudgetRagRed")).ToListAsync();
+            foreach (var rule in rules)
             {
-                Title = $"Budget {rag}: {alloc.CostCenter.Name}",
-                Body = $"Cost center has consumed {pct:F1}% of allocated budget ({spent}/{alloc.AllocatedAmount}).",
-                Type = "BudgetRag",
-                RelatedType = "CostCenter",
-                RelatedId = alloc.CostCenterId,
-                UserIds = userIds
-            });
+                var threshold = rule.TriggerType == "BudgetRagRed" ? budget.RagRedPercent : budget.RagAmberPercent;
+                var targetSpend = totalAllocated * threshold / 100m;
+                decimal running = 0;
+                DateTime? crossedAt = null;
+                foreach (var expense in expenses)
+                {
+                    running += expense.Amount;
+                    if (running >= targetSpend) { crossedAt = expense.CreatedAt; break; }
+                }
+                if (!crossedAt.HasValue || DateTime.UtcNow < crossedAt.Value.AddHours(rule.DelayHours)) continue;
 
-            var emails = await db.Users.Where(u => userIds.Contains(u.Id) && u.IsInternal).Select(u => u.Email).ToListAsync();
-            await email.SendAsync(emails, $"Wisetrack: Budget {rag} alert",
-                $"Cost center '{alloc.CostCenter.Name}' on project '{alloc.Budget.Project.Name}' is at {pct:F1}% spend.");
+                var notificationType = $"{rule.TriggerType}:{budget.Id}:{rule.Id}";
+                if (await db.Notifications.AnyAsync(n => n.Type == notificationType && n.RelatedType == "CostCenter"
+                    && n.RelatedId == allocation.CostCenterId)) continue;
+                var userIds = rule.TargetRoleId.HasValue
+                    ? await db.UserRoles.Where(ur => ur.RoleId == rule.TargetRoleId.Value && ur.User.IsActive && ur.User.IsInternal)
+                        .Select(ur => ur.UserId).Distinct().ToListAsync()
+                    : budget.Project.ProjectUsers.Select(pu => pu.UserId).Append(budget.Project.OwnerId ?? 0).Where(id => id > 0).Distinct().ToList();
+                if (userIds.Count == 0) continue;
+                var rag = rule.TriggerType == "BudgetRagRed" ? "Red" : "Amber";
+                await notifications.SendAsync(new CreateNotificationRequest
+                {
+                    Title = $"Budget {rag}: {allocation.CostCenter.Name}",
+                    Body = $"Cost center has consumed {spent / totalAllocated * 100m:F1}% of its allocated budget ({spent}/{totalAllocated}).",
+                    Type = notificationType,
+                    RelatedType = "CostCenter",
+                    RelatedId = allocation.CostCenterId,
+                    UserIds = userIds
+                });
+            }
         }
     }
 

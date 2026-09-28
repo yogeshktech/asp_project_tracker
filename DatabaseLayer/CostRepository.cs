@@ -13,6 +13,8 @@ public interface ICostRepository
     Task<List<ActualCost>> GetActualsAsync(long projectId);
     Task<decimal> GetApprovedBudgetAsync(long projectId);
     Task<decimal> GetAllocatedBudgetAsync(long projectId);
+    Task<(decimal Purchase, decimal Actual)> GetProjectCostTotalsAsync(long projectId);
+    Task<string> GetProjectCurrencyAsync(long projectId);
     Task<(decimal Amber, decimal Red)> GetRagAsync(long projectId);
     Task<List<CostCenterRollupDto>> GetCostCenterRollupsAsync(long projectId);
 }
@@ -48,6 +50,17 @@ public class CostRepository : ICostRepository
     public Task<decimal> GetAllocatedBudgetAsync(long projectId) =>
         _db.BudgetAllocations.Where(a => a.Budget.ProjectId == projectId).SumAsync(a => a.AllocatedAmount);
 
+    public async Task<(decimal Purchase, decimal Actual)> GetProjectCostTotalsAsync(long projectId)
+    {
+        var projectIds = _db.Projects.Where(p => p.Id == projectId || p.ParentProjectId == projectId).Select(p => p.Id);
+        var purchase = await _db.PurchaseCosts.Where(c => projectIds.Contains(c.ProjectId)).SumAsync(c => c.Amount);
+        var actual = await _db.ActualCosts.Where(c => projectIds.Contains(c.ProjectId)).SumAsync(c => c.Amount);
+        return (purchase, actual);
+    }
+
+    public async Task<string> GetProjectCurrencyAsync(long projectId) =>
+        await _db.Projects.Where(p => p.Id == projectId).Select(p => p.Currency).FirstOrDefaultAsync() ?? "INR";
+
     public async Task<(decimal Amber, decimal Red)> GetRagAsync(long projectId)
     {
         var budget = await _db.Budgets.Where(b => b.ProjectId == projectId).OrderByDescending(b => b.Id).FirstOrDefaultAsync();
@@ -57,22 +70,33 @@ public class CostRepository : ICostRepository
     public async Task<List<CostCenterRollupDto>> GetCostCenterRollupsAsync(long projectId)
     {
         var (amber, red) = await GetRagAsync(projectId);
-        var centers = await _db.CostCenters.Where(c => c.ProjectId == projectId).AsNoTracking().ToListAsync();
+        var centers = await _db.CostCenters.Where(c => c.ProjectId == projectId ||
+            (c.ProjectId.HasValue && _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId)))
+            .AsNoTracking().ToListAsync();
         var result = new List<CostCenterRollupDto>();
 
         foreach (var cc in centers)
         {
-            var allocated = await _db.BudgetAllocations.Where(a => a.CostCenterId == cc.Id).SumAsync(a => a.AllocatedAmount);
-            var spent = await _db.PurchaseCosts.Where(c => c.CostCenterId == cc.Id).SumAsync(c => c.Amount);
-            spent += await _db.ActualCosts.Where(c => c.CostCenterId == cc.Id).SumAsync(c => c.Amount);
-            var pct = allocated == 0 ? 0 : spent / allocated * 100;
+            var allocated = await _db.BudgetAllocations.Where(a => a.CostCenterId == cc.Id && a.Budget.ProjectId == projectId).SumAsync(a => a.AllocatedAmount);
+            var purchase = await _db.PurchaseCosts.Where(c => c.CostCenterId == cc.Id &&
+                (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
+            var actual = await _db.ActualCosts.Where(c => c.CostCenterId == cc.Id &&
+                (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
+            var spent = purchase + actual;
+            var forecast = spent;
+            var pct = allocated == 0 ? 0 : forecast / allocated * 100;
             result.Add(new CostCenterRollupDto
             {
                 CostCenterId = cc.Id,
                 Name = cc.Name,
+                Budget = allocated,
+                CurrentCommitment = purchase,
+                PurchaseCost = purchase,
+                ActualSpend = actual,
+                Forecast = forecast,
                 Allocated = allocated,
                 Spent = spent,
-                Variance = allocated - spent,
+                Variance = allocated - forecast,
                 RagStatus = pct >= red ? "Red" : pct >= amber ? "Amber" : "Green"
             });
         }

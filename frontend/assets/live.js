@@ -459,6 +459,13 @@ async function handleCreateProject(e) {
     .map(option => Number(option.value)).filter(id => id > 0);
   const initialBudget = Number(document.getElementById('projectInitialBudget')?.value || 0);
   const budgetCurrency = document.getElementById('projectBudgetCurrency')?.value || 'INR';
+  const code = document.getElementById('projectCode')?.value.trim() || null;
+  const clientName = document.getElementById('projectClient')?.value.trim() || null;
+  const sponsor = document.getElementById('projectSponsor')?.value.trim() || null;
+  const currency = document.getElementById('projectCurrency')?.value || 'INR';
+  const status = document.getElementById('projectStatus')?.value || 'Draft';
+  const profileNotes = document.getElementById('projectNotes')?.value.trim() || null;
+  const attachments = [...(document.getElementById('projectAttachments')?.files || [])];
 
   const projects = (typeof getModalProjects === 'function' ? getModalProjects() : []) || [];
   let level = 1;
@@ -472,14 +479,24 @@ async function handleCreateProject(e) {
       resortId,
       parentProjectId,
       name,
+      code,
       ownerId,
       teamUserIds,
+      clientName,
+      sponsor,
+      currency,
+      profileNotes,
       description: desc,
-      status: 'Draft',
+      status,
       startDate: startDate || null,
       endDate: endDate || null
     });
     const projectId = Number(saved.id || saved.Id);
+    let attachmentWarning = '';
+    for (const file of attachments) {
+      try { await WisetrackAPI.uploadFile(file, 'Project', projectId); }
+      catch (uploadErr) { attachmentWarning = ` Attachment upload failed: ${uploadErr.message}`; break; }
+    }
     let budgetWarning = '';
     if (initialBudget > 0) {
       try {
@@ -488,6 +505,7 @@ async function handleCreateProject(e) {
         budgetWarning = ` Project saved, but initial budget could not be added: ${budgetErr.message}`;
       }
     }
+    if (attachmentWarning) budgetWarning += attachmentWarning;
     closeModal();
     const label = level === 1 ? 'Level 1 Root Project' : level === 2 ? 'Level 2 Sub-Project' : level === 3 ? 'Level 3 Work Package' : `Level ${level} Child`;
     showToast(`${label} "${name}" saved (${saved.code || saved.Code || ''})${initialBudget > 0 && !budgetWarning ? ' · initial budget added' : ''}${budgetWarning}`, budgetWarning ? 'warning' : 'success');
@@ -575,6 +593,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
           <label>Project / Sub-Project Title *</label>
           <input type="text" id="projectName" required>
         </div>
+        <div class="field"><label>Project Code</label><input type="text" id="projectCode" placeholder="Auto-generated if blank"></div>
         <div class="field">
           <label>Project Owner</label>
           <select id="projectOwnerId">${ownerOptions}</select>
@@ -601,10 +620,16 @@ async function openCreateProjectModal(preselectedParentId = null) {
           <label>End Date</label>
           <input type="date" id="projectEndDate">
         </div>
+        <div class="field"><label>Status</label><select id="projectStatus"><option value="Draft">Draft</option><option value="Active">Active</option><option value="On Track">On Track</option><option value="At Risk">At Risk</option><option value="Delayed">Delayed</option></select></div>
         <div class="field full">
           <label>Description</label>
           <textarea id="projectDesc"></textarea>
         </div>
+        <div class="field"><label>Client</label><input id="projectClient" type="text"></div>
+        <div class="field"><label>Sponsor</label><input id="projectSponsor" type="text"></div>
+        <div class="field"><label>Project Currency</label><select id="projectCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="EUR">EUR</option></select></div>
+        <div class="field"><label>Relevant Notes</label><textarea id="projectNotes"></textarea></div>
+        <div class="field full"><label>Attachments</label><input type="file" id="projectAttachments" multiple></div>
         <p class="card-subtitle" style="grid-column:1/-1;margin:0">Schedule dates, team, budget, tasks, issues, BOQ, costs and other records remain linked to this project.</p>
       </div>
       <div class="modalfoot" style="padding:0;margin-top:16px;">

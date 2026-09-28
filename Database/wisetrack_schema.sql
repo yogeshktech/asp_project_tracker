@@ -235,8 +235,10 @@ CREATE TABLE budget_versions (
     budget_id     BIGINT NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
     version_no    INT NOT NULL,
     total_amount  NUMERIC(18,2) NOT NULL DEFAULT 0,
+    currency      TEXT NOT NULL DEFAULT 'INR',
     remarks       TEXT,
     created_by    BIGINT REFERENCES users(id),
+    approver_id   BIGINT REFERENCES users(id) ON DELETE SET NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (budget_id, version_no)
 );

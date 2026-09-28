@@ -167,6 +167,14 @@ public class CreateBudgetRequest
     public decimal RagRedPercent { get; set; } = 100;
 }
 
+public class UpdateBudgetRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal ApprovedAmount { get; set; }
+    public string Currency { get; set; } = "INR";
+    public string? Remarks { get; set; }
+}
+
 public class CreateCostCenterRequest
 {
     public long? ProjectId { get; set; }
@@ -190,7 +198,6 @@ public class BudgetVersionRequest
 {
     public decimal TotalAmount { get; set; }
     public string? Remarks { get; set; }
-    public long? ApproverId { get; set; }
 }
 
 public class CreateItemRequest

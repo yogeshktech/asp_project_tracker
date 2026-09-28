@@ -33,6 +33,12 @@ public static class DatabaseBootstrap
         }
 
         await EnsurePermissionColumnsAsync(db, logger);
+        var budgetVersionCurrencyExists = await ColumnExistsAsync(db, "budget_versions", "currency");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS approver_id BIGINT NULL REFERENCES users(id) ON DELETE SET NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'INR'""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET approver_id = created_by WHERE approver_id IS NULL AND created_by IS NOT NULL""");
+        if (!budgetVersionCurrencyExists)
+            await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions v SET currency = b.currency FROM budgets b WHERE v.budget_id = b.id""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS field_permissions_json TEXT NULL""");
         await EnsureSubTaskNestingColumnAsync(db, logger);
         await EnsureTaskDependencyColumnsAsync(db, logger);

@@ -80,6 +80,10 @@ public class ProjectResponseDto
 public class CostVarianceDto
 {
     public long ProjectId { get; set; }
+    public string Currency { get; set; } = "INR";
+    public decimal Budget { get; set; }
+    public decimal CurrentCommitment { get; set; }
+    public decimal ActualSpend { get; set; }
     public decimal ApprovedBudget { get; set; }
     public decimal AllocatedBudget { get; set; }
     public decimal PurchaseTotal { get; set; }
@@ -95,6 +99,11 @@ public class CostCenterRollupDto
 {
     public long CostCenterId { get; set; }
     public string Name { get; set; } = string.Empty;
+    public decimal Budget { get; set; }
+    public decimal CurrentCommitment { get; set; }
+    public decimal PurchaseCost { get; set; }
+    public decimal ActualSpend { get; set; }
+    public decimal Forecast { get; set; }
     public decimal Allocated { get; set; }
     public decimal Spent { get; set; }
     public decimal Variance { get; set; }

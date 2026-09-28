@@ -135,6 +135,16 @@ const WisetrackAPI = {
     if (!res.ok) throw new Error(data?.message || `Upload failed (${res.status})`);
     return data;
   },
+  getProjectFiles(projectId) { return this.get(`/files?module=Project&relatedId=${projectId}`); },
+  async downloadFile(path) {
+    const res = await fetch(`${API_BASE}${path}`, { headers: this._headers(false) });
+    if (!res.ok) throw new Error(`Download failed (${res.status})`);
+    const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const fileName = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+    a.href = url; a.download = decodeURIComponent(fileName?.[1] || fileName?.[2] || 'project-attachment'); a.click(); URL.revokeObjectURL(url);
+  },
+  downloadProjectFile(id) { return this.downloadFile(`/files/${id}`); },
 
   // Resorts
   getResorts() { return this.get('/projects/resorts'); },
@@ -175,6 +185,7 @@ const WisetrackAPI = {
   // Budgets
   getBudgets(projectId) { return this.get(`/budgets/project/${projectId}`); },
   createBudget(data) { return this.post('/budgets', data); },
+  updateBudget(id, data) { return this.put(`/budgets/${id}`, data); },
   reviseBudget(id, data) { return this.post(`/budgets/${id}/revise`, data); },
   getCostCenters(projectId) { return this.get(`/budgets/cost-centers${projectId ? '?projectId=' + projectId : ''}`); },
   createCostCenter(data) { return this.post('/budgets/cost-centers', data); },

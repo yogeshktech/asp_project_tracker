@@ -389,8 +389,8 @@ public static class DbSeeder
         await db.SaveChangesAsync();
 
         db.BudgetVersions.AddRange(
-            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 1, TotalAmount = 48000000m, Remarks = "Original baseline", CreatedBy = finance.Id, CreatedAt = now.AddMonths(-6) },
-            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 2, TotalAmount = 50000000m, Remarks = "Board-approved revision (+4%) — steel escalation", CreatedBy = finance.Id, CreatedAt = now.AddMonths(-2) }
+            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 1, TotalAmount = 48000000m, Currency = "INR", Remarks = "Original baseline", CreatedBy = finance.Id, ApproverId = finance.Id, CreatedAt = now.AddMonths(-6) },
+            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 2, TotalAmount = 50000000m, Currency = "INR", Remarks = "Board-approved revision (+4%) — steel escalation", CreatedBy = finance.Id, ApproverId = finance.Id, CreatedAt = now.AddMonths(-2) }
         );
 
         db.BudgetAllocations.AddRange(
