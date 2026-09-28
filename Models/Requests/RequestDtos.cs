@@ -107,6 +107,7 @@ public class UpdateProjectTypeRequest : CreateProjectTypeRequest
 public class CreateProjectDto
 {
     public long ResortId { get; set; }
+    public List<long> TeamUserIds { get; set; } = new();
     public long? ParentProjectId { get; set; }
     public long? OwnerId { get; set; }
     public long? ProjectTypeId { get; set; }
@@ -141,6 +142,7 @@ public class UserProjectPermissionDto
     public bool CanEdit { get; set; }
     public bool CanUpdate { get; set; }
     public bool CanDelete { get; set; }
+    public Dictionary<string, string> FieldPermissions { get; set; } = new();
 }
 
 public class ReplaceUserAccessRequest

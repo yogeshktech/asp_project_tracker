@@ -16,7 +16,7 @@ public interface IUserService
     Task SetProjectPermissionAsync(UserProjectPermissionDto dto, long? actorId);
     Task ReplaceAccessAsync(long userId, ReplaceUserAccessRequest request, long actorId);
     Task<UserAccessDto> GetAccessAsync(long userId);
-    Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId);
+    Task<List<UserProjectPermissionDto>> GetProjectPermissionsAsync(long userId);
     Task<List<Permission>> GetPermissionsAsync();
 }
 
@@ -80,8 +80,13 @@ public class UserService : IUserService
 
     public Task<List<Role>> GetRolesAsync() => _repository.GetRolesAsync();
     public Task<List<Permission>> GetPermissionsAsync() => _repository.GetPermissionsAsync();
-    public Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId) =>
-        _repository.GetProjectPermissionsAsync(userId);
+    public async Task<List<UserProjectPermissionDto>> GetProjectPermissionsAsync(long userId) =>
+        (await _repository.GetProjectPermissionsAsync(userId)).Select(p => new UserProjectPermissionDto
+        {
+            UserId = p.UserId, ProjectId = p.ProjectId, Module = p.Module, CanView = p.CanView,
+            CanEdit = p.CanEdit, CanUpdate = p.CanUpdate, CanDelete = p.CanDelete,
+            FieldPermissions = string.IsNullOrWhiteSpace(p.FieldPermissionsJson) ? new() : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(p.FieldPermissionsJson) ?? new()
+        }).ToList();
 
     public async Task<UserAccessDto> GetAccessAsync(long userId)
     {
@@ -95,7 +100,8 @@ public class UserService : IUserService
                 CanView = p.CanView,
                 CanEdit = p.CanEdit,
                 CanUpdate = p.CanUpdate,
-                CanDelete = p.CanDelete
+                CanDelete = p.CanDelete,
+                FieldPermissions = string.IsNullOrWhiteSpace(p.FieldPermissionsJson) ? new() : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(p.FieldPermissionsJson) ?? new()
             }).ToList();
         return new UserAccessDto { IsAdmin = isAdmin, Permissions = perms };
     }
@@ -163,7 +169,8 @@ public class UserService : IUserService
             CanView = dto.CanView || write,
             CanEdit = dto.CanEdit,
             CanUpdate = dto.CanUpdate,
-            CanDelete = dto.CanDelete
+            CanDelete = dto.CanDelete,
+            FieldPermissionsJson = dto.FieldPermissions.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(dto.FieldPermissions)
         };
     }
 

@@ -368,6 +368,12 @@
     { id: 'update', label: 'Update' },
     { id: 'delete', label: 'Delete' }
   ];
+  const PROJECT_FIELDS = [
+    { key: 'clientName', label: 'Client name' }, { key: 'sponsor', label: 'Sponsor' },
+    { key: 'currency', label: 'Currency' }, { key: 'ownerId', label: 'Project owner' },
+    { key: 'description', label: 'Description' }, { key: 'profileNotes', label: 'Profile notes' },
+    { key: 'startDate', label: 'Start date' }, { key: 'endDate', label: 'End date' }
+  ];
 
   function permKey(projectId, module) {
     return `${Number(projectId) || 0}|${module}`;
@@ -441,7 +447,8 @@
         canView: !!(r.view || r.edit || r.update || r.delete),
         canEdit: !!r.edit,
         canUpdate: !!r.update,
-        canDelete: !!r.delete
+        canDelete: !!r.delete,
+        fieldPermissions: r.fields || {}
       };
     }).filter(p => p && (GLOBAL_PERM_MODULES.includes(p.module) || p.projectId));
   }
@@ -499,13 +506,13 @@
         <tbody>
           ${rows.map(row => {
             const key = permKey(row.projectId, row.module);
-            const cur = st.rights[key] || { view: false, edit: false, update: false, delete: false };
+            const cur = st.rights[key] || { view: false, edit: false, update: false, delete: false, fields: {} };
             return `<tr>
               <td>${esc(row.name)}</td>
               ${PERM_RIGHTS.map(r => `<td class="center">
                 <input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-module="${row.module}" data-right="${r.id}" ${cur[r.id] ? 'checked' : ''} onchange="WTPages.onUserPermToggle(this)">
               </td>`).join('')}
-            </tr>`;
+            </tr>${row.module === 'Projects' && row.projectId ? `<tr><td colspan="${PERM_RIGHTS.length + 1}"><strong>Project field rights</strong><div class="project-field-rights">${PROJECT_FIELDS.map(f => `<label>${esc(f.label)}<select data-pid="${row.projectId}" data-field="${f.key}" onchange="WTPages.onProjectFieldPermToggle(this)"><option value="inherit" ${!cur.fields?.[f.key] ? 'selected' : ''}>Inherit</option><option value="view" ${cur.fields?.[f.key] === 'view' ? 'selected' : ''}>View only</option><option value="edit" ${cur.fields?.[f.key] === 'edit' ? 'selected' : ''}>View + edit</option><option value="hidden" ${cur.fields?.[f.key] === 'hidden' ? 'selected' : ''}>No access</option></select></label>`).join('')}</div></td></tr>` : ''}`;
           }).join('')}
         </tbody>
       </table>`;
@@ -575,6 +582,15 @@
     renderPermTable();
   }
 
+  function onProjectFieldPermToggle(el) {
+    const key = permKey(Number(el.dataset.pid), 'Projects');
+    const state = getPermState();
+    if (!state.rights[key]) state.rights[key] = { view: true, edit: false, update: false, delete: false, fields: {} };
+    if (!state.rights[key].fields) state.rights[key].fields = {};
+    if (el.value === 'inherit') delete state.rights[key].fields[el.dataset.field];
+    else state.rights[key].fields[el.dataset.field] = el.value;
+  }
+
   function toggleUserAdmin(on) {
     const box = document.getElementById('userPermMatrix');
     if (box) box.style.display = on ? 'none' : 'block';
@@ -603,7 +619,8 @@
         view: permFlag(p, 'view'),
         edit: permFlag(p, 'edit'),
         update: permFlag(p, 'update'),
-        delete: permFlag(p, 'delete')
+        delete: permFlag(p, 'delete'),
+        fields: p.fieldPermissions || p.FieldPermissions || {}
       };
       if (pid && !GLOBAL_PERM_MODULES.includes(module) && !assigned.includes(pid)) assigned.push(pid);
     });
@@ -3554,7 +3571,7 @@
   window.WTPages = {
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
-    openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, fillPermProjectSelect,
+    openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
     openPropertyModal, saveProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,

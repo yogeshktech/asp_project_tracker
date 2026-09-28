@@ -2221,6 +2221,14 @@ button.btn[disabled] {
 .perm-table th.center {
   text-align: center;
 }
+.project-field-rights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.project-field-rights label { display: grid; gap: 4px; font-size: 12px; }
+.project-field-rights select { width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--surface, #fff); color: var(--text-main); }
 
 .perm-switch {
   appearance: none;

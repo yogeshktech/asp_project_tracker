@@ -59,3 +59,4 @@ INSERT INTO project_types (name, description) VALUES
     ('New Development', 'New development project'),
     ('Major Renovation', 'Major renovation project')
 ON CONFLICT (name) DO NOTHING;
+ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS field_permissions_json TEXT NULL;

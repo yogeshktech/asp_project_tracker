@@ -33,6 +33,7 @@ public static class DatabaseBootstrap
         }
 
         await EnsurePermissionColumnsAsync(db, logger);
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS field_permissions_json TEXT NULL""");
         await EnsureSubTaskNestingColumnAsync(db, logger);
         await EnsureTaskDependencyColumnsAsync(db, logger);
         await DbSeeder.SeedAsync(db);

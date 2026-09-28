@@ -454,6 +454,11 @@ async function handleCreateProject(e) {
   const desc = document.getElementById('projectDesc')?.value || '';
   const startDate = document.getElementById('projectStartDate')?.value || null;
   const endDate = document.getElementById('projectEndDate')?.value || null;
+  const ownerId = Number(document.getElementById('projectOwnerId')?.value || 0) || null;
+  const teamUserIds = [...(document.getElementById('projectTeamIds')?.selectedOptions || [])]
+    .map(option => Number(option.value)).filter(id => id > 0);
+  const initialBudget = Number(document.getElementById('projectInitialBudget')?.value || 0);
+  const budgetCurrency = document.getElementById('projectBudgetCurrency')?.value || 'INR';
 
   const projects = (typeof getModalProjects === 'function' ? getModalProjects() : []) || [];
   let level = 1;
@@ -467,14 +472,25 @@ async function handleCreateProject(e) {
       resortId,
       parentProjectId,
       name,
+      ownerId,
+      teamUserIds,
       description: desc,
       status: 'Draft',
       startDate: startDate || null,
       endDate: endDate || null
     });
+    const projectId = Number(saved.id || saved.Id);
+    let budgetWarning = '';
+    if (initialBudget > 0) {
+      try {
+        await WisetrackAPI.createBudget({ projectId, name: 'Initial Project Budget', approvedAmount: initialBudget, currency: budgetCurrency });
+      } catch (budgetErr) {
+        budgetWarning = ` Project saved, but initial budget could not be added: ${budgetErr.message}`;
+      }
+    }
     closeModal();
     const label = level === 1 ? 'Level 1 Root Project' : level === 2 ? 'Level 2 Sub-Project' : level === 3 ? 'Level 3 Work Package' : `Level ${level} Child`;
-    showToast(`${label} "${name}" saved · ${saved.code || saved.Code || ''}`);
+    showToast(`${label} "${name}" saved (${saved.code || saved.Code || ''})${initialBudget > 0 && !budgetWarning ? ' · initial budget added' : ''}${budgetWarning}`, budgetWarning ? 'warning' : 'success');
     setTimeout(() => location.reload(), 400);
   } catch (err) {
     showToast(err.message, 'danger');
@@ -509,11 +525,13 @@ async function handleAddUser(e) {
 async function openCreateProjectModal(preselectedParentId = null) {
   let resorts = [];
   let projects = [];
+  let users = [];
   try {
     resorts = await WisetrackAPI.getResorts();
     const rid = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] && resorts[0].id);
     // All projects (roots + nested) so any node can be chosen as parent → N-level WBS
     projects = await WisetrackAPI.getProjects(rid || undefined);
+    users = await WisetrackAPI.getUsers();
   } catch (err) {
     showToast(err.message, 'danger');
     return;
@@ -525,6 +543,12 @@ async function openCreateProjectModal(preselectedParentId = null) {
   const selectedResort = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] && String(resorts[0].id)) || '';
   const resortOptions = resorts.map(r =>
     `<option value="${r.id}" ${String(r.id) === String(selectedResort) ? 'selected' : ''}>${esc(r.name)}</option>`
+  ).join('');
+  const currentUserId = Number(localStorage.getItem('WISETRACK_USER_ID'));
+  const activeUsers = users.filter(u => u.isActive !== false);
+  const userOptions = activeUsers.map(u => `<option value="${u.id}">${esc(u.fullName || u.email)}</option>`).join('');
+  const ownerOptions = `<option value="">Select owner</option>` + activeUsers.map(u =>
+    `<option value="${u.id}" ${Number(u.id) === currentUserId ? 'selected' : ''}>${esc(u.fullName || u.email)}</option>`
   ).join('');
 
   const resortProjects = selectedResort
@@ -551,6 +575,23 @@ async function openCreateProjectModal(preselectedParentId = null) {
           <label>Project / Sub-Project Title *</label>
           <input type="text" id="projectName" required>
         </div>
+        <div class="field">
+          <label>Project Owner</label>
+          <select id="projectOwnerId">${ownerOptions}</select>
+        </div>
+        <div class="field">
+          <label>Initial Approved Budget</label>
+          <input type="number" id="projectInitialBudget" min="0" step="0.01" placeholder="Leave blank to add later">
+        </div>
+        <div class="field">
+          <label>Budget Currency</label>
+          <select id="projectBudgetCurrency"><option value="INR">INR — Indian Rupee</option><option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option></select>
+        </div>
+        <div class="field">
+          <label>Project Team</label>
+          <select id="projectTeamIds" multiple size="4">${userOptions}</select>
+          <small class="card-subtitle">Owner is included in the project team automatically.</small>
+        </div>
         <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (PRJ-001; child PRJ-001-01).</p>
         <div class="field">
           <label>Start Date</label>
@@ -564,6 +605,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
           <label>Description</label>
           <textarea id="projectDesc"></textarea>
         </div>
+        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Schedule dates, team, budget, tasks, issues, BOQ, costs and other records remain linked to this project.</p>
       </div>
       <div class="modalfoot" style="padding:0;margin-top:16px;">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>

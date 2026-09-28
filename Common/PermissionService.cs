@@ -12,6 +12,7 @@ public interface IPermissionService
     Task<bool> CanUpdateModuleAsync(long userId, long projectId, string module);
     Task<bool> CanDeleteModuleAsync(long userId, long projectId, string module);
     Task<bool> CanViewAnyModuleAsync(long userId, string module);
+    Task<Dictionary<string, string>> GetProjectFieldPermissionsAsync(long userId, long projectId);
     Task EnsureModuleAsync(long userId, long projectId, string module, string right);
     Task<List<long>> GetAccessibleProjectIdsAsync(long userId);
     Task<bool> IsProjectManagerAsync(long userId, long projectId);
@@ -144,6 +145,20 @@ public class PermissionService : IPermissionService
             "delete" => await q.AnyAsync(p => p.CanDelete),
             _ => false
         };
+    }
+
+    public async Task<Dictionary<string, string>> GetProjectFieldPermissionsAsync(long userId, long projectId)
+    {
+        if (await IsAdminAsync(userId)) return new();
+        var chain = await GetProjectAndAncestorIdsAsync(projectId);
+        var rows = await _db.ProjectPermissions.AsNoTracking()
+            .Where(p => p.UserId == userId && p.Module == "Projects" && p.ProjectId != null && chain.Contains(p.ProjectId.Value))
+            .OrderByDescending(p => p.ProjectId == projectId)
+            .Select(p => p.FieldPermissionsJson).ToListAsync();
+        foreach (var json in rows)
+            if (!string.IsNullOrWhiteSpace(json))
+                return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
+        return new(); // Existing records have no field restriction.
     }
 
     private async Task<bool> ExternalUserCanAccessProjectAsync(long userId, long projectId)

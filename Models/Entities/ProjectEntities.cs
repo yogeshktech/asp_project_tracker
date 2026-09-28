@@ -68,6 +68,7 @@ public class ProjectPermission
     public bool CanEdit { get; set; }
     public bool CanUpdate { get; set; }
     public bool CanDelete { get; set; }
+    public string? FieldPermissionsJson { get; set; }
     public Project? Project { get; set; }
     public User User { get; set; } = null!;
 }

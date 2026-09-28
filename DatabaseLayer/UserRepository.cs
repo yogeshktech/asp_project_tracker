@@ -68,6 +68,7 @@ public class UserRepository : IUserRepository
             existing.CanEdit = permission.CanEdit;
             existing.CanUpdate = permission.CanUpdate;
             existing.CanDelete = permission.CanDelete;
+            existing.FieldPermissionsJson = permission.FieldPermissionsJson;
         }
         await _db.SaveChangesAsync();
     }
@@ -79,7 +80,7 @@ public class UserRepository : IUserRepository
         foreach (var p in permissions)
         {
             p.UserId = userId;
-            if (p.CanView || p.CanEdit || p.CanUpdate || p.CanDelete)
+            if (p.CanView || p.CanEdit || p.CanUpdate || p.CanDelete || !string.IsNullOrWhiteSpace(p.FieldPermissionsJson))
                 _db.ProjectPermissions.Add(p);
         }
         await _db.SaveChangesAsync();

@@ -11,7 +11,7 @@
     <div>
       <div class="eyebrow">ENTERPRISE RBAC & SECURITY MATRIX</div>
       <h1>Granular Permissions Matrix</h1>
-      <p>Module-by-module security control: Super Admin can configure View, Create, Edit, Delete, and Approve permissions for each system role.</p>
+      <p>Module-by-module security control: configure project and module rights for each user, with optional View, Edit, or No access restrictions on individual project fields.</p>
     </div>
     <div class="head-actions">
       <button class="btn" onclick="handleResetPermissions()">🔄 Reset to Factory Defaults</button>

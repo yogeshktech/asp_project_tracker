@@ -177,7 +177,8 @@ public class ProjectService : IProjectService
     {
         var allowed = await _permissions.GetAccessibleProjectIdsAsync(userId);
         var projects = await _repository.GetProjectsAsync(allowed, resortId, parentId);
-        var list = projects.Select(Map).ToList();
+        var list = new List<ProjectResponseDto>();
+        foreach (var project in projects) list.Add(await MapForUserAsync(project, userId));
         AssignNumericLevels(list);
         return list;
     }
@@ -186,7 +187,8 @@ public class ProjectService : IProjectService
     {
         var allowed = await _permissions.GetAccessibleProjectIdsAsync(userId);
         var all = (await _repository.GetHierarchyAsync(resortId)).Where(p => allowed.Contains(p.Id)).ToList();
-        var mapped = all.Select(Map).ToList();
+        var mapped = new List<ProjectResponseDto>();
+        foreach (var project in all) mapped.Add(await MapForUserAsync(project, userId));
         AssignNumericLevels(mapped);
         var byParent = mapped.GroupBy(p => p.ParentProjectId ?? 0L).ToDictionary(g => g.Key, g => g.ToList());
 
@@ -206,7 +208,7 @@ public class ProjectService : IProjectService
         if (!await _permissions.CanViewProjectAsync(userId, id)) return null;
         var project = await _repository.GetProjectAsync(id);
         if (project == null) return null;
-        var dto = Map(project);
+        var dto = await MapForUserAsync(project, userId);
         // Compute depth by walking parents
         var depth = 1;
         var cursor = project.ParentProjectId;
@@ -231,12 +233,14 @@ public class ProjectService : IProjectService
         entity.OwnerId ??= userId;
         entity.Code = await NextProjectCodeAsync(dto.ParentProjectId);
         var project = await _repository.AddProjectAsync(entity);
-        await _repository.AssignUserAsync(new ProjectUser
-        {
-            ProjectId = project.Id,
-            UserId = userId,
-            TeamRole = "Member"
-        });
+        var initialTeam = (dto.TeamUserIds ?? new()).Append(userId).Append(entity.OwnerId.Value).Distinct();
+        foreach (var memberId in initialTeam)
+            await _repository.AssignUserAsync(new ProjectUser
+            {
+                ProjectId = project.Id,
+                UserId = memberId,
+                TeamRole = memberId == entity.OwnerId ? "Owner" : "Member"
+            });
         if (!await _permissions.IsAdminAsync(userId))
         {
             foreach (var module in PermissionService.ProjectModules)
@@ -253,31 +257,29 @@ public class ProjectService : IProjectService
                 });
             }
         }
-        if (dto.OwnerId.HasValue && dto.OwnerId != userId)
-        {
-            await _repository.AssignUserAsync(new ProjectUser
-            {
-                ProjectId = project.Id,
-                UserId = dto.OwnerId.Value,
-                TeamRole = "Member"
-            });
-        }
         await _audit.LogAsync(userId, "Create", "Project", project.Id);
         return Map(await _repository.GetProjectAsync(project.Id) ?? project);
     }
 
     public async Task<ProjectResponseDto?> UpdateAsync(long userId, long id, UpdateProjectDto dto)
     {
-        if (!await _permissions.CanUpdateModuleAsync(userId, id, "Projects")) return null;
         var project = await _repository.GetProjectAsync(id);
         if (project == null) return null;
+        var fieldRights = await _permissions.GetProjectFieldPermissionsAsync(userId, id);
+        var moduleUpdate = await _permissions.CanUpdateModuleAsync(userId, id, "Projects");
+        var changedFields = ProjectFieldsChanged(project, dto);
+        if (!moduleUpdate && (changedFields.Count == 0 || changedFields.Any(f => !fieldRights.TryGetValue(f, out var right) || !right.Equals("edit", StringComparison.OrdinalIgnoreCase)) || HasUnscopedProjectChanges(project, dto)))
+            return null;
+        foreach (var field in fieldRights.Where(x => x.Value.Equals("view", StringComparison.OrdinalIgnoreCase) || x.Value.Equals("hidden", StringComparison.OrdinalIgnoreCase)))
+            if (ProjectFieldChanged(project, dto, field.Key))
+                throw new UnauthorizedAccessException($"No edit permission on project field {field.Key}.");
         ApplyDto(project, dto);
         if (string.IsNullOrWhiteSpace(project.Code))
             project.Code = await NextProjectCodeAsync(project.ParentProjectId);
         project.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateProjectAsync(project);
         await _audit.LogAsync(userId, "Update", "Project", id);
-        return Map(project);
+        return await MapForUserAsync(project, userId);
     }
 
     public async Task DeleteAsync(long userId, long id)
@@ -462,6 +464,47 @@ public class ProjectService : IProjectService
         // Numeric depth string; AssignNumericLevels overwrites when full list is available
         Level = p.ParentProjectId == null ? "1" : "2"
     };
+
+    private async Task<ProjectResponseDto> MapForUserAsync(Project p, long userId)
+    {
+        var dto = Map(p);
+        var rights = await _permissions.GetProjectFieldPermissionsAsync(userId, p.Id);
+        foreach (var field in rights.Where(x => x.Value.Equals("hidden", StringComparison.OrdinalIgnoreCase)))
+            switch (field.Key.ToLowerInvariant())
+            {
+                case "clientname": dto.ClientName = null; break;
+                case "sponsor": dto.Sponsor = null; break;
+                case "currency": dto.Currency = ""; break;
+                case "description": dto.Description = null; break;
+                case "profilenotes": dto.ProfileNotes = null; break;
+                case "ownerid": dto.OwnerId = null; dto.OwnerName = null; break;
+                case "startdate": dto.StartDate = null; break;
+                case "enddate": dto.EndDate = null; break;
+            }
+        return dto;
+    }
+
+    private static bool ProjectFieldChanged(Project p, UpdateProjectDto dto, string field) => field.ToLowerInvariant() switch
+    {
+        "clientname" => p.ClientName != dto.ClientName,
+        "sponsor" => p.Sponsor != dto.Sponsor,
+        "currency" => p.Currency != dto.Currency,
+        "description" => p.Description != dto.Description,
+        "profilenotes" => p.ProfileNotes != dto.ProfileNotes,
+        "ownerid" => p.OwnerId != dto.OwnerId,
+        "startdate" => p.StartDate != dto.StartDate,
+        "enddate" => p.EndDate != dto.EndDate,
+        _ => false
+    };
+
+    private static List<string> ProjectFieldsChanged(Project p, UpdateProjectDto dto) =>
+        new[] { "clientName", "sponsor", "currency", "ownerId", "description", "profileNotes", "startDate", "endDate" }
+            .Where(field => ProjectFieldChanged(p, dto, field)).ToList();
+
+    private static bool HasUnscopedProjectChanges(Project p, UpdateProjectDto d) =>
+        p.ResortId != d.ResortId || p.ParentProjectId != d.ParentProjectId || p.ProjectTypeId != d.ProjectTypeId ||
+        p.PropertyId != d.PropertyId || p.AllowExternalView != d.AllowExternalView || p.Name != d.Name ||
+        p.Code != d.Code || p.Status != d.Status;
 
     private static void AssignNumericLevels(List<ProjectResponseDto> list)
     {
