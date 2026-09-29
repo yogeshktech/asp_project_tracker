@@ -10,6 +10,7 @@ public interface ICostService
 {
     Task<PurchaseCost> AddPurchaseAsync(CreatePurchaseCostRequest request, long? userId);
     Task<ActualCost> AddActualAsync(CreateActualCostRequest request, long? userId);
+    Task<CostImportResultDto> ImportAsync(CostImportBatchRequest request, long userId);
     Task<List<PurchaseCost>> GetPurchasesAsync(long userId, long projectId);
     Task<List<ActualCost>> GetActualsAsync(long userId, long projectId);
     Task<CostVarianceDto> GetVarianceAsync(long userId, long projectId);
@@ -32,6 +33,8 @@ public class CostService : ICostService
     {
         if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
             throw new UnauthorizedAccessException("No permission.");
+        await ValidateCostDimensionsAsync(request.ProjectId, request.BoqItemId, request.CostCenterId);
+        if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var cost = await _repository.AddPurchaseAsync(new PurchaseCost
         {
             ProjectId = request.ProjectId,
@@ -52,6 +55,8 @@ public class CostService : ICostService
     {
         if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
             throw new UnauthorizedAccessException("No permission.");
+        await ValidateCostDimensionsAsync(request.ProjectId, request.BoqItemId, request.CostCenterId);
+        if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var cost = await _repository.AddActualAsync(new ActualCost
         {
             ProjectId = request.ProjectId,
@@ -65,6 +70,50 @@ public class CostService : ICostService
         });
         await _audit.LogAsync(userId, "Create", "ActualCost", cost.Id);
         return cost;
+    }
+
+    public async Task<CostImportResultDto> ImportAsync(CostImportBatchRequest request, long userId)
+    {
+        if (!string.Equals(request.Type, "Purchase", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(request.Type, "Actual", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Type must be Purchase or Actual.");
+        if (request.Rows.Count == 0) throw new InvalidOperationException("Import file contains no cost rows.");
+        var result = new CostImportResultDto();
+        for (var index = 0; index < request.Rows.Count; index++)
+        {
+            var row = request.Rows[index];
+            try
+            {
+                if (string.Equals(request.Type, "Purchase", StringComparison.OrdinalIgnoreCase))
+                    await AddPurchaseAsync(new CreatePurchaseCostRequest
+                    {
+                        ProjectId = request.ProjectId, BoqItemId = row.BoqItemId, CostCenterId = row.CostCenterId,
+                        Amount = row.Amount, PurchaseDate = row.CostDate, Vendor = row.Vendor, Description = row.Description
+                    }, userId);
+                else
+                    await AddActualAsync(new CreateActualCostRequest
+                    {
+                        ProjectId = request.ProjectId, BoqItemId = row.BoqItemId, CostCenterId = row.CostCenterId,
+                        Amount = row.Amount, CostDate = row.CostDate, Description = row.Description
+                    }, userId);
+                result.Imported++;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+            {
+                result.Skipped++;
+                result.Errors.Add($"Row {index + 2}: {ex.Message}");
+            }
+        }
+        return result;
+    }
+
+    private async Task ValidateCostDimensionsAsync(long projectId, long? boqItemId, long? costCenterId)
+    {
+        if (projectId <= 0) throw new InvalidOperationException("Project is required.");
+        if (boqItemId.HasValue && !await _repository.BoqItemBelongsToProjectAsync(projectId, boqItemId.Value))
+            throw new InvalidOperationException("BOQ line does not belong to this project.");
+        if (costCenterId.HasValue && !await _repository.CostCenterBelongsToProjectAsync(projectId, costCenterId.Value))
+            throw new InvalidOperationException("Cost Center does not belong to this project.");
     }
 
     public async Task<List<PurchaseCost>> GetPurchasesAsync(long userId, long projectId)
@@ -89,8 +138,9 @@ public class CostService : ICostService
         var allocated = await _repository.GetAllocatedBudgetAsync(projectId);
         var (purchases, actuals) = await _repository.GetProjectCostTotalsAsync(projectId);
         var forecast = purchases + actuals;
-        var variance = approved - forecast;
-        var percent = approved == 0 ? 0 : Math.Abs(variance) / approved * 100;
+        var actualVariance = approved - actuals;
+        var forecastVariance = approved - forecast;
+        var percent = approved == 0 ? 0 : Math.Abs(actualVariance) / approved * 100;
         var ccRollups = await _repository.GetCostCenterRollupsAsync(projectId);
         var worstRag = ccRollups.Count == 0 ? "Green" :
             ccRollups.Any(c => c.RagStatus == "Red") ? "Red" :
@@ -108,8 +158,10 @@ public class CostService : ICostService
             PurchaseTotal = purchases,
             ActualTotal = actuals,
             ForecastTotal = forecast,
-            VarianceAmount = variance,
+            VarianceAmount = actualVariance,
             VariancePercent = Math.Round(percent, 2),
+            ForecastVarianceAmount = forecastVariance,
+            BudgetStatus = actuals > approved ? "Over Budget" : actuals < approved ? "Under Budget" : "On Budget",
             RagStatus = worstRag,
             CostCenters = ccRollups
         };

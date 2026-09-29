@@ -72,7 +72,8 @@ public class IssueService : IIssueService
 
         var priorities = await _repository.GetPrioritiesAsync();
         var priority = priorities.FirstOrDefault(p => p.Id == request.PriorityId);
-        if (priority != null && (priority.Code is "HIGH" or "CRITICAL"))
+        if (priority != null && (priority.Code.Equals("HIGH", StringComparison.OrdinalIgnoreCase)
+            || priority.Code.Equals("CRITICAL", StringComparison.OrdinalIgnoreCase)))
             await NotifyHighPriorityAsync(issue, priority.Name);
 
         await _audit.LogAsync(userId, "Create", "Issue", issue.Id);
@@ -111,26 +112,29 @@ public class IssueService : IIssueService
         issue.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(issue);
 
-        var stakeholderIds = await _db.ProjectUsers
-            .Where(pu => pu.ProjectId == issue.ProjectId &&
-                         (pu.TeamRole != null && (pu.TeamRole.Contains("Manager") || pu.TeamRole.Contains("Owner"))))
-            .Select(pu => pu.UserId)
-            .Distinct()
-            .ToListAsync();
-
-        var adminIds = await _db.UserRoles
-            .Include(ur => ur.Role)
-            .Where(ur => ur.Role.Name == "Admin")
-            .Select(ur => ur.UserId)
-            .ToListAsync();
-
-        var userIds = stakeholderIds.Union(adminIds).Distinct().ToList();
-        if (userIds.Count == 0) return;
+        var rules = await _notifications.GetRulesAsync();
+        var targetRoleIds = rules.Where(r => r.IsActive && r.TriggerType.Equals("IssueHighPriority", StringComparison.OrdinalIgnoreCase)
+                && r.TargetRoleId.HasValue)
+            .Select(r => r.TargetRoleId!.Value).Distinct().ToList();
+        var teamIds = await _db.ProjectUsers.Where(pu => pu.ProjectId == issue.ProjectId).Select(pu => pu.UserId).ToListAsync();
+        var managerIds = await _db.ProjectUsers.Where(pu => pu.ProjectId == issue.ProjectId && pu.TeamRole != null
+                && (pu.TeamRole.ToLower().Contains("manager") || pu.TeamRole.ToLower().Contains("owner")))
+            .Select(pu => pu.UserId).ToListAsync();
+        var configuredStakeholderIds = targetRoleIds.Count == 0 ? new List<long>() : await _db.UserRoles
+            .Where(ur => targetRoleIds.Contains(ur.RoleId) && teamIds.Contains(ur.UserId))
+            .Select(ur => ur.UserId).ToListAsync();
+        var ownerId = await _db.Projects.Where(p => p.Id == issue.ProjectId).Select(p => p.OwnerId).FirstOrDefaultAsync();
+        var userIds = managerIds.Concat(configuredStakeholderIds);
+        if (ownerId.HasValue) userIds = userIds.Append(ownerId.Value);
+        userIds = userIds.Distinct().ToList();
+        userIds = await _db.Users.Where(u => userIds.Contains(u.Id) && u.IsInternal && u.IsActive)
+            .Select(u => u.Id).ToListAsync();
+        if (!userIds.Any()) return;
 
         await _notifications.AddAsync(new Notification
         {
             Title = $"High priority issue: {issue.Title}",
-            Body = $"Priority: {priorityName}. What: {issue.What}. Location: {issue.Location}",
+            Body = $"Priority: {priorityName}. What: {issue.What}. Location: {issue.Location}. When: {issue.OccurredAt:O}. Impact: {issue.Impact}",
             Type = "IssueEscalation",
             RelatedType = "Issue",
             RelatedId = issue.Id,
@@ -139,6 +143,6 @@ public class IssueService : IIssueService
 
         var emails = await _db.Users.Where(u => userIds.Contains(u.Id) && u.IsInternal).Select(u => u.Email).ToListAsync();
         await _email.SendAsync(emails, $"Wisetrack: High priority issue - {issue.Title}",
-            $"Issue '{issue.Title}' reported. Priority: {priorityName}. Impact: {issue.Impact}");
+            $"Issue '{issue.Title}' reported. Priority: {priorityName}. What: {issue.What}. Where: {issue.Location}. When: {issue.OccurredAt:O}. Impact: {issue.Impact}");
     }
 }

@@ -359,6 +359,23 @@ public class CreateActualCostRequest
     public DateOnly? CostDate { get; set; }
 }
 
+public class CostImportBatchRequest
+{
+    public long ProjectId { get; set; }
+    public string Type { get; set; } = "Purchase";
+    public List<CostImportRowRequest> Rows { get; set; } = new();
+}
+
+public class CostImportRowRequest
+{
+    public long? BoqItemId { get; set; }
+    public long? CostCenterId { get; set; }
+    public decimal Amount { get; set; }
+    public DateOnly? CostDate { get; set; }
+    public string? Vendor { get; set; }
+    public string? Description { get; set; }
+}
+
 public class VarianceExplanationRequest
 {
     public long ProjectId { get; set; }
@@ -401,6 +418,11 @@ public class CreateEscalationRuleRequest
     public long? TargetRoleId { get; set; }
 }
 
+public class UpdateEscalationRuleRequest
+{
+    public bool IsActive { get; set; }
+}
+
 public class ReportFilterDto
 {
     public long? ProjectId { get; set; }
@@ -409,6 +431,7 @@ public class ReportFilterDto
     public string? ReportType { get; set; }
     public string? ProjectType { get; set; }
     public string? Client { get; set; }
+    public string? Scope { get; set; }
 }
 
 public class CreateReportRequest

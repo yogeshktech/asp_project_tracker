@@ -21,7 +21,8 @@ public interface IReportRepository
     Task<decimal> SumActualCostAsync(IEnumerable<long>? projectIds = null);
     Task<List<Project>> RecentProjectsAsync(int take, IEnumerable<long>? projectIds = null);
     Task<PortfolioReportDto> GetPortfolioReportAsync(IEnumerable<long> projectIds);
-    Task<DailySiteReportDto> GetDailySiteReportAsync(long projectId, DateOnly date);
+    Task<DailySiteReportDto> GetDailySiteReportAsync(long projectId, DateOnly date, bool cumulative = false);
+    Task<List<Boq>> GetBoqsForReportAsync(long projectId);
     Task<List<ComparableProjectDto>> GetComparableProjectsAsync(ReportFilterDto filter, IEnumerable<long> allowedProjectIds);
     Task<List<ExceptionItemDto>> GetExceptionsAsync(IEnumerable<long> projectIds);
 }
@@ -118,43 +119,73 @@ public class ReportRepository : IReportRepository
             var nextMilestone = await _db.Milestones
                 .Where(m => m.ProjectId == p.Id && m.Status != "Completed")
                 .OrderBy(m => m.DueDate)
-                .Select(m => m.Name)
+                .Select(m => new { m.Name, m.DueDate })
                 .FirstOrDefaultAsync();
 
-            var overdue = await _db.Tasks.AnyAsync(t => t.ProjectId == p.Id && t.DueDate < today && t.Status != "Completed");
+            var overdueTasks = await _db.Tasks.CountAsync(t => t.ProjectId == p.Id && t.DueDate < today && t.Status != "Completed");
+            var overdueMilestones = await _db.Milestones.CountAsync(m => m.ProjectId == p.Id && m.DueDate < today && m.Status != "Completed");
+            var dueSoonTasks = await _db.Tasks.CountAsync(t => t.ProjectId == p.Id && t.DueDate >= today && t.DueDate <= today.AddDays(7) && t.Status != "Completed");
+            var dueSoonMilestones = await _db.Milestones.CountAsync(m => m.ProjectId == p.Id && m.DueDate >= today && m.DueDate <= today.AddDays(7) && m.Status != "Completed");
             var budget = await _db.Budgets.Where(b => b.ProjectId == p.Id).SumAsync(b => b.ApprovedAmount);
+            var purchases = await _db.PurchaseCosts.Where(c => c.ProjectId == p.Id).SumAsync(c => c.Amount);
             var actual = await _db.ActualCosts.Where(c => c.ProjectId == p.Id).SumAsync(c => c.Amount);
-            var rag = budget == 0 ? "Green" : actual / budget * 100 >= 100 ? "Red" : actual / budget * 100 >= 80 ? "Amber" : "Green";
+            var unresolvedIssues = await _db.Issues.CountAsync(i => i.ProjectId == p.Id && i.Status != "Closed" && i.Status != "Resolved");
+            var unresolved = unresolvedIssues + overdueTasks + overdueMilestones;
+            var varianceExplanations = await _db.VarianceExplanations.Where(v => v.ProjectId == p.Id).AsNoTracking()
+                .Select(v => new VarianceExplanationDto { VarianceType = v.VarianceType, Explanation = v.Explanation, CreatedAt = v.CreatedAt })
+                .ToListAsync();
+            var forecast = purchases + actual;
+            var rag = budget == 0 ? "Unbudgeted" : forecast / budget * 100 >= 100 ? "Red" : forecast / budget * 100 >= 80 ? "Amber" : "Green";
 
             rows.Add(new ProjectStatusRowDto
             {
                 ProjectId = p.Id,
                 Name = p.Name,
                 Status = p.Status,
-                NextMilestone = nextMilestone,
-                ScheduleRisk = overdue ? "High" : "Low",
+                OwnerName = p.OwnerId.HasValue ? await _db.Users.Where(u => u.Id == p.OwnerId.Value).Select(u => u.FullName).FirstOrDefaultAsync() : null,
+                NextMilestone = nextMilestone?.Name,
+                NextMilestoneDueDate = nextMilestone?.DueDate,
+                ScheduleRisk = overdueTasks + overdueMilestones > 0 ? "High" : dueSoonTasks + dueSoonMilestones > 0 ? "Medium" : "Low",
                 BudgetRag = rag,
-                OpenIssues = await _db.Issues.CountAsync(i => i.ProjectId == p.Id && i.Status == "Open"),
-                ProgressPercent = await _db.Tasks.Where(t => t.ProjectId == p.Id).Select(t => (decimal?)t.CompletionPercent).AverageAsync() ?? 0
+                ApprovedBudget = budget,
+                PurchaseCommitment = purchases,
+                ActualCost = actual,
+                UnresolvedExceptions = unresolved,
+                OpenIssues = unresolvedIssues,
+                ProgressPercent = await _db.Tasks.Where(t => t.ProjectId == p.Id).Select(t => (decimal?)t.CompletionPercent).AverageAsync() ?? 0,
+                VarianceExplanations = varianceExplanations
             });
         }
 
         return new PortfolioReportDto { Projects = rows };
     }
 
-    public async Task<DailySiteReportDto> GetDailySiteReportAsync(long projectId, DateOnly date)
+    public async Task<DailySiteReportDto> GetDailySiteReportAsync(long projectId, DateOnly date, bool cumulative = false)
     {
         var tasks = await _db.Tasks.Where(t => t.ProjectId == projectId).AsNoTracking().ToListAsync();
-        var updates = await _db.TaskUpdates.Include(u => u.Task).ThenInclude(t => t.SubTasks)
-            .Where(u => u.Task.ProjectId == projectId && u.UpdateDate == date)
+        var updateQuery = _db.TaskUpdates.Include(u => u.Task).ThenInclude(t => t.SubTasks)
+            .Where(u => u.Task.ProjectId == projectId && (cumulative ? u.UpdateDate <= date : u.UpdateDate == date));
+        var history = await updateQuery
             .AsNoTracking()
             .ToListAsync();
+        var updates = history
+            .GroupBy(u => new { u.TaskId, u.SubTaskId })
+            .Select(g =>
+            {
+                var latest = g.OrderByDescending(u => u.UpdateDate).ThenByDescending(u => u.CreatedAt).First();
+                latest.CompletionPercent = g.Where(u => u.CompletionPercent.HasValue)
+                    .OrderByDescending(u => u.UpdateDate).ThenByDescending(u => u.CreatedAt)
+                    .Select(u => u.CompletionPercent).FirstOrDefault();
+                return latest;
+            })
+            .OrderBy(u => u.TaskId).ThenBy(u => u.SubTaskId)
+            .ToList();
 
         return new DailySiteReportDto
         {
             ProjectId = projectId,
             ReportDate = date,
-            OverallCompletionPercent = tasks.Count == 0 ? 0 : tasks.Average(t => t.CompletionPercent),
+            OverallCompletionPercent = updates.Count == 0 ? 0 : updates.Where(u => u.CompletionPercent.HasValue).Select(u => u.CompletionPercent!.Value).DefaultIfEmpty(0).Average(),
             TaskUpdates = updates.Select(u => new TaskDailyStatusDto
             {
                 TaskId = u.TaskId,
@@ -172,25 +203,62 @@ public class ReportRepository : IReportRepository
     {
         var allowed = allowedProjectIds.Distinct().ToList();
         if (allowed.Count == 0) return new();
-        var q = _db.Projects.Include(p => p.ProjectType).Where(p => p.Status == "Closed" && allowed.Contains(p.Id)).AsQueryable();
-        if (filter.ProjectId.HasValue) q = q.Where(p => p.Id != filter.ProjectId);
-        if (!string.IsNullOrWhiteSpace(filter.Client)) q = q.Where(p => p.ClientName == filter.Client);
-        if (!string.IsNullOrWhiteSpace(filter.ProjectType)) q = q.Where(p => p.ProjectType != null && p.ProjectType.Name == filter.ProjectType);
+        var q = _db.Projects.Include(p => p.ProjectType)
+            .Where(p => p.Status == "Closed" && allowed.Contains(p.Id));
+        if (filter.ProjectId.HasValue) q = q.Where(p => p.Id != filter.ProjectId.Value);
+        if (!string.IsNullOrWhiteSpace(filter.Client))
+        {
+            var client = $"%{filter.Client.Trim()}%";
+            q = q.Where(p => p.ClientName != null && EF.Functions.ILike(p.ClientName, client));
+        }
+        if (!string.IsNullOrWhiteSpace(filter.ProjectType))
+            q = q.Where(p => p.ProjectType != null && p.ProjectType.Name == filter.ProjectType.Trim());
+        if (!string.IsNullOrWhiteSpace(filter.Scope))
+        {
+            var scope = $"%{filter.Scope.Trim()}%";
+            q = q.Where(p => (p.Description != null && EF.Functions.ILike(p.Description, scope))
+                || (p.ProfileNotes != null && EF.Functions.ILike(p.ProfileNotes, scope)));
+        }
         if (filter.FromDate.HasValue) q = q.Where(p => p.EndDate.HasValue && p.EndDate.Value >= filter.FromDate.Value);
         if (filter.ToDate.HasValue) q = q.Where(p => p.EndDate.HasValue && p.EndDate.Value <= filter.ToDate.Value);
 
-        var projects = await q.Take(20).AsNoTracking().ToListAsync();
+        var projects = await q.OrderByDescending(p => p.EndDate).Take(100).AsNoTracking().ToListAsync();
+        var comparableRows = new List<(Project Project, bool IsReference)>();
+        if (filter.ProjectId.HasValue && allowed.Contains(filter.ProjectId.Value))
+        {
+            var reference = await _db.Projects.Include(p => p.ProjectType).AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == filter.ProjectId.Value);
+            if (reference != null) comparableRows.Add((reference, true));
+        }
+        comparableRows.AddRange(projects.Select(p => (p, false)));
         var result = new List<ComparableProjectDto>();
 
-        foreach (var p in projects)
+        foreach (var (p, isReference) in comparableRows)
         {
+            var projectIds = await _db.Projects.Where(c => c.ParentProjectId == p.Id).Select(c => c.Id).ToListAsync();
+            projectIds.Add(p.Id);
+            var approved = await _db.Budgets.Where(b => projectIds.Contains(b.ProjectId)).SumAsync(b => b.ApprovedAmount);
+            var purchases = await _db.PurchaseCosts.Where(c => projectIds.Contains(c.ProjectId)).SumAsync(c => c.Amount);
+            var actuals = await _db.ActualCosts.Where(c => projectIds.Contains(c.ProjectId)).SumAsync(c => c.Amount);
+            var varianceExplanations = await _db.VarianceExplanations.Where(v => projectIds.Contains(v.ProjectId)).AsNoTracking()
+                .Select(v => new VarianceExplanationDto { VarianceType = v.VarianceType, Explanation = v.Explanation, CreatedAt = v.CreatedAt })
+                .ToListAsync();
             result.Add(new ComparableProjectDto
             {
                 ProjectId = p.Id,
                 Name = p.Name,
                 ProjectType = p.ProjectType?.Name,
-                ApprovedBudget = await _db.Budgets.Where(b => b.ProjectId == p.Id).SumAsync(b => b.ApprovedAmount),
-                ActualCost = await _db.ActualCosts.Where(c => c.ProjectId == p.Id).SumAsync(c => c.Amount),
+                Client = p.ClientName,
+                Scope = p.Description ?? p.ProfileNotes,
+                IsReferenceProject = isReference,
+                Currency = p.Currency,
+                StartDate = p.StartDate,
+                EndDate = p.EndDate,
+                ApprovedBudget = approved,
+                PurchaseCost = purchases,
+                ActualCost = actuals,
+                TotalCost = purchases + actuals,
+                VarianceExplanations = varianceExplanations,
                 DurationDays = p.StartDate.HasValue && p.EndDate.HasValue
                     ? p.EndDate.Value.DayNumber - p.StartDate.Value.DayNumber
                     : null
@@ -269,4 +337,8 @@ public class ReportRepository : IReportRepository
             .ThenBy(e => e.ProjectName).ThenBy(e => e.Title).Take(100).ToList();
 
     }
+
+    public Task<List<Boq>> GetBoqsForReportAsync(long projectId) =>
+        _db.Boqs.Include(b => b.Versions).ThenInclude(v => v.Items)
+            .Where(b => b.ProjectId == projectId).AsNoTracking().ToListAsync();
 }

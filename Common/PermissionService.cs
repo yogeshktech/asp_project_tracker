@@ -116,8 +116,14 @@ public class PermissionService : IPermissionService
         return result;
     }
 
-    public Task<bool> IsProjectManagerAsync(long userId, long projectId) =>
-        CanUpdateModuleAsync(userId, projectId, "Closure");
+    public async Task<bool> IsProjectManagerAsync(long userId, long projectId)
+    {
+        var hasClosurePermission = await CanUpdateModuleAsync(userId, projectId, "Closure");
+        if (!hasClosurePermission) return false;
+        return await _db.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == userId)
+            || await _db.ProjectUsers.AnyAsync(pu => pu.ProjectId == projectId && pu.UserId == userId
+                && pu.TeamRole != null && (pu.TeamRole.Trim().ToLower() == "project manager" || pu.TeamRole.Trim().ToLower() == "pm"));
+    }
 
     private async Task<bool> HasRightAsync(long userId, long projectId, string module, string right)
     {

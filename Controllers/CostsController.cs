@@ -31,6 +31,10 @@ public class CostsController : ControllerBase
     public async Task<IActionResult> AddActual([FromBody] CreateActualCostRequest request) =>
         Ok(await _costService.AddActualAsync(request, UserId));
 
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] CostImportBatchRequest request) =>
+        Ok(await _costService.ImportAsync(request, UserId));
+
     [HttpGet("variance/{projectId:long}")]
     public async Task<IActionResult> Variance(long projectId) =>
         Ok(await _costService.GetVarianceAsync(UserId, projectId));

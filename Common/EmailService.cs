@@ -5,7 +5,7 @@ namespace project_tracker_madhu.Common;
 
 public interface IEmailService
 {
-    Task SendAsync(IEnumerable<string> toEmails, string subject, string body);
+    Task SendAsync(IEnumerable<string> toEmails, string subject, string body, byte[]? attachment = null, string? attachmentName = null, string? attachmentContentType = null);
 }
 
 public class SmtpEmailService : IEmailService
@@ -19,7 +19,7 @@ public class SmtpEmailService : IEmailService
         _logger = logger;
     }
 
-    public async Task SendAsync(IEnumerable<string> toEmails, string subject, string body)
+    public async Task SendAsync(IEnumerable<string> toEmails, string subject, string body, byte[]? attachment = null, string? attachmentName = null, string? attachmentContentType = null)
     {
         var enabled = _config.GetValue("Email:Enabled", false);
         var recipients = toEmails.Where(e => !string.IsNullOrWhiteSpace(e)).Distinct().ToList();
@@ -52,6 +52,8 @@ public class SmtpEmailService : IEmailService
         };
         foreach (var to in recipients)
             message.To.Add(to);
+        if (attachment is { Length: > 0 })
+            message.Attachments.Add(new Attachment(new MemoryStream(attachment), attachmentName ?? "wisetrack-report.csv", attachmentContentType ?? "text/csv"));
 
         await client.SendMailAsync(message);
     }

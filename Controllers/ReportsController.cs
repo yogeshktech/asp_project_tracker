@@ -34,9 +34,9 @@ public class ReportsController : ControllerBase
         Ok(await _reportService.GetPortfolioReportAsync(UserId));
 
     [HttpGet("daily/{projectId:long}")]
-    public async Task<IActionResult> Daily(long projectId, [FromQuery] DateOnly? date)
+    public async Task<IActionResult> Daily(long projectId, [FromQuery] DateOnly? date, [FromQuery] bool cumulative = false)
     {
-        var report = await _reportService.GetDailyReportAsync(UserId, projectId, date);
+        var report = await _reportService.GetDailyReportAsync(UserId, projectId, date, cumulative);
         return report == null ? NotFound() : Ok(report);
     }
 

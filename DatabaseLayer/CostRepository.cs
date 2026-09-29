@@ -9,6 +9,8 @@ public interface ICostRepository
 {
     Task<PurchaseCost> AddPurchaseAsync(PurchaseCost cost);
     Task<ActualCost> AddActualAsync(ActualCost cost);
+    Task<bool> CostCenterBelongsToProjectAsync(long projectId, long costCenterId);
+    Task<bool> BoqItemBelongsToProjectAsync(long projectId, long boqItemId);
     Task<List<PurchaseCost>> GetPurchasesAsync(long projectId);
     Task<List<ActualCost>> GetActualsAsync(long projectId);
     Task<decimal> GetApprovedBudgetAsync(long projectId);
@@ -45,7 +47,8 @@ public class CostRepository : ICostRepository
         _db.ActualCosts.Where(c => c.ProjectId == projectId).AsNoTracking().ToListAsync();
 
     public Task<decimal> GetApprovedBudgetAsync(long projectId) =>
-        _db.Budgets.Where(b => b.ProjectId == projectId).SumAsync(b => b.ApprovedAmount);
+        _db.Budgets.Where(b => b.ProjectId == projectId ||
+            _db.Projects.Any(p => p.Id == b.ProjectId && p.ParentProjectId == projectId)).SumAsync(b => b.ApprovedAmount);
 
     public Task<decimal> GetAllocatedBudgetAsync(long projectId) =>
         _db.BudgetAllocations.Where(a => a.Budget.ProjectId == projectId).SumAsync(a => a.AllocatedAmount);
@@ -57,6 +60,13 @@ public class CostRepository : ICostRepository
         var actual = await _db.ActualCosts.Where(c => projectIds.Contains(c.ProjectId)).SumAsync(c => c.Amount);
         return (purchase, actual);
     }
+
+    public Task<bool> CostCenterBelongsToProjectAsync(long projectId, long costCenterId) =>
+        _db.CostCenters.AnyAsync(c => c.Id == costCenterId &&
+            (c.ProjectId == projectId || (c.ProjectId.HasValue && _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))));
+
+    public Task<bool> BoqItemBelongsToProjectAsync(long projectId, long boqItemId) =>
+        _db.BoqItems.AnyAsync(i => i.Id == boqItemId && i.BoqVersion.Boq.ProjectId == projectId);
 
     public async Task<string> GetProjectCurrencyAsync(long projectId) =>
         await _db.Projects.Where(p => p.Id == projectId).Select(p => p.Currency).FirstOrDefaultAsync() ?? "INR";
@@ -82,8 +92,9 @@ public class CostRepository : ICostRepository
                 (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
             var actual = await _db.ActualCosts.Where(c => c.CostCenterId == cc.Id &&
                 (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
-            var spent = purchase + actual;
-            var forecast = spent;
+            var forecast = purchase + actual;
+            var actualVariance = allocated - actual;
+            var forecastVariance = allocated - forecast;
             var pct = allocated == 0 ? 0 : forecast / allocated * 100;
             result.Add(new CostCenterRollupDto
             {
@@ -95,8 +106,10 @@ public class CostRepository : ICostRepository
                 ActualSpend = actual,
                 Forecast = forecast,
                 Allocated = allocated,
-                Spent = spent,
-                Variance = allocated - forecast,
+                Spent = forecast,
+                Variance = actualVariance,
+                ForecastVariance = forecastVariance,
+                BudgetStatus = actual > allocated ? "Over Budget" : actual < allocated ? "Under Budget" : "On Budget",
                 RagStatus = pct >= red ? "Red" : pct >= amber ? "Amber" : "Green"
             });
         }

@@ -17,7 +17,7 @@ public class ClosureController : ControllerBase
 
     [HttpGet("inventory/{projectId:long}")]
     public async Task<IActionResult> Inventory(long projectId) =>
-        Ok(await _closureService.GetInventoryAsync(projectId));
+        Ok(await _closureService.GetInventoryAsync(projectId, UserId));
 
     [HttpPost("inventory")]
     public async Task<IActionResult> AddInventory([FromBody] CreateInventoryRequest request) =>

@@ -708,79 +708,18 @@ function simulateExcelUpload() {
 
 // 6. Add Issue / Incident Modal (PM-Special)
 function openAddIssueModal() {
-  const html = `
-    <form onsubmit="handleLogIncident(event)">
-      <div class="form-grid">
-        <div class="field full">
-          <label>What is the issue / Incident Title *</label>
-          <input type="text" id="issueTitle" placeholder="e.g. Chilled water pipeline pressure test failed in Block B" required>
-        </div>
-        <div class="field">
-          <label>Where is the issue (Location / Block / Shaft) *</label>
-          <input type="text" id="issueLocation" placeholder="e.g. Block B Basement Central Chiller Plant" required>
-        </div>
-        <div class="field">
-          <label>When it happened (Date & Time) *</label>
-          <input type="datetime-local" id="issueDateTime" value="${new Date().toISOString().slice(0,16)}" required>
-        </div>
-        <div class="field">
-          <label>Reported By (Site Engineer / PM) *</label>
-          <select id="issueReporter" required>
-            <option>Amit Verma (Site Engineer)</option>
-            <option>Rahul Sharma (Project Manager)</option>
-            <option>Manoj Joshi (HVAC Lead)</option>
-            <option>Ravi Shankar (Civil Lead)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Impact on Project Schedule & Cost *</label>
-          <input type="text" id="issueImpact" placeholder="e.g. 3 Days Potential Slip on dry commissioning" required>
-        </div>
-        <div class="field">
-          <label>Priority Level *</label>
-          <select id="issuePriority" required>
-            <option value="Critical">🔴 Critical (Immediate Escalation & Alert)</option>
-            <option value="High" selected>🟠 High (24-Hour SLA Escalation)</option>
-            <option value="Medium">🟡 Medium Priority</option>
-            <option value="Low">🟢 Low Priority</option>
-          </select>
-        </div>
-        <div class="field full">
-          <label>Detailed Issue Description & Site Evidence</label>
-          <textarea id="issueDesc" placeholder="Describe root cause, parts affected, and recommended immediate mitigations..."></textarea>
-        </div>
-        <div class="field full" style="background:#fef2f2; padding:10px; border-radius:6px; border:1px solid #fca5a5;">
-          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#991b1b; font-weight:700; margin:0;">
-            <input type="checkbox" id="issueTriggerMail" checked>
-            <span>✉️ Automatically dispatch high-priority escalation email to PMO & Stakeholders</span>
-          </label>
-        </div>
-      </div>
-      <div class="modalfoot" style="padding-left:0;padding-right:0;padding-bottom:0;margin-top:16px;">
-        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn danger"><i class="fa-solid fa-triangle-exclamation"></i> Log & Escalate Incident</button>
-      </div>
-    </form>
-  `;
-  openModal("Log Site Incident / Issue (with Automated Escalation)", html);
+  if (window.WTPages && typeof WTPages.openIssueModal === 'function') return WTPages.openIssueModal();
+  showToast('Issue module is still loading. Please try again.', 'danger');
 }
 
 function handleLogIncident(e) {
   e.preventDefault();
-  const title = document.getElementById('issueTitle').value;
-  const triggerMail = document.getElementById('issueTriggerMail').checked;
-  closeModal();
-  showToast(`Incident "${title}" logged successfully!`);
-  if (triggerMail) {
-    setTimeout(() => {
-      showToast(`High-Priority escalation email dispatched to PMO Stakeholders!`, 'info');
-    }, 800);
-  }
+  return openAddIssueModal();
 }
 
 // 7. Daily Site Report (DSR) & Sub-Task Update Modal (PM-18)
 async function openAddDailyReportModal(taskId, subTaskId) {
-  if (window.WTPages && typeof WTPages.openTaskUpdateModal === 'function' && (taskId || subTaskId)) {
+  if (window.WTPages && typeof WTPages.openTaskUpdateModal === 'function') {
     await WTPages.openTaskUpdateModal(taskId, subTaskId);
     return;
   }
@@ -865,8 +804,8 @@ async function handleSaveDailyUpdate(e) {
     subTaskId,
     status: document.getElementById('dsrStatus')?.value || null,
     remarks: [
-      (document.getElementById('dsrRemark')?.value || '').trim(),
-      (document.getElementById('dsrNotes')?.value || '').trim()
+      (document.getElementById('dsrNotes')?.value || '').trim() && `Text update: ${document.getElementById('dsrNotes').value.trim()}`,
+      (document.getElementById('dsrRemark')?.value || '').trim() && `Remark / delay reason / site issue: ${document.getElementById('dsrRemark').value.trim()}`
     ].filter(Boolean).join(' | ') || null
   };
   if (pctInput && !pctInput.disabled && pctInput.value !== '') {
@@ -1277,12 +1216,14 @@ async function handleCreateSubTask(e) {
 // 9. On-Demand Report Generator with Column Customization & Internal-Only Email Dispatch (PM-28)
 async function openReportExportModal(defaultType = 'portfolio') {
   let users = [];
+  let projects = [];
   try {
     users = await WisetrackAPI.getUsers();
-  } catch (_) {
-    users = typeof getUsers === 'function' ? getUsers() : [];
-  }
-  const internalUsers = (users || []).filter(u => u.isInternal !== false);
+    projects = await WisetrackAPI.getProjects();
+  } catch (err) { showToast(err.message || 'Unable to load report recipients/projects.', 'danger'); return; }
+  const internalUsers = (users || []).filter(u => (u.isInternal ?? u.IsInternal) === true && (u.isActive ?? u.IsActive) !== false);
+  window.wtReportUsers = internalUsers;
+  window.wtReportProjects = projects || [];
   const internalOptions = internalUsers.map(u =>
     `<option value="${u.id}" selected>${wtEscHtml(u.fullName || u.name)} (${wtEscHtml(u.email)}) — ${wtEscHtml((u.roles && u.roles[0]) || u.role || 'Internal')}</option>`
   ).join('');
@@ -1295,10 +1236,13 @@ async function openReportExportModal(defaultType = 'portfolio') {
           <select id="repType" required>
             <option value="portfolio" ${defaultType === 'portfolio' ? 'selected' : ''}>All Projects Unified Status Report</option>
             <option value="daily" ${defaultType === 'daily' ? 'selected' : ''}>Daily Site Progress &amp; Cumulative Done</option>
+            <option value="boq" ${defaultType === 'boq' ? 'selected' : ''}>BOQ / Item Detail</option>
             <option value="financial" ${defaultType === 'financial' ? 'selected' : ''}>Financial Budget vs Actual &amp; RAG</option>
             <option value="handover" ${defaultType === 'handover' ? 'selected' : ''}>Project Handover &amp; Completion Summary</option>
           </select>
         </div>
+        <div class="field"><label>Project (required for Daily / BOQ)</label><select id="repProject" onchange="refreshInternalReportRecipients()"><option value="">Portfolio / all authorized projects</option>${window.wtReportProjects.map(p => `<option value="${p.id}">${wtEscHtml(p.name || p.title)}${p.code ? ` (${wtEscHtml(p.code)})` : ''}</option>`).join('')}</select></div>
+        <div class="field" id="reportDateField" style="display:none"><label>Report date</label><input id="repDate" type="date" value="${new Date().toLocaleDateString('en-CA')}"></div>
         <div class="field full">
           <label>Scope of Site Updates</label>
           <div style="display:flex; gap:18px; align-items:center; background:#f8fafc; padding:10px; border-radius:6px; border:1px solid var(--border-color);">
@@ -1313,14 +1257,28 @@ async function openReportExportModal(defaultType = 'portfolio') {
         <div class="field full">
           <label>Columns to include:</label>
           <div id="reportColumnChecks" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">
-            <label><input type="checkbox" checked value="project"> Project / WBS</label>
-            <label><input type="checkbox" checked value="status"> Status</label>
-            <label><input type="checkbox" checked value="owner"> Owner</label>
-            <label><input type="checkbox" checked value="budget"> Budget</label>
-            <label><input type="checkbox" checked value="rag"> RAG</label>
-            <label><input type="checkbox" checked value="progress"> % Complete</label>
-            <label><input type="checkbox" checked value="milestones"> Next milestone</label>
-            <label><input type="checkbox" checked value="issues"> Open issues</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="project"> Project / WBS</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="status"> Status</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="owner"> Owner</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="budget"> Budget</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="rag"> RAG</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="progress"> % Complete</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="milestones"> Next milestone</label>
+            <label data-report-group="portfolio"><input type="checkbox" checked value="issues"> Open issues</label>
+            <label data-report-group="portfolio"><input type="checkbox" value="varianceReasons"> Cost / schedule variance reasons</label>
+            <label data-report-group="boq"><input type="checkbox" checked value="item"> Item</label>
+            <label data-report-group="boq"><input type="checkbox" checked value="quantity"> Quantity</label>
+            <label data-report-group="boq"><input type="checkbox" checked value="purchasePrice"> Purchase Price</label>
+            <label data-report-group="boq"><input type="checkbox" checked value="total"> Total</label>
+            <label data-report-group="boq"><input type="checkbox" value="image"> Image</label>
+            <label data-report-group="boq"><input type="checkbox" value="brand"> Brand</label>
+            <label data-report-group="boq"><input type="checkbox" checked value="remark"> Remark</label>
+            <label data-report-group="daily"><input type="checkbox" checked value="task"> Task</label>
+            <label data-report-group="daily"><input type="checkbox" checked value="subTask"> Sub-Task</label>
+            <label data-report-group="daily"><input type="checkbox" checked value="status"> Status</label>
+            <label data-report-group="daily"><input type="checkbox" checked value="percent"> % Complete</label>
+            <label data-report-group="daily"><input type="checkbox" checked value="remarks"> Remark</label>
+            <label data-report-group="daily"><input type="checkbox" checked value="updatedAt"> Updated Date</label>
           </div>
         </div>
         <div class="field full">
@@ -1346,10 +1304,41 @@ async function openReportExportModal(defaultType = 'portfolio') {
     </form>
   `;
   openModal('On-Demand Report Generator & Dispatcher', html);
+  document.getElementById('repType').addEventListener('change', wtReportTypeChanged);
+  wtReportTypeChanged();
+}
+
+function wtReportTypeChanged() {
+  const type = document.getElementById('repType')?.value || 'portfolio';
+  const group = type === 'daily' ? 'daily' : type === 'boq' ? 'boq' : 'portfolio';
+  document.querySelectorAll('#reportColumnChecks [data-report-group]').forEach(label => { label.style.display = label.dataset.reportGroup === group ? 'block' : 'none'; });
+  const date = document.getElementById('reportDateField');
+  if (date) date.style.display = type === 'daily' ? '' : 'none';
+  document.querySelectorAll('input[name="reportScope"]').forEach(input => { input.closest('label').style.display = type === 'daily' ? 'flex' : 'none'; });
+  if (type === 'daily' || type === 'boq') {
+    const project = document.getElementById('repProject');
+    if (project?.value === '') project.value = window.wtReportProjects?.[0]?.id || '';
+  }
+  refreshInternalReportRecipients();
+}
+
+function refreshInternalReportRecipients() {
+  const select = document.getElementById('reportRecipients');
+  if (!select) return;
+  const projectId = Number(document.getElementById('repProject')?.value) || 0;
+  const project = (window.wtReportProjects || []).find(p => Number(p.id) === projectId);
+  const team = projectId ? WisetrackAPI.getProjectTeam(projectId).catch(() => []) : Promise.resolve(null);
+  Promise.resolve(team).then(members => {
+    const ids = members == null ? null : new Set(members.map(m => Number(m.userId ?? m.UserId)));
+    const users = (window.wtReportUsers || []).filter(u => !ids || ids.has(Number(u.id)) || Number(project?.ownerId ?? project?.OwnerId) === Number(u.id));
+    select.innerHTML = users.length ? users.map(u => `<option value="${u.id}">${wtEscHtml(u.fullName || u.name)} (${wtEscHtml(u.email)})</option>`).join('') : '<option disabled>No internal project team members</option>';
+  });
 }
 
 function wtSelectedReportColumns() {
-  return [...document.querySelectorAll('#reportColumnChecks input:checked')].map(x => x.value);
+  const type = document.getElementById('repType')?.value || 'portfolio';
+  const group = type === 'daily' ? 'daily' : type === 'boq' ? 'boq' : 'portfolio';
+  return [...document.querySelectorAll(`#reportColumnChecks [data-report-group="${group}"] input:checked`)].map(x => x.value);
 }
 
 async function wtBuildPortfolioRows() {
@@ -1357,57 +1346,83 @@ async function wtBuildPortfolioRows() {
   return p?.projects || p?.Projects || (Array.isArray(p) ? p : []);
 }
 
+async function wtBuildSelectedReportRows(type, projectId, date, cumulative) {
+  if (type === 'portfolio' || type === 'financial' || type === 'handover') {
+    const portfolio = await wtBuildPortfolioRows();
+    return projectId ? portfolio.filter(r => Number(r.projectId ?? r.ProjectId) === Number(projectId)) : portfolio;
+  }
+  if (!projectId) throw new Error('Select a project for Daily and BOQ reports.');
+  if (type === 'daily') {
+    const report = await WisetrackAPI.getDailyReport(projectId, date, cumulative);
+    return (report?.taskUpdates || report?.TaskUpdates || []).map(x => ({ task:x.title || x.Title || '', subTask:x.subTaskTitle || x.SubTaskTitle || '', status:x.status || x.Status || '', percent:x.completionPercent ?? x.CompletionPercent ?? '', remarks:x.remarks || x.Remarks || '', updatedAt:x.updateDate || x.UpdateDate || report.reportDate || report.ReportDate || date }));
+  }
+  if (type === 'boq') {
+    const boqs = await WisetrackAPI.getBoqs(projectId);
+    return (boqs || []).flatMap(b => {
+      const versions = b.versions || b.Versions || [];
+      const version = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline) || [...versions].sort((a,z) => Number(z.versionNo ?? z.VersionNo) - Number(a.versionNo ?? a.VersionNo))[0];
+      return (version?.items || version?.Items || []).map(i => ({
+        item:i.itemName || i.ItemName || i.name || i.Name || i.description || i.Description || '', quantity:i.quantity ?? i.Quantity ?? '',
+        purchasePrice:i.unitPrice ?? i.UnitPrice ?? i.purchasePrice ?? i.PurchasePrice ?? '',
+        total:i.amount ?? i.Amount ?? Number(i.quantity ?? i.Quantity ?? 0) * Number(i.unitPrice ?? i.UnitPrice ?? 0),
+        image:i.imageUrl || i.ImageUrl || i.attachmentName || i.AttachmentName || '', brand:i.brand || i.Brand || i.item?.brand?.name || i.Item?.Brand?.Name || '', remark:i.remarks || i.Remarks || ''
+      }));
+    });
+  }
+  return wtBuildPortfolioRows();
+}
+
+function wtReportValue(row, key) {
+  const map = {
+    project:row.name || row.Name || '', status:row.status || row.Status || '', owner:row.ownerName || row.OwnerName || '',
+    budget:row.approvedBudget ?? row.ApprovedBudget ?? '', rag:row.budgetRag || row.BudgetRag || '', progress:row.progressPercent ?? row.ProgressPercent ?? '',
+    milestones:row.nextMilestone || row.NextMilestone || '', issues:row.openIssues ?? row.OpenIssues ?? '',
+    varianceReasons:(row.varianceExplanations || row.VarianceExplanations || []).map(v => `${v.varianceType || v.VarianceType}: ${v.explanation || v.Explanation}`).join(' | '),
+    item:row.item || '', quantity:row.quantity ?? '', purchasePrice:row.purchasePrice ?? '', total:row.total ?? '', image:row.image || '', brand:row.brand || '', remark:row.remark || '',
+    task:row.task || '', subTask:row.subTask || '', percent:row.percent ?? '', remarks:row.remarks || '', updatedAt:row.updatedAt || ''
+  };
+  return map[key] ?? '';
+}
+
 function wtReportCsv(rows, cols) {
-  const headers = cols;
-  const lines = [headers.join(',')];
-  rows.forEach(row => {
-    const map = {
-      project: row.name || row.Name || '',
-      status: row.status || row.Status || '',
-      owner: row.ownerName || row.OwnerName || '',
-      budget: row.approvedBudget ?? row.ApprovedBudget ?? '',
-      rag: row.budgetRag || row.BudgetRag || '',
-      progress: row.progressPercent ?? row.ProgressPercent ?? '',
-      milestones: row.nextMilestone || row.NextMilestone || '',
-      issues: row.openIssues ?? row.OpenIssues ?? ''
-    };
-    lines.push(headers.map(h => `"${String(map[h] ?? '').replace(/"/g, '""')}"`).join(','));
-  });
+  const names = {project:'Project / WBS',status:'Status',owner:'Owner',budget:'Budget',rag:'RAG',progress:'% Complete',milestones:'Next milestone',issues:'Open issues',varianceReasons:'Variance reasons',item:'Item',quantity:'Quantity',purchasePrice:'Purchase Price',total:'Total',image:'Image',brand:'Brand',remark:'Remark',task:'Task',subTask:'Sub-Task',percent:'% Complete',remarks:'Remark',updatedAt:'Updated Date'};
+  const lines = [cols.map(c => `"${(names[c] || c).replace(/"/g, '""')}"`).join(',')];
+  rows.forEach(row => lines.push(cols.map(c => {
+    let value = String(wtReportValue(row, c) ?? '');
+    if (/^[=+@\-\t\r]/.test(value)) value = `'${value}`;
+    return `"${value.replace(/"/g, '""')}"`;
+  }).join(',')));
   return lines.join('\n');
 }
 
-async function handleReportPrint(kind) {
+async function handleReportPrint(kind, saveHistory = true) {
+  const w = kind === 'pdf' ? window.open('', '_blank') : null;
+  if (kind === 'pdf' && !w) { showToast('Allow pop-ups to print or save as PDF.', 'danger'); return; }
   try {
     const cols = wtSelectedReportColumns();
-    const rows = await wtBuildPortfolioRows();
+    const type = document.getElementById('repType')?.value || 'portfolio';
+    const projectId = Number(document.getElementById('repProject')?.value) || null;
+    const date = document.getElementById('repDate')?.value || new Date().toLocaleDateString('en-CA');
+    const scope = document.querySelector('input[name="reportScope"]:checked')?.value || 'daily';
+    const rows = await wtBuildSelectedReportRows(type, projectId, date, scope === 'cumulative');
+    if (!cols.length) throw new Error('Select at least one report column.');
+    if (saveHistory) await WisetrackAPI.createReport({ name:`${type} ${date}`, reportType:type, projectId, filterJson:JSON.stringify({date,scope}), selectedColumns:cols.join(','), recipientUserIds:[] });
     if (kind === 'csv') {
-      wtDownloadText('wisetrack-portfolio.csv', wtReportCsv(rows, cols));
+      wtDownloadText(`wisetrack-${type}-${date}.csv`, wtReportCsv(rows, cols));
       showToast('CSV downloaded');
       return;
     }
-    const w = window.open('', '_blank');
     w.document.write(`<html><head><title>Wisetrack Report</title>
       <style>body{font-family:Segoe UI,Arial;padding:28px;color:#0f172a}h1{color:#0f4c81}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #cbd5e1;padding:8px;font-size:12px}th{background:#0f4c81;color:#fff}</style></head>
-      <body><h1>Wisetrack</h1><p>Portfolio status — ${new Date().toLocaleDateString()}</p>
+      <body><h1>WISETRACK</h1><p>${wtEscHtml(type.toUpperCase())} report · ${wtEscHtml(projectId ? ((window.wtReportProjects || []).find(p => Number(p.id) === projectId)?.name || "Project") : "Portfolio")} · ${wtEscHtml(date)} · ${scope === 'cumulative' ? 'Cumulative through date' : 'Selected date'}</p>
       <table><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
-      ${rows.map(row => {
-        const map = {
-          project: row.name || row.Name || '',
-          status: row.status || row.Status || '',
-          owner: row.ownerName || row.OwnerName || '',
-          budget: row.approvedBudget ?? row.ApprovedBudget ?? '',
-          rag: row.budgetRag || row.BudgetRag || '',
-          progress: row.progressPercent ?? row.ProgressPercent ?? '',
-          milestones: row.nextMilestone || row.NextMilestone || '',
-          issues: row.openIssues ?? row.OpenIssues ?? ''
-        };
-        return `<tr>${cols.map(c => `<td>${String(map[c] ?? '')}</td>`).join('')}</tr>`;
-      }).join('')}</tbody></table></body></html>`);
+      ${rows.map(row => `<tr>${cols.map(c => `<td>${wtEscHtml(wtReportValue(row,c))}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`);
     w.document.close();
     w.focus();
     w.print();
   } catch (err) {
     showToast(err.message || 'Export failed', 'danger');
+    if (w && !w.closed) w.close();
   }
 }
 
@@ -1418,15 +1433,21 @@ async function handleExportAndSendReport(e) {
   const cols = wtSelectedReportColumns();
   const type = document.getElementById('repType')?.value || 'portfolio';
   const scope = document.querySelector('input[name="reportScope"]:checked')?.value || 'daily';
+  const projectId = Number(document.getElementById('repProject')?.value) || null;
+  const date = document.getElementById('repDate')?.value || new Date().toLocaleDateString('en-CA');
   try {
+    if (!ids.length) throw new Error('Select at least one internal recipient.');
+    if (!cols.length) throw new Error('Select at least one report column.');
+    const rows = await wtBuildSelectedReportRows(type, projectId, date, scope === 'cumulative');
     await WisetrackAPI.createReport({
-      name: `${type} ${scope} ${new Date().toISOString().slice(0, 10)}`,
+      name: `${type} ${date}`,
       reportType: type,
+      projectId,
+      filterJson: JSON.stringify({ date, scope }),
       selectedColumns: cols.join(','),
       recipientUserIds: ids
     });
-    const rows = await wtBuildPortfolioRows();
-    wtDownloadText(`wisetrack-${type}.csv`, wtReportCsv(rows, cols));
+    wtDownloadText(`wisetrack-${type}-${date}.csv`, wtReportCsv(rows, cols));
     closeModal();
     showToast(`Report saved and sent to ${ids.length} internal user(s)`);
     if (window.WTPages?.loadPortfolio) await WTPages.loadPortfolio();

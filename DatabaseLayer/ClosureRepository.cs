@@ -9,6 +9,7 @@ public interface IClosureRepository
     Task<Inventory> AddInventoryAsync(Inventory inventory);
     Task<List<Inventory>> GetInventoryAsync(long projectId);
     Task<ProjectCompletionReport?> GetCompletionAsync(long projectId);
+    Task<bool> HasUploadedClosureDocumentAsync(long projectId, string filePath);
     Task<ProjectCompletionReport> UpsertCompletionAsync(ProjectCompletionReport report);
     Task SetProjectStatusAsync(long projectId, string status);
 }
@@ -30,6 +31,9 @@ public class ClosureRepository : IClosureRepository
 
     public Task<ProjectCompletionReport?> GetCompletionAsync(long projectId) =>
         _db.ProjectCompletionReports.FirstOrDefaultAsync(r => r.ProjectId == projectId);
+
+    public Task<bool> HasUploadedClosureDocumentAsync(long projectId, string filePath) =>
+        _db.FileRecords.AnyAsync(f => f.Module == "Closure" && f.RelatedId == projectId && f.FilePath == filePath);
 
     public async Task<ProjectCompletionReport> UpsertCompletionAsync(ProjectCompletionReport report)
     {

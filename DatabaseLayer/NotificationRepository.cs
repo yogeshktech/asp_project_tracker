@@ -10,6 +10,7 @@ public interface INotificationRepository
     Task<List<NotificationRecipient>> GetInboxAsync(long userId);
     Task MarkReadAsync(long recipientId);
     Task<EscalationRule> AddRuleAsync(EscalationRule rule);
+    Task<EscalationRule?> SetRuleActiveAsync(long ruleId, bool isActive);
     Task<List<EscalationRule>> GetRulesAsync();
 }
 
@@ -53,6 +54,15 @@ public class NotificationRepository : INotificationRepository
     public async Task<EscalationRule> AddRuleAsync(EscalationRule rule)
     {
         _db.EscalationRules.Add(rule);
+        await _db.SaveChangesAsync();
+        return rule;
+    }
+
+    public async Task<EscalationRule?> SetRuleActiveAsync(long ruleId, bool isActive)
+    {
+        var rule = await _db.EscalationRules.FirstOrDefaultAsync(r => r.Id == ruleId);
+        if (rule == null) return null;
+        rule.IsActive = isActive;
         await _db.SaveChangesAsync();
         return rule;
     }

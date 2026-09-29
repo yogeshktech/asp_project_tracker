@@ -36,6 +36,8 @@ public class FilesController : ControllerBase
             !await CanViewTaskFilesAsync(UserContext.GetUserId(User)!.Value, relatedId.Value)) return Forbid();
         if (string.Equals(module, "Milestones", StringComparison.OrdinalIgnoreCase) &&
             !await CanViewMilestoneFilesAsync(UserContext.GetUserId(User)!.Value, relatedId.Value)) return Forbid();
+        if (string.Equals(module, "Closure", StringComparison.OrdinalIgnoreCase) &&
+            !await _permissions.CanViewModuleAsync(UserContext.GetUserId(User)!.Value, relatedId.Value, "Closure")) return Forbid();
         var files = await _db.FileRecords.AsNoTracking()
             .Where(f => f.Module == module && f.RelatedId == relatedId)
             .OrderByDescending(f => f.UploadedAt)
@@ -55,6 +57,8 @@ public class FilesController : ControllerBase
             !await CanViewTaskFilesAsync(UserContext.GetUserId(User)!.Value, record.RelatedId.Value)) return Forbid();
         if (string.Equals(record.Module, "Milestones", StringComparison.OrdinalIgnoreCase) && record.RelatedId.HasValue &&
             !await CanViewMilestoneFilesAsync(UserContext.GetUserId(User)!.Value, record.RelatedId.Value)) return Forbid();
+        if (string.Equals(record.Module, "Closure", StringComparison.OrdinalIgnoreCase) && record.RelatedId.HasValue &&
+            !await _permissions.CanViewModuleAsync(UserContext.GetUserId(User)!.Value, record.RelatedId.Value, "Closure")) return Forbid();
         var path = Path.Combine(_env.ContentRootPath, "uploads", Path.GetFileName(record.FilePath));
         if (!System.IO.File.Exists(path)) return NotFound();
         return PhysicalFile(path, record.ContentType ?? "application/octet-stream", record.FileName);
@@ -72,6 +76,11 @@ public class FilesController : ControllerBase
             return BadRequest(new { message = "Project attachments require a project id." });
         if (string.Equals(module, "Project", StringComparison.OrdinalIgnoreCase) && relatedId.HasValue &&
             !await _permissions.CanEditModuleAsync(UserContext.GetUserId(User)!.Value, relatedId.Value, "Projects")) return Forbid();
+        if (string.Equals(module, "Closure", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!relatedId.HasValue) return BadRequest(new { message = "Closure documents require a project id." });
+            if (!await _permissions.IsProjectManagerAsync(UserContext.GetUserId(User)!.Value, relatedId.Value)) return Forbid();
+        }
         if (string.Equals(module, "Tasks", StringComparison.OrdinalIgnoreCase))
         {
             if (!relatedId.HasValue) return BadRequest(new { message = "Task evidence requires a task id." });

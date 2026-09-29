@@ -13,7 +13,7 @@ public interface IReportService
     Task<List<Report>> GetAllAsync(long userId);
     Task<(byte[] Content, string FileName)> ExportCsvAsync(long userId, long reportId);
     Task<PortfolioReportDto> GetPortfolioReportAsync(long userId);
-    Task<DailySiteReportDto?> GetDailyReportAsync(long userId, long projectId, DateOnly? date);
+    Task<DailySiteReportDto?> GetDailyReportAsync(long userId, long projectId, DateOnly? date, bool cumulative = false);
     Task<List<ComparableProjectDto>> GetComparableProjectsAsync(long userId, ReportFilterDto filter);
 }
 
@@ -24,6 +24,12 @@ public interface IDashboardService
 
 public class ReportService : IReportService
 {
+    private sealed class ReportFilterState
+    {
+        public DateOnly? Date { get; set; }
+        public string? Scope { get; set; }
+    }
+
     private readonly IReportRepository _repository;
     private readonly IPermissionService _permissions;
     private readonly IAuditService _audit;
@@ -58,8 +64,20 @@ public class ReportService : IReportService
             CreatedAt = DateTime.UtcNow
         }, internalEmails);
 
-        await _email.SendAsync(internalEmails, $"Wisetrack Report: {request.Name}",
-            $"Report '{request.Name}' ({request.ReportType}) has been generated.");
+        if (internalEmails.Count > 0)
+        {
+            if (userId.HasValue)
+            {
+                var (content, fileName) = await ExportCsvAsync(userId.Value, report.Id);
+                await _email.SendAsync(internalEmails, $"Wisetrack Report: {request.Name}",
+                    $"The requested {request.ReportType} report is attached.", content, fileName, "text/csv; charset=utf-8");
+            }
+            else
+            {
+                await _email.SendAsync(internalEmails, $"Wisetrack Report: {request.Name}",
+                    $"Report '{request.Name}' ({request.ReportType}) has been generated.");
+            }
+        }
 
         await _audit.LogAsync(userId, "Generate", "Report", report.Id);
         return report;
@@ -77,8 +95,31 @@ public class ReportService : IReportService
         var allowed = await _permissions.GetAccessibleProjectIdsAsync(userId);
         var report = await _repository.GetPortfolioReportAsync(allowed);
         foreach (var project in report.Projects)
-            if (!await _permissions.CanViewModuleAsync(userId, project.ProjectId, "Budgets")
-                || !await _permissions.CanViewModuleAsync(userId, project.ProjectId, "Costs")) project.BudgetRag = "";
+        {
+            var canViewBudgets = await _permissions.CanViewModuleAsync(userId, project.ProjectId, "Budgets");
+            var canViewCosts = await _permissions.CanViewModuleAsync(userId, project.ProjectId, "Costs");
+            if (!canViewBudgets) project.ApprovedBudget = 0;
+            if (!canViewCosts)
+            {
+                project.PurchaseCommitment = 0;
+                project.ActualCost = 0;
+            }
+            if (!canViewBudgets || !canViewCosts) project.BudgetRag = "";
+            var canViewTasks = await _permissions.CanViewModuleAsync(userId, project.ProjectId, "Tasks");
+            var canViewMilestones = await _permissions.CanViewModuleAsync(userId, project.ProjectId, "Milestones");
+            var canViewIssues = await _permissions.CanViewModuleAsync(userId, project.ProjectId, "Issues");
+            if (!canViewTasks) project.ProgressPercent = 0;
+            if (!canViewMilestones)
+            {
+                project.NextMilestone = null;
+                project.NextMilestoneDueDate = null;
+            }
+            if (!canViewTasks || !canViewMilestones) project.ScheduleRisk = "";
+            if (!canViewIssues) project.OpenIssues = 0;
+            if (!canViewTasks || !canViewMilestones || !canViewIssues) project.UnresolvedExceptions = 0;
+            project.VarianceExplanations = project.VarianceExplanations
+                .Where(v => v.VarianceType == "Cost" ? canViewCosts : canViewTasks).ToList();
+        }
         return report;
     }
 
@@ -90,40 +131,119 @@ public class ReportService : IReportService
         var accessible = await _permissions.GetAccessibleProjectIdsAsync(userId);
         if (report.ProjectId.HasValue && !accessible.Contains(report.ProjectId.Value))
             throw new UnauthorizedAccessException("You do not have access to this project.");
-        var rows = (await _repository.GetPortfolioReportAsync(accessible)).Projects.AsEnumerable();
-        if (report.ProjectId.HasValue) rows = rows.Where(r => r.ProjectId == report.ProjectId.Value);
-        var columns = (report.SelectedColumns ?? "project,status,progress,rag,milestones,issues")
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(c => new[] { "project", "status", "progress", "rag", "milestones", "issues" }.Contains(c, StringComparer.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (columns.Count == 0) columns = ["project", "status", "progress", "rag", "milestones", "issues"];
-        static string Escape(string? value) => "\"" + (value ?? "").Replace("\"", "\"\"") + "\"";
-        var output = new System.Text.StringBuilder();
-        output.AppendLine(string.Join(',', columns.Select(Escape)));
-        foreach (var row in rows)
+        var type = report.ReportType.Trim().ToLowerInvariant();
+        var allowedColumns = type switch
         {
-            var canViewFinance = await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Budgets")
-                && await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Costs");
-            var values = columns.Select(c => c.ToLowerInvariant() switch
+            "daily" => new[] { "task", "subTask", "status", "percent", "remarks", "updatedAt" },
+            "boq" => new[] { "item", "quantity", "purchasePrice", "total", "image", "brand", "remark" },
+            _ => new[] { "project", "status", "owner", "budget", "rag", "progress", "milestones", "issues", "varianceReasons" }
+        };
+        var columns = (report.SelectedColumns ?? string.Join(',', allowedColumns))
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(c => allowedColumns.Contains(c, StringComparer.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (columns.Count == 0) columns = allowedColumns.ToList();
+        var titles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["project"] = "Project / WBS", ["status"] = "Status", ["owner"] = "Owner", ["budget"] = "Budget", ["rag"] = "RAG",
+            ["progress"] = "% Complete", ["milestones"] = "Next Milestone", ["issues"] = "Open Issues", ["varianceReasons"] = "Variance Reasons",
+            ["task"] = "Task", ["subTask"] = "Sub-Task", ["percent"] = "% Complete", ["remarks"] = "Remark", ["updatedAt"] = "Updated Date",
+            ["item"] = "Item", ["quantity"] = "Quantity", ["purchasePrice"] = "Purchase Price", ["total"] = "Total", ["image"] = "Image", ["brand"] = "Brand", ["remark"] = "Remark"
+        };
+        static string Escape(string? value) => "\"" + (value ?? "").Replace("\"", "\"\"") + "\"";
+        static string Safe(string? value) => !string.IsNullOrEmpty(value) && "=+-@\t\r".Contains(value[0]) ? "'" + value : value ?? "";
+        var output = new System.Text.StringBuilder();
+        output.AppendLine(string.Join(',', columns.Select(c => Escape(titles.GetValueOrDefault(c, c)))));
+        if (type == "daily")
+        {
+            if (!report.ProjectId.HasValue) throw new InvalidOperationException("Daily report requires a project.");
+            var filter = ParseReportFilter(report.FilterJson);
+            var daily = await GetDailyReportAsync(userId, report.ProjectId.Value, filter.Date, filter.Scope == "cumulative")
+                ?? throw new UnauthorizedAccessException("You cannot view this project's daily report.");
+            foreach (var row in daily.TaskUpdates)
             {
-                "project" => row.Name,
-                "status" => row.Status,
-                "progress" => row.ProgressPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
-                "rag" => canViewFinance ? row.BudgetRag : "",
-                "milestones" => row.NextMilestone,
-                "issues" => row.OpenIssues.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                _ => ""
-            });
-            output.AppendLine(string.Join(',', values.Select(Escape)));
+                var values = columns.Select(c => c.ToLowerInvariant() switch
+                {
+                    "task" => row.Title,
+                    "subtask" => row.SubTaskTitle,
+                    "status" => row.Status,
+                    "percent" => row.CompletionPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
+                    "remarks" => row.Remarks,
+                    "updatedat" => daily.ReportDate.ToString("yyyy-MM-dd"),
+                    _ => ""
+                });
+                output.AppendLine(string.Join(',', values.Select(v => Escape(Safe(v)))));
+            }
+        }
+        else if (type == "boq")
+        {
+            if (!report.ProjectId.HasValue) throw new InvalidOperationException("BOQ report requires a project.");
+            if (!await _permissions.CanViewModuleAsync(userId, report.ProjectId.Value, "BOQ")) throw new UnauthorizedAccessException("You cannot view BOQ data for this project.");
+            var boqs = await _repository.GetBoqsForReportAsync(report.ProjectId.Value);
+            foreach (var item in boqs.SelectMany(b => b.Versions.OrderByDescending(v => v.IsCurrentBaseline).ThenByDescending(v => v.VersionNo).FirstOrDefault()?.Items ?? new List<BoqItem>()))
+            {
+                var values = columns.Select(c => c.ToLowerInvariant() switch
+                {
+                    "item" => item.ItemName ?? item.Description,
+                    "quantity" => item.Quantity.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
+                    "purchaseprice" => item.UnitPrice.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
+                    "total" => item.Amount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
+                    "image" => item.ImageUrl ?? item.AttachmentName,
+                    "brand" => item.Brand,
+                    "remark" => item.Remarks,
+                    _ => ""
+                });
+                output.AppendLine(string.Join(',', values.Select(v => Escape(Safe(v)))));
+            }
+        }
+        else
+        {
+            var rows = (await _repository.GetPortfolioReportAsync(accessible)).Projects.AsEnumerable();
+            if (report.ProjectId.HasValue) rows = rows.Where(r => r.ProjectId == report.ProjectId.Value);
+            foreach (var row in rows)
+            {
+                var canViewBudgets = await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Budgets");
+                var canViewCosts = await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Costs");
+                var canViewTasks = await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Tasks");
+                var canViewMilestones = await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Milestones");
+                var canViewIssues = await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Issues");
+                var values = columns.Select(c => c.ToLowerInvariant() switch
+                {
+                    "project" => row.Name,
+                    "status" => row.Status,
+                    "owner" => "",
+                    "budget" => canViewBudgets ? row.ApprovedBudget.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "",
+                    "progress" => canViewTasks ? row.ProgressPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "",
+                    "rag" => canViewBudgets && canViewCosts ? row.BudgetRag : "",
+                    "milestones" => canViewMilestones ? row.NextMilestone : "",
+                    "issues" => canViewIssues ? row.OpenIssues.ToString(System.Globalization.CultureInfo.InvariantCulture) : "",
+                    "variancereasons" => string.Join(" | ", row.VarianceExplanations.Where(v => v.VarianceType == "Cost" ? canViewCosts : canViewTasks).Select(v => $"{v.VarianceType}: {v.Explanation}")),
+                    _ => ""
+                });
+                output.AppendLine(string.Join(',', values.Select(v => Escape(Safe(v)))));
+            }
         }
         await _audit.LogAsync(userId, "Export", "Report", report.Id, "CSV");
         return (new System.Text.UTF8Encoding(true).GetBytes(output.ToString()), $"wisetrack-report-{report.Id}.csv");
     }
 
-    public async Task<DailySiteReportDto?> GetDailyReportAsync(long userId, long projectId, DateOnly? date)
+    private static ReportFilterState ParseReportFilter(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new ReportFilterState();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<ReportFilterState>(json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ReportFilterState();
+        }
+        catch (System.Text.Json.JsonException) { return new ReportFilterState(); }
+    }
+
+    public async Task<DailySiteReportDto?> GetDailyReportAsync(long userId, long projectId, DateOnly? date, bool cumulative = false)
     {
         if (!await _permissions.CanViewProjectAsync(userId, projectId)) return null;
-        return await _repository.GetDailySiteReportAsync(projectId, date ?? DateOnly.FromDateTime(DateTime.UtcNow));
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks"))
+            throw new UnauthorizedAccessException("You cannot view task reports for this project.");
+        return await _repository.GetDailySiteReportAsync(projectId, date ?? DateOnly.FromDateTime(DateTime.UtcNow), cumulative);
     }
 
     public async Task<List<ComparableProjectDto>> GetComparableProjectsAsync(long userId, ReportFilterDto filter)
@@ -133,7 +253,15 @@ public class ReportService : IReportService
         foreach (var row in rows)
         {
             if (!await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Budgets")) row.ApprovedBudget = 0;
-            if (!await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Costs")) row.ActualCost = 0;
+            if (!await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Costs"))
+            {
+                row.ActualCost = 0;
+                row.PurchaseCost = 0;
+                row.TotalCost = 0;
+                row.VarianceExplanations = row.VarianceExplanations.Where(v => v.VarianceType != "Cost").ToList();
+            }
+            if (!await _permissions.CanViewModuleAsync(userId, row.ProjectId, "Tasks"))
+                row.VarianceExplanations = row.VarianceExplanations.Where(v => v.VarianceType != "Schedule").ToList();
         }
         return rows;
     }

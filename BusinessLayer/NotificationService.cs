@@ -13,6 +13,7 @@ public interface INotificationService
     Task<List<NotificationRecipient>> GetInboxAsync(long userId);
     Task MarkReadAsync(long recipientId);
     Task<EscalationRule> CreateRuleAsync(CreateEscalationRuleRequest request);
+    Task<EscalationRule?> SetRuleActiveAsync(long ruleId, bool isActive);
     Task<List<EscalationRule>> GetRulesAsync();
 }
 
@@ -68,4 +69,5 @@ public class NotificationService : INotificationService
         });
 
     public Task<List<EscalationRule>> GetRulesAsync() => _repository.GetRulesAsync();
+    public Task<EscalationRule?> SetRuleActiveAsync(long ruleId, bool isActive) => _repository.SetRuleActiveAsync(ruleId, isActive);
 }

@@ -131,13 +131,39 @@ public static class DbSeeder
 
         // Already have a full demo? skip portfolio insert
         if (await db.Resorts.AnyAsync(r => r.Code == "GPLR") && await db.SubTasks.AnyAsync() && await db.Boqs.AnyAsync())
+        {
+            await EnsureDefaultNotificationRulesAsync(db, pmRole);
             return;
+        }
 
         // If thin old seed exists, remove GPLR tree so we can reload rich demo
         if (await db.Resorts.AnyAsync(r => r.Code == "GPLR"))
             await WipeDemoResortAsync(db, "GPLR");
 
         await SeedFullPortfolioAsync(db, now, admin, pm, site, finance, auditor, gm, external);
+    }
+
+    private static async Task EnsureDefaultNotificationRulesAsync(AppDbContext db, Role pmRole)
+    {
+        var defaults = new[]
+        {
+            (Name: "Task overdue", Trigger: "TaskOverdue", DelayHours: 0),
+            (Name: "Milestone approaching in 7 days", Trigger: "MilestoneApproaching", DelayHours: 168)
+        };
+        foreach (var item in defaults)
+        {
+            if (await db.EscalationRules.AnyAsync(r => r.TriggerType == item.Trigger)) continue;
+            db.EscalationRules.Add(new EscalationRule
+            {
+                Name = item.Name,
+                TriggerType = item.Trigger,
+                DelayHours = item.DelayHours,
+                TargetRoleId = pmRole.Id,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+        await db.SaveChangesAsync();
     }
 
     private static async Task SeedFullPortfolioAsync(
@@ -675,9 +701,11 @@ public static class DbSeeder
         var pmRole = await db.Roles.FirstAsync(r => r.Name == "ProjectManager");
         var finRole = await db.Roles.FirstAsync(r => r.Name == "FinanceOfficer");
         db.EscalationRules.AddRange(
+            new EscalationRule { Name = "Task overdue", TriggerType = "TaskOverdue", DelayHours = 0, TargetRoleId = pmRole.Id, IsActive = true, CreatedAt = now },
             new EscalationRule { Name = "Budget CC ≥80% spent → Finance + PM", TriggerType = "BudgetRagAmber", DelayHours = 0, TargetRoleId = finRole.Id, IsActive = true, CreatedAt = now },
             new EscalationRule { Name = "Budget CC ≥100% → PM escalate", TriggerType = "BudgetRagRed", DelayHours = 4, TargetRoleId = pmRole.Id, IsActive = true, CreatedAt = now },
             new EscalationRule { Name = "High/Critical issue → stakeholders mail", TriggerType = "IssueHighPriority", DelayHours = 1, TargetRoleId = pmRole.Id, IsActive = true, CreatedAt = now },
+            new EscalationRule { Name = "Milestone approaching in 7 days", TriggerType = "MilestoneApproaching", DelayHours = 168, TargetRoleId = pmRole.Id, IsActive = true, CreatedAt = now },
             new EscalationRule { Name = "Milestone overdue", TriggerType = "MilestoneOverdue", DelayHours = 24, TargetRoleId = pmRole.Id, IsActive = true, CreatedAt = now },
             new EscalationRule { Name = "Task inactive 7 days", TriggerType = "TaskInactive7Days", DelayHours = 0, TargetRoleId = pmRole.Id, IsActive = true, CreatedAt = now }
         );

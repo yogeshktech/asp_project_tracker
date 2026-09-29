@@ -8,7 +8,7 @@ namespace project_tracker_madhu.BusinessLayer.Closure;
 public interface IClosureService
 {
     Task<Inventory> AddInventoryAsync(CreateInventoryRequest request, long? userId);
-    Task<List<Inventory>> GetInventoryAsync(long projectId);
+    Task<List<Inventory>> GetInventoryAsync(long projectId, long userId);
     Task<ProjectCompletionReport> CloseProjectAsync(ProjectClosureDto dto, long userId);
 }
 
@@ -29,6 +29,10 @@ public class ClosureService : IClosureService
     {
         if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Closure"))
             throw new UnauthorizedAccessException("No permission.");
+        if (string.IsNullOrWhiteSpace(request.Description))
+            throw new InvalidOperationException("Inventory description is required. Enter 'No leftover inventory' with quantity 0 when applicable.");
+        if (request.Quantity < 0)
+            throw new InvalidOperationException("Inventory quantity cannot be negative.");
         var inv = await _repository.AddInventoryAsync(new Inventory
         {
             ProjectId = request.ProjectId,
@@ -43,7 +47,11 @@ public class ClosureService : IClosureService
         return inv;
     }
 
-    public Task<List<Inventory>> GetInventoryAsync(long projectId) => _repository.GetInventoryAsync(projectId);
+    public async Task<List<Inventory>> GetInventoryAsync(long projectId, long userId)
+    {
+        await _permissions.EnsureModuleAsync(userId, projectId, "Closure", "view");
+        return await _repository.GetInventoryAsync(projectId);
+    }
 
     public async Task<ProjectCompletionReport> CloseProjectAsync(ProjectClosureDto dto, long userId)
     {
@@ -52,6 +60,9 @@ public class ClosureService : IClosureService
 
         if (string.IsNullOrWhiteSpace(dto.SignedDocumentPath))
             throw new InvalidOperationException("Signed Project Completion Report is mandatory.");
+
+        if (!await _repository.HasUploadedClosureDocumentAsync(dto.ProjectId, dto.SignedDocumentPath))
+            throw new InvalidOperationException("Upload the signed completion report to this project's Closure files before closing.");
 
         if (!dto.IsMandatoryComplete)
             throw new InvalidOperationException("Handover / completion report must be marked complete.");

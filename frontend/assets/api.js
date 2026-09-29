@@ -257,6 +257,7 @@ const WisetrackAPI = {
   addPurchase(data) { return this.post('/costs/purchases', data); },
   getActuals(projectId) { return this.get(`/costs/actuals/${projectId}`); },
   addActual(data) { return this.post('/costs/actuals', data); },
+  importCosts(data) { return this.post('/costs/import', data); },
   getVariance(projectId) { return this.get(`/costs/variance/${projectId}`); },
 
   // Issues
@@ -273,6 +274,7 @@ const WisetrackAPI = {
   markRead(recipientId) { return this.post(`/notifications/${recipientId}/read`); },
   getEscalationRules() { return this.get('/notifications/escalation-rules'); },
   createEscalationRule(data) { return this.post('/notifications/escalation-rules', data); },
+  updateEscalationRule(id, data) { return this.put(`/notifications/escalation-rules/${id}`, data); },
 
   // Reports
   getReports() { return this.get('/reports'); },
@@ -284,7 +286,12 @@ const WisetrackAPI = {
     a.href = url; a.download = `wisetrack-report-${id}.csv`; a.click(); URL.revokeObjectURL(url);
   },
   getPortfolioReport() { return this.get('/reports/portfolio'); },
-  getDailyReport(projectId, date) { return this.get(`/reports/daily/${projectId}${date ? '?date=' + date : ''}`); },
+  getDailyReport(projectId, date, cumulative = false) {
+    const q = new URLSearchParams();
+    if (date) q.set('date', date);
+    if (cumulative) q.set('cumulative', 'true');
+    return this.get(`/reports/daily/${projectId}${q.size ? '?' + q.toString() : ''}`);
+  },
   getComparableProjects(filter) { return this.post('/reports/comparable', filter); },
 
   // Dashboard

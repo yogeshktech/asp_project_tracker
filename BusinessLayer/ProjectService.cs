@@ -376,13 +376,21 @@ public class ProjectService : IProjectService
 
     public async Task AddVarianceExplanationAsync(long userId, VarianceExplanationRequest request)
     {
-        if (!await _permissions.CanEditModuleAsync(userId, request.ProjectId, "Costs"))
+        var varianceType = request.VarianceType.Trim();
+        if (varianceType is not ("Cost" or "Schedule"))
+            throw new InvalidOperationException("Variance type must be Cost or Schedule.");
+        var canEdit = varianceType == "Cost"
+            ? await _permissions.CanEditModuleAsync(userId, request.ProjectId, "Costs")
+            : await _permissions.CanEditModuleAsync(userId, request.ProjectId, "Tasks");
+        if (!canEdit)
             throw new UnauthorizedAccessException("No permission.");
+        if (string.IsNullOrWhiteSpace(request.Explanation))
+            throw new InvalidOperationException("Variance explanation is required.");
         await _repository.AddVarianceExplanationAsync(new VarianceExplanation
         {
             ProjectId = request.ProjectId,
-            VarianceType = request.VarianceType,
-            Explanation = request.Explanation,
+            VarianceType = varianceType,
+            Explanation = request.Explanation.Trim(),
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow
         });
@@ -391,7 +399,10 @@ public class ProjectService : IProjectService
     public async Task<List<VarianceExplanation>> GetVarianceExplanationsAsync(long userId, long projectId)
     {
         if (!await _permissions.CanViewProjectAsync(userId, projectId)) return new();
-        return await _repository.GetVarianceExplanationsAsync(projectId);
+        var rows = await _repository.GetVarianceExplanationsAsync(projectId);
+        var canViewCost = await _permissions.CanViewModuleAsync(userId, projectId, "Costs");
+        var canViewSchedule = await _permissions.CanViewModuleAsync(userId, projectId, "Tasks");
+        return rows.Where(v => v.VarianceType == "Cost" ? canViewCost : canViewSchedule).ToList();
     }
 
     public Task<MilestoneTemplate> SaveTemplateAsync(MilestoneTemplateRequest request) =>

@@ -93,6 +93,8 @@ public class CostVarianceDto
     public decimal ForecastTotal { get; set; }
     public decimal VarianceAmount { get; set; }
     public decimal VariancePercent { get; set; }
+    public decimal ForecastVarianceAmount { get; set; }
+    public string BudgetStatus { get; set; } = "On Budget";
     public string RagStatus { get; set; } = "Green";
     public List<CostCenterRollupDto> CostCenters { get; set; } = new();
 }
@@ -109,6 +111,8 @@ public class CostCenterRollupDto
     public decimal Allocated { get; set; }
     public decimal Spent { get; set; }
     public decimal Variance { get; set; }
+    public decimal ForecastVariance { get; set; }
+    public string BudgetStatus { get; set; } = "On Budget";
     public string RagStatus { get; set; } = "Green";
 }
 
@@ -132,6 +136,13 @@ public class ExceptionItemDto
     public string ItemKind { get; set; } = "Task";
     public string Title { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
+}
+
+public class CostImportResultDto
+{
+    public int Imported { get; set; }
+    public int Skipped { get; set; }
+    public List<string> Errors { get; set; } = new();
 }
 
 public class BOQValidationResultDto
@@ -160,11 +171,25 @@ public class ProjectStatusRowDto
     public long ProjectId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public string? OwnerName { get; set; }
     public string? NextMilestone { get; set; }
+    public DateOnly? NextMilestoneDueDate { get; set; }
     public string ScheduleRisk { get; set; } = string.Empty;
     public string BudgetRag { get; set; } = string.Empty;
+    public decimal ApprovedBudget { get; set; }
+    public decimal PurchaseCommitment { get; set; }
+    public decimal ActualCost { get; set; }
+    public int UnresolvedExceptions { get; set; }
     public int OpenIssues { get; set; }
     public decimal ProgressPercent { get; set; }
+    public List<VarianceExplanationDto> VarianceExplanations { get; set; } = new();
+}
+
+public class VarianceExplanationDto
+{
+    public string VarianceType { get; set; } = string.Empty;
+    public string Explanation { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
 }
 
 public class DailySiteReportDto
@@ -203,9 +228,18 @@ public class ComparableProjectDto
     public long ProjectId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? ProjectType { get; set; }
+    public string? Client { get; set; }
+    public string? Scope { get; set; }
+    public bool IsReferenceProject { get; set; }
+    public string Currency { get; set; } = "INR";
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? EndDate { get; set; }
     public decimal ApprovedBudget { get; set; }
+    public decimal PurchaseCost { get; set; }
     public decimal ActualCost { get; set; }
+    public decimal TotalCost { get; set; }
     public int? DurationDays { get; set; }
+    public List<VarianceExplanationDto> VarianceExplanations { get; set; } = new();
 }
 
 public class TaskItemDto

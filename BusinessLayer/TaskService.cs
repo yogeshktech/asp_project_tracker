@@ -185,7 +185,7 @@ public class TaskService : ITaskService
     private static TaskItemDto MapTask(ProjectTask t, long userId, bool isAdmin, bool canEdit, bool canUpdate, bool canDelete)
     {
         var canDeleteTask = isAdmin || canDelete || t.AssignedTo == userId;
-        var canEditPercent = isAdmin || t.AssignedTo == userId;
+        var canEditPercent = t.AssignedTo == userId;
         return new TaskItemDto
         {
             Id = t.Id,
@@ -251,7 +251,7 @@ public class TaskService : ITaskService
         CompletionPercent = s.CompletionPercent,
         Remarks = s.Remarks,
         CanDelete = isAdmin || canDelete || s.AssignedTo == userId || parentAssignedTo == userId,
-        CanEditPercent = isAdmin || s.AssignedTo == userId || parentAssignedTo == userId,
+        CanEditPercent = parentAssignedTo == userId,
         DependsOnTaskId = s.DependsOnTaskId,
         DependsOnSubTaskId = s.DependsOnSubTaskId
     };
@@ -443,7 +443,7 @@ public class TaskService : ITaskService
 
         if (request.CompletionPercent.HasValue && (request.CompletionPercent.Value < 0 || request.CompletionPercent.Value > 100))
             throw new InvalidOperationException("Completion must be between 0 and 100 percent.");
-        var canChangePercent = isAdmin || task.AssignedTo == userId || (sub != null && sub.AssignedTo == userId);
+        var canChangePercent = task.AssignedTo == userId;
         var canSubmitUpdate = isAdmin || (userId.HasValue && await _permissions.CanUpdateModuleAsync(userId.Value, task.ProjectId, "Tasks"))
             || task.AssignedTo == userId || (sub != null && sub.AssignedTo == userId);
         if (!canSubmitUpdate)

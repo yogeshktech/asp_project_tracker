@@ -215,5 +215,5 @@ public class ProjectRepository : IProjectRepository
     }
 
     public Task<List<VarianceExplanation>> GetVarianceExplanationsAsync(long projectId) =>
-        _db.VarianceExplanations.Where(v => v.ProjectId == projectId).AsNoTracking().ToListAsync();
+        _db.VarianceExplanations.Where(v => v.ProjectId == projectId).OrderByDescending(v => v.CreatedAt).AsNoTracking().ToListAsync();
 }

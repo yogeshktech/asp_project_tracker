@@ -38,4 +38,11 @@ public class NotificationsController : ControllerBase
     [HttpPost("escalation-rules")]
     public async Task<IActionResult> CreateRule([FromBody] CreateEscalationRuleRequest request) =>
         Ok(await _notificationService.CreateRuleAsync(request));
+
+    [HttpPut("escalation-rules/{ruleId:long}")]
+    public async Task<IActionResult> SetRuleActive(long ruleId, [FromBody] UpdateEscalationRuleRequest request)
+    {
+        var rule = await _notificationService.SetRuleActiveAsync(ruleId, request.IsActive);
+        return rule == null ? NotFound() : Ok(rule);
+    }
 }
