@@ -38,7 +38,10 @@ public class Item
     public long? BrandId { get; set; }
     public long? CategoryId { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal? StandardPrice { get; set; }
     public string? ImageUrl { get; set; }
+    public DateOnly? EffectiveDate { get; set; }
+    public string? Source { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

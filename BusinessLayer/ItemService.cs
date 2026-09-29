@@ -46,6 +46,12 @@ public class ItemService : IItemService
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", "edit");
         var itemCode = EntityCodes.Next((await _repository.GetAllAsync()).Select(i => i.ItemCode), EntityCodes.Item);
+        if (!string.IsNullOrWhiteSpace(request.ItemCode))
+        {
+            var existingCode = await _repository.GetByCodeAsync(request.ItemCode.Trim());
+            if (existingCode != null) throw new InvalidOperationException($"Item code '{request.ItemCode.Trim()}' is already in use.");
+            itemCode = request.ItemCode.Trim();
+        }
         var item = await _repository.AddAsync(new Item
         {
             ItemCode = itemCode,
@@ -55,7 +61,10 @@ public class ItemService : IItemService
             BrandId = request.BrandId,
             CategoryId = request.CategoryId,
             UnitPrice = request.UnitPrice,
+            StandardPrice = request.StandardPrice,
             ImageUrl = request.ImageUrl,
+            EffectiveDate = request.EffectiveDate,
+            Source = request.Source,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         });
@@ -70,13 +79,22 @@ public class ItemService : IItemService
         if (item == null) return null;
         if (string.IsNullOrWhiteSpace(item.ItemCode))
             item.ItemCode = EntityCodes.Next((await _repository.GetAllAsync()).Select(i => i.ItemCode), EntityCodes.Item);
+        if (!string.IsNullOrWhiteSpace(request.ItemCode) && !string.Equals(item.ItemCode, request.ItemCode.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            var existingCode = await _repository.GetByCodeAsync(request.ItemCode.Trim());
+            if (existingCode != null && existingCode.Id != id) throw new InvalidOperationException($"Item code '{request.ItemCode.Trim()}' is already in use.");
+            item.ItemCode = request.ItemCode.Trim();
+        }
         item.Name = request.Name;
         item.Description = request.Description;
         item.UnitId = request.UnitId;
         item.BrandId = request.BrandId;
         item.CategoryId = request.CategoryId;
         item.UnitPrice = request.UnitPrice;
+        item.StandardPrice = request.StandardPrice;
         item.ImageUrl = request.ImageUrl;
+        item.EffectiveDate = request.EffectiveDate;
+        item.Source = request.Source;
         item.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(item);
         await _audit.LogAsync(userId, "Update", "Item", id);

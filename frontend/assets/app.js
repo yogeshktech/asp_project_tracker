@@ -1912,8 +1912,9 @@ async function openEditProjectModal(projectId) {
           <input type="date" id="editProjectStartDate" value="${p.startDate || ''}">
         </div>
         <div class="field">
-          <label>Target Handover Date</label>
+          <label>Required Project Completion Date</label>
           <input type="date" id="editProjectEndDate" value="${p.endDate || ''}">
+          <small style="color:var(--text-muted)">Changing this date shifts milestones created by the PM-17 backward schedule.</small>
         </div>
         <div class="field full">
           <label>Scope of Work / Deliverables</label>

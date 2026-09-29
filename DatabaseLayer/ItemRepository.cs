@@ -41,7 +41,8 @@ public class ItemRepository : IItemRepository
         _db.Items.Include(i => i.Brand).Include(i => i.Unit).Include(i => i.Category).FirstOrDefaultAsync(i => i.Id == id);
 
     public Task<Item?> GetByCodeAsync(string code) =>
-        _db.Items.FirstOrDefaultAsync(i => i.ItemCode.ToLower() == code.ToLower());
+        _db.Items.Include(i => i.Unit).Include(i => i.Brand)
+            .FirstOrDefaultAsync(i => i.ItemCode.ToLower() == code.ToLower());
 
     public async Task<Item> AddAsync(Item item)
     {

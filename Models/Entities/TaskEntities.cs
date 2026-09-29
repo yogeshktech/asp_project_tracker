@@ -12,6 +12,9 @@ public class Milestone
     public string? Description { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }
+    public long? OwnerId { get; set; }
+    public long? DependsOnMilestoneId { get; set; }
+    public string? CompletionEvidence { get; set; }
     public string Status { get; set; } = "NotStarted";
     public decimal CompletionPercent { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -29,6 +32,7 @@ public class ProjectTask
     public long? DependsOnSubTaskId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? CompletionEvidence { get; set; }
     public long? AssignedTo { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }

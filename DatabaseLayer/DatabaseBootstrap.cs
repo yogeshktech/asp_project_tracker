@@ -39,12 +39,52 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET approver_id = created_by WHERE approver_id IS NULL AND created_by IS NOT NULL""");
         if (!budgetVersionCurrencyExists)
             await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions v SET currency = b.currency FROM budgets b WHERE v.budget_id = b.id""");
+        await EnsureItemMasterColumnsAsync(db);
+        await EnsureBoqItemColumnsAsync(db);
+        await EnsureBoqBaselineColumnAsync(db);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS field_permissions_json TEXT NULL""");
         await EnsureSubTaskNestingColumnAsync(db, logger);
         await EnsureTaskDependencyColumnsAsync(db, logger);
+        await EnsureMilestonePlanningColumnsAsync(db, logger);
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
         await DbSeeder.SeedAsync(db);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
         logger.LogInformation("Database seed completed.");
+    }
+
+    private static async Task EnsureItemMasterColumnsAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(18,2)""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE items ADD COLUMN IF NOT EXISTS effective_date DATE""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE items ADD COLUMN IF NOT EXISTS source VARCHAR(500)""");
+    }
+
+    private static async Task EnsureBoqItemColumnsAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS item_code VARCHAR(50)""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS item_name VARCHAR(250)""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS unit VARCHAR(100)""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS brand VARCHAR(250)""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS image_url TEXT""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ALTER COLUMN remarks TYPE TEXT""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS attachment_path TEXT""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS attachment_name TEXT""");
+    }
+
+    private static async Task EnsureBoqBaselineColumnAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_versions ADD COLUMN IF NOT EXISTS is_current_baseline BOOLEAN NOT NULL DEFAULT FALSE""");
+        await db.Database.ExecuteSqlRawAsync("""
+            WITH latest AS (
+                SELECT DISTINCT ON (boq_id) id
+                FROM boq_versions
+                ORDER BY boq_id, version_no DESC
+            )
+            UPDATE boq_versions v SET is_current_baseline = TRUE
+            FROM latest WHERE latest.id = v.id
+              AND NOT EXISTS (SELECT 1 FROM boq_versions current_v WHERE current_v.boq_id = v.boq_id AND current_v.is_current_baseline)
+            """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS ux_boq_versions_current_baseline ON boq_versions(boq_id) WHERE is_current_baseline = TRUE""");
     }
 
     private static async Task EnsurePermissionColumnsAsync(AppDbContext db, ILogger logger)
@@ -107,6 +147,14 @@ public static class DatabaseBootstrap
                 """ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS depends_on_sub_task_id BIGINT NULL REFERENCES sub_tasks(id) ON DELETE SET NULL""");
             logger.LogInformation("Added dependency columns on sub_tasks.");
         }
+    }
+
+    private static async Task EnsureMilestonePlanningColumnsAsync(AppDbContext db, ILogger logger)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE milestones ADD COLUMN IF NOT EXISTS owner_id BIGINT NULL REFERENCES users(id) ON DELETE SET NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE milestones ADD COLUMN IF NOT EXISTS depends_on_milestone_id BIGINT NULL REFERENCES milestones(id) ON DELETE SET NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE milestones ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+        logger.LogInformation("Ensured owner, dependency, and completion evidence columns on milestones.");
     }
 
     private static async Task<bool> ColumnExistsAsync(AppDbContext db, string table, string column)

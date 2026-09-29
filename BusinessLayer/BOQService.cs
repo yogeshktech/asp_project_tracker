@@ -12,7 +12,10 @@ public interface IBOQService
     Task<List<Boq>> GetByProjectAsync(long userId, long projectId);
     Task<Boq?> GetAsync(long id);
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
-    Task<Boq> CreateFromMasterAsync(long projectId, List<long> itemIds, long? userId);
+    Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId);
+    Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId);
+    Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId);
+    Task<BoqItem?> UpdateRevisionItemAsync(long boqId, long versionId, long itemId, UpdateBoqVersionItemRequest request, long userId);
 }
 
 public class BOQService : IBOQService
@@ -42,11 +45,23 @@ public class BOQService : IBOQService
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, dto.ProjectId, "BOQ", dto.Commit ? "edit" : "view");
         var result = new BOQValidationResultDto { TotalRows = dto.Lines.Count };
         var seenCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (var i = 0; i < dto.Lines.Count; i++)
         {
             var row = dto.Lines[i];
             var rowNo = row.LineNo ?? i + 1;
+
+            foreach (var importError in (row.ImportErrors ?? new()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var separator = importError.IndexOf(':');
+                result.Errors.Add(new BOQValidationErrorDto
+                {
+                    Row = rowNo,
+                    Field = separator > 0 ? importError[..separator] : "Row",
+                    Message = separator > 0 ? importError[(separator + 1)..].Trim() : importError
+                });
+            }
 
             if (string.IsNullOrWhiteSpace(row.Description) && !row.ItemId.HasValue && string.IsNullOrWhiteSpace(row.ItemCode))
                 result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "Description", Message = "Description or item reference required." });
@@ -57,11 +72,30 @@ public class BOQService : IBOQService
             if (row.UnitPrice < 0)
                 result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "UnitPrice", Message = "Unit price cannot be negative." });
 
+            if (row.TotalAmount.HasValue && row.TotalAmount.Value < 0)
+                result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "TotalAmount", Message = "Total amount cannot be negative." });
+
+            if (string.IsNullOrWhiteSpace(row.Unit))
+                result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "Unit", Message = "Unit is required (for example: pcs, m, kg)." });
+
+            decimal? calculatedAmount = null;
+            try { calculatedAmount = row.Quantity * row.UnitPrice; }
+            catch (OverflowException) { result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "TotalAmount", Message = "Quantity × unit price exceeds the supported amount range." }); }
+            if (row.TotalAmount.HasValue && row.TotalAmount.Value >= 0 && calculatedAmount.HasValue && row.Quantity > 0 && row.UnitPrice >= 0 &&
+                Math.Abs(row.TotalAmount.Value - calculatedAmount.Value) > 0.01m)
+                result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "TotalAmount", Message = $"Total amount {row.TotalAmount.Value:0.##} does not match quantity × unit price ({calculatedAmount.Value:0.##})." });
+
             if (!string.IsNullOrWhiteSpace(row.ItemCode))
             {
                 if (!seenCodes.Add(row.ItemCode))
                     result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "ItemCode", Message = "Duplicate item code in import." });
             }
+
+            var duplicateKey = !string.IsNullOrWhiteSpace(row.ItemCode)
+                ? "code:" + row.ItemCode.Trim()
+                : "item:" + (row.Description?.Trim() ?? "") + "|" + (row.Unit?.Trim() ?? "");
+            if (!seenItems.Add(duplicateKey) && string.IsNullOrWhiteSpace(row.ItemCode) && !string.IsNullOrWhiteSpace(row.Description))
+                result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "Description", Message = "Duplicate item description and unit in import." });
         }
 
         result.ErrorCount = result.Errors.Count;
@@ -83,6 +117,7 @@ public class BOQService : IBOQService
         {
             BoqId = boq.Id,
             VersionNo = 1,
+            IsCurrentBaseline = true,
             Remarks = dto.Remarks,
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow
@@ -92,22 +127,30 @@ public class BOQService : IBOQService
         foreach (var l in dto.Lines)
         {
             long? itemId = l.ItemId;
+            Item? masterItem = itemId.HasValue ? await _items.GetAsync(itemId.Value) : null;
             if (!itemId.HasValue && !string.IsNullOrWhiteSpace(l.ItemCode))
             {
-                var item = await _items.GetByCodeAsync(l.ItemCode);
-                itemId = item?.Id;
+                masterItem = await _items.GetByCodeAsync(l.ItemCode);
+                itemId = masterItem?.Id;
             }
 
             lines.Add(new BoqItem
             {
                 BoqVersionId = version.Id,
                 ItemId = itemId,
+                ItemCode = masterItem?.ItemCode ?? l.ItemCode,
+                ItemName = masterItem?.Name ?? l.Description,
                 LineNo = l.LineNo,
                 Description = l.Description,
                 Quantity = l.Quantity,
                 UnitPrice = l.UnitPrice,
                 Amount = l.Quantity * l.UnitPrice,
-                Remarks = CombineBoqRemarks(l)
+                Unit = l.Unit ?? masterItem?.Unit?.Name,
+                Brand = l.Brand ?? masterItem?.Brand?.Name,
+                ImageUrl = masterItem?.ImageUrl,
+                Remarks = l.Remarks,
+                AttachmentPath = l.AttachmentPath,
+                AttachmentName = l.AttachmentName
             });
         }
 
@@ -117,9 +160,18 @@ public class BOQService : IBOQService
         return result;
     }
 
-    public async Task<Boq> CreateFromMasterAsync(long projectId, List<long> itemIds, long? userId)
+    public async Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> requestedLines, long? userId)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, projectId, "BOQ", "edit");
+        if (requestedLines.Count == 0) throw new InvalidOperationException("Select at least one Item Master item.");
+        var items = new List<(BoqFromMasterLineRequest Request, Item Item)>();
+        foreach (var line in requestedLines)
+        {
+            if (line.Quantity <= 0) throw new InvalidOperationException($"Quantity must be greater than zero for item {line.ItemId}.");
+            if (line.UnitPrice < 0) throw new InvalidOperationException($"Price cannot be negative for item {line.ItemId}.");
+            var item = await _items.GetAsync(line.ItemId) ?? throw new InvalidOperationException($"Item {line.ItemId} was not found in Item Master.");
+            items.Add((line, item));
+        }
         var boq = await _repository.AddAsync(new Boq
         {
             ProjectId = projectId,
@@ -133,30 +185,117 @@ public class BOQService : IBOQService
         {
             BoqId = boq.Id,
             VersionNo = 1,
+            IsCurrentBaseline = true,
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow
         });
 
         var lines = new List<BoqItem>();
         var lineNo = 1;
-        foreach (var itemId in itemIds.Distinct())
+        foreach (var selection in items)
         {
-            var item = await _items.GetAsync(itemId);
-            if (item == null) continue;
+            var item = selection.Item;
+            var request = selection.Request;
             lines.Add(new BoqItem
             {
                 BoqVersionId = version.Id,
                 ItemId = item.Id,
+                ItemCode = item.ItemCode,
+                ItemName = item.Name,
                 LineNo = lineNo++,
-                Description = item.Description ?? item.Name,
-                Quantity = 1,
-                UnitPrice = item.UnitPrice,
-                Amount = item.UnitPrice
+                Description = string.IsNullOrWhiteSpace(request.Description) ? item.Description ?? item.Name : request.Description.Trim(),
+                Quantity = request.Quantity,
+                UnitPrice = request.UnitPrice,
+                Amount = request.Quantity * request.UnitPrice,
+                Unit = item.Unit?.Name,
+                Brand = item.Brand?.Name,
+                ImageUrl = item.ImageUrl,
+                Remarks = request.Remarks,
+                AttachmentPath = request.AttachmentPath,
+                AttachmentName = request.AttachmentName
             });
         }
 
         await _repository.AddItemsAsync(lines);
         return await _repository.GetAsync(boq.Id) ?? boq;
+    }
+
+    public async Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId)
+    {
+        var boq = await _repository.GetAsync(boqId) ?? throw new KeyNotFoundException("BOQ was not found.");
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
+        if (latest == null) throw new InvalidOperationException("This BOQ has no version to revise.");
+
+        var revision = await _repository.AddVersionAsync(new BoqVersion
+        {
+            BoqId = boqId,
+            VersionNo = boq.Versions.Max(v => v.VersionNo) + 1,
+            Remarks = string.IsNullOrWhiteSpace(remarks) ? "Revision from version " + latest.VersionNo : remarks.Trim(),
+            CreatedBy = userId,
+            CreatedAt = DateTime.UtcNow,
+            IsCurrentBaseline = false
+        });
+        var copiedItems = latest.Items.Select(item => new BoqItem
+        {
+            BoqVersionId = revision.Id,
+            ItemId = item.ItemId,
+            ItemCode = item.ItemCode,
+            ItemName = item.ItemName,
+            LineNo = item.LineNo,
+            Description = item.Description,
+            Quantity = item.Quantity,
+            UnitPrice = item.UnitPrice,
+            Amount = item.Amount,
+            Unit = item.Unit,
+            Brand = item.Brand,
+            ImageUrl = item.ImageUrl,
+            Remarks = item.Remarks,
+            AttachmentPath = item.AttachmentPath,
+            AttachmentName = item.AttachmentName
+        }).ToList();
+        await _repository.AddItemsAsync(copiedItems);
+        await _audit.LogAsync(userId, "CreateRevision", "BOQ", boqId, $"Version {revision.VersionNo} from version {latest.VersionNo}");
+        revision.Items = copiedItems;
+        return revision;
+    }
+
+    public async Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId)
+    {
+        var boq = await _repository.GetAsync(boqId);
+        if (boq == null) return null;
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        var selected = boq.Versions.SingleOrDefault(v => v.Id == versionId);
+        if (selected == null) return null;
+        await _repository.SetCurrentBaselineAsync(boqId, versionId);
+        foreach (var version in boq.Versions) version.IsCurrentBaseline = version.Id == versionId;
+        await _audit.LogAsync(userId, "SetBaseline", "BOQ", boqId, $"Current baseline set to version {selected.VersionNo}");
+        return selected;
+    }
+
+    public async Task<BoqItem?> UpdateRevisionItemAsync(long boqId, long versionId, long itemId, UpdateBoqVersionItemRequest request, long userId)
+    {
+        var boq = await _repository.GetAsync(boqId);
+        if (boq == null) return null;
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
+        if (latest == null || latest.Id != versionId || latest.IsCurrentBaseline)
+            throw new InvalidOperationException("Only the latest non-baseline revision can be edited. Create a new revision first.");
+        if (request.Quantity <= 0) throw new InvalidOperationException("Quantity must be greater than zero.");
+        if (request.UnitPrice < 0) throw new InvalidOperationException("Purchase price cannot be negative.");
+        var item = await _repository.GetItemAsync(itemId);
+        if (item == null || item.BoqVersionId != versionId) return null;
+        decimal amount;
+        try { amount = request.Quantity * request.UnitPrice; }
+        catch (OverflowException) { throw new InvalidOperationException("Quantity × purchase price exceeds the supported amount range."); }
+        item.Quantity = request.Quantity;
+        item.UnitPrice = request.UnitPrice;
+        item.Amount = amount;
+        item.Description = request.Description?.Trim();
+        item.Remarks = request.Remarks?.Trim();
+        await _repository.UpdateItemAsync(item);
+        await _audit.LogAsync(userId, "UpdateRevisionLine", "BOQ", boqId, $"Version {latest.VersionNo}, line {itemId}");
+        return item;
     }
 
     private static string? CombineBoqRemarks(BOQImportLineDto line)

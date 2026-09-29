@@ -281,7 +281,10 @@ CREATE TABLE items (
     brand_id      BIGINT REFERENCES brands(id),
     category_id   BIGINT REFERENCES item_categories(id),
     unit_price    NUMERIC(18,2) NOT NULL DEFAULT 0,
+    standard_price NUMERIC(18,2),
     image_url     TEXT,
+    effective_date DATE,
+    source        VARCHAR(500),
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ
@@ -304,6 +307,7 @@ CREATE TABLE boq_versions (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     boq_id      BIGINT NOT NULL REFERENCES boqs(id) ON DELETE CASCADE,
     version_no  INT NOT NULL,
+    is_current_baseline BOOLEAN NOT NULL DEFAULT FALSE,
     remarks     TEXT,
     created_by  BIGINT REFERENCES users(id),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -314,13 +318,22 @@ CREATE TABLE boq_items (
     id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     boq_version_id BIGINT NOT NULL REFERENCES boq_versions(id) ON DELETE CASCADE,
     item_id        BIGINT REFERENCES items(id),
+    item_code      VARCHAR(50),
+    item_name      VARCHAR(250),
     line_no        INT,
     description    TEXT,
     quantity       NUMERIC(18,4) NOT NULL DEFAULT 0,
     unit_price     NUMERIC(18,2) NOT NULL DEFAULT 0,
     amount         NUMERIC(18,2) NOT NULL DEFAULT 0,
-    remarks        VARCHAR(500)
+    unit           VARCHAR(100),
+    brand          VARCHAR(250),
+    image_url      TEXT,
+    remarks        TEXT,
+    attachment_path TEXT,
+    attachment_name TEXT
 );
+CREATE UNIQUE INDEX ux_boq_versions_current_baseline
+    ON boq_versions(boq_id) WHERE is_current_baseline = TRUE;
 
 -- =============================================================================
 -- 07. Planning / Milestone / Task
@@ -332,6 +345,9 @@ CREATE TABLE milestones (
     description  TEXT,
     start_date   DATE,
     due_date     DATE,
+    owner_id     BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    depends_on_milestone_id BIGINT REFERENCES milestones(id) ON DELETE SET NULL,
+    completion_evidence TEXT,
     status       VARCHAR(50) NOT NULL DEFAULT 'NotStarted',
     completion_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -344,6 +360,7 @@ CREATE TABLE tasks (
     depends_on_task_id BIGINT REFERENCES tasks(id),
     title        VARCHAR(250) NOT NULL,
     description  TEXT,
+    completion_evidence TEXT,
     assigned_to  BIGINT REFERENCES users(id),
     start_date   DATE,
     due_date     DATE,

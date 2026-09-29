@@ -22,6 +22,7 @@ public class BoqVersion
     public long Id { get; set; }
     public long BoqId { get; set; }
     public int VersionNo { get; set; }
+    public bool IsCurrentBaseline { get; set; }
     public string? Remarks { get; set; }
     public long? CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -35,12 +36,19 @@ public class BoqItem
     public long Id { get; set; }
     public long BoqVersionId { get; set; }
     public long? ItemId { get; set; }
+    public string? ItemCode { get; set; }
+    public string? ItemName { get; set; }
     public int? LineNo { get; set; }
     public string? Description { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal Amount { get; set; }
+    public string? Unit { get; set; }
+    public string? Brand { get; set; }
+    public string? ImageUrl { get; set; }
     public string? Remarks { get; set; }
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
     public BoqVersion BoqVersion { get; set; } = null!;
     public Item? Item { get; set; }
 }

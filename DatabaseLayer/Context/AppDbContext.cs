@@ -81,6 +81,17 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(x => x.AssignedTo);
 
+        modelBuilder.Entity<Milestone>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.OwnerId)
+            .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<Milestone>()
+            .HasOne<Milestone>()
+            .WithMany()
+            .HasForeignKey(x => x.DependsOnMilestoneId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<ProjectTask>()
             .HasMany(x => x.SubTasks)
             .WithOne(x => x.Task)

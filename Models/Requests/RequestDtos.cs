@@ -209,6 +209,7 @@ public class CreateItemRequest
     public long? BrandId { get; set; }
     public long? CategoryId { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal? StandardPrice { get; set; }
     public string? ImageUrl { get; set; }
     public DateOnly? EffectiveDate { get; set; }
     public string? Source { get; set; }
@@ -239,9 +240,36 @@ public class BOQImportLineDto
     public string? Unit { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal? TotalAmount { get; set; }
+    public List<string> ImportErrors { get; set; } = new();
     public string? Brand { get; set; }
     public string? Remarks { get; set; }
     public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
+}
+
+public class BoqFromMasterLineRequest
+{
+    public long ItemId { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public string? Description { get; set; }
+    public string? Remarks { get; set; }
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
+}
+
+public class CreateBoqRevisionRequest
+{
+    public string? Remarks { get; set; }
+}
+
+public class UpdateBoqVersionItemRequest
+{
+    public decimal Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public string? Description { get; set; }
+    public string? Remarks { get; set; }
 }
 
 public class CreateMilestoneRequest
@@ -253,6 +281,8 @@ public class CreateMilestoneRequest
     public DateOnly? DueDate { get; set; }
     public long? OwnerId { get; set; }
     public long? DependsOnMilestoneId { get; set; }
+    public string? Status { get; set; }
+    public string? CompletionEvidence { get; set; }
 }
 
 public class CreateTaskRequest
@@ -263,6 +293,8 @@ public class CreateTaskRequest
     public long? DependsOnSubTaskId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? Status { get; set; }
+    public string? CompletionEvidence { get; set; }
     public long? AssignedTo { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }
@@ -289,7 +321,9 @@ public class CreateTaskUpdateRequest
     public decimal? CompletionPercent { get; set; }
     public string? Status { get; set; }
     public string? Remarks { get; set; }
+    public string? CompletionEvidence { get; set; }
     public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
 }
 
 public class SetTaskDependencyRequest
@@ -416,4 +450,5 @@ public class CloneTemplateRequest
 {
     public long TemplateId { get; set; }
     public long ProjectId { get; set; }
+    public DateOnly? AnchorDate { get; set; }
 }

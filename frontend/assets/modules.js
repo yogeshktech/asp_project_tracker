@@ -736,6 +736,19 @@
           </div>
         </div>
 
+        <section class="card" id="exceptionAssistant" style="margin:18px 0;border:1px solid #fca5a5;background:linear-gradient(135deg,#fff7ed,#fff);">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title"><i class="fa-solid fa-triangle-exclamation" style="color:#dc2626;"></i> Exception Assistant</h3>
+              <div class="card-subtitle">Overdue, at-risk, critical aur 7 din se update na hue tasks par admin focus</div>
+            </div>
+            <span class="badge red" id="exceptionCount">Loading</span>
+          </div>
+          <div id="exceptionList" style="display:grid;gap:8px;padding:0 16px 16px;">
+            <div style="padding:12px;color:var(--text-muted);">Loading exceptions…</div>
+          </div>
+        </section>
+
         <!-- Visual Analytics: Project Status Donut & Resort Velocity Bar Charts -->
         <div class="charts-grid">
           <!-- Chart 1: Projects by Status Donut -->
@@ -908,6 +921,32 @@
       const totalBudgetNum = d.totalApprovedBudget || 1485000000;
       const totalSpentNum = d.totalCommitted || (totalBudgetNum * 0.719);
 
+      const exceptionRows = Array.isArray(d.exceptions) ? d.exceptions : [];
+      const exceptionList = $('#exceptionList');
+      const exceptionCount = $('#exceptionCount');
+      if (exceptionCount) exceptionCount.textContent = `${exceptionRows.length} action${exceptionRows.length === 1 ? '' : 's'}`;
+      if (exceptionList) {
+        const labels = { Overdue: 'Overdue', AtRisk: 'At risk', Inactive: 'No progress · 7 days', Critical: 'Critical' };
+        const colors = { Overdue: 'red', AtRisk: 'amber', Inactive: 'gray', Critical: 'red' };
+        exceptionList.innerHTML = exceptionRows.length ? exceptionRows.map(item => {
+          const isIssue = item.itemKind === 'Issue' || item.ItemKind === 'Issue';
+          const projectId = Number(item.projectId ?? item.ProjectId);
+          const type = item.type || item.Type || 'Exception';
+          const title = item.title || item.Title || 'Untitled item';
+          const projectName = item.projectName || item.ProjectName || 'Project';
+          const itemKind = item.itemKind || item.ItemKind || 'Task';
+          const message = item.message || item.Message || '';
+          const target = isIssue ? 'issues.html' : 'planning.html';
+          return `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border-color);border-radius:8px;background:#fff;">
+            <div style="min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="badge ${colors[type] || 'amber'}">${esc(labels[type] || type)}</span><strong>${esc(title)}</strong><small>${esc(itemKind)}</small></div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${esc(projectName)} · ${esc(message)}</div>
+            </div>
+            <a class="btn sm" href="${target}" onclick="localStorage.setItem('WISETRACK_SELECTED_PROJECT','${Number.isFinite(projectId) ? projectId : 0}')">Open</a>
+          </div>`;
+        }).join('') : '<div style="padding:12px;border:1px solid #bbf7d0;border-radius:8px;color:#166534;background:#f0fdf4;">Koi active task exception nahi hai.</div>';
+      }
+
       // Update KPI Cards
       $('#dProjects').textContent = totalPackagesCount + ' Projects';
       $('#dProjectsSub').textContent = `Across ${resorts.length} Master Resorts`;
@@ -1038,6 +1077,7 @@
         </div>`;
       }).join('');
 
+      if (kind === 'daily') await loadDailyTaskReport(pid);
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     } catch (e) {
       $('#dashRecent').innerHTML = errRow(11, e);
@@ -1793,12 +1833,12 @@
   // ---------- ITEMS / BRANDS / UNITS / CATEGORIES ----------
   async function pageItems() {
     const el = root();
-    el.innerHTML = pageHead('Item / Brand / Unit / Category Master', 'CRUD /api/items*',
+    el.innerHTML = pageHead('Reusable Item / Price Master', 'Shared item database available to reuse across projects',
       `<button class="btn" onclick="WTPages.openBrandModal()">Brand</button>
        <button class="btn" onclick="WTPages.openUnitModal()">Unit</button>
        <button class="btn" onclick="WTPages.openCategoryModal()">Category</button>
        <button class="btn primary" onclick="WTPages.openItemModal()"><i class="fa-solid fa-plus"></i> Item</button>`)
-      + tableWrap(['ID', 'Code', 'Name', 'Price', 'Brand', 'Unit', 'Actions'], 'itemsBody')
+      + tableWrap(['ID', 'Code', 'Name', 'Purchase Price', 'Brand', 'Unit', 'Standard Price', 'Effective Date', 'Source', 'Image', 'Actions'], 'itemsBody')
       + `<div class="grid g3" style="margin-top:16px">
           ${tableWrap(['ID', 'Brand', 'Actions'], 'brandsBody')}
           ${tableWrap(['ID', 'Code', 'Name', 'Actions'], 'unitsBody')}
@@ -1817,11 +1857,14 @@
           <td>${it.id}</td><td><code>${esc(it.itemCode || it.code || '')}</code></td>
           <td>${esc(it.name)}</td><td>₹${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-IN')}</td>
           <td>${esc(it.brand?.name || it.brandName || '—')}</td><td>${esc(it.unit?.name || it.unitName || it.unit?.code || '—')}</td>
+          <td>${it.standardPrice == null ? '—' : `₹${Number(it.standardPrice).toLocaleString('en-IN')}`}</td>
+          <td>${esc(it.effectiveDate || '—')}</td><td>${esc(it.source || '—')}</td>
+          <td>${it.imageUrl ? `<a href="${esc(it.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
           <td class="table-actions">
             <button class="btn sm" onclick="WTPages.openItemModal(${it.id})"><i class="fa-solid fa-pen"></i></button>
             <button class="btn sm danger" onclick="WTPages.deleteItem(${it.id})"><i class="fa-solid fa-trash"></i></button>
           </td>
-        </tr>`).join('') : emptyRow(7, 'No items');
+        </tr>`).join('') : emptyRow(11, 'No items');
       $('#brandsBody').innerHTML = brands.map(b => `<tr><td>${b.id}</td><td>${esc(b.name)}</td><td><button class="btn sm danger" onclick="WTPages.deleteBrand(${b.id})"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') || emptyRow(3, '—');
       $('#unitsBody').innerHTML = units.map(u => `<tr><td>${u.id}</td><td>${esc(u.code)}</td><td>${esc(u.name)}</td><td><button class="btn sm danger" onclick="WTPages.deleteUnit(${u.id})"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') || emptyRow(4, '—');
       $('#catsBody').innerHTML = cats.map(c => `<tr><td>${c.id}</td><td>${esc(c.name)}</td><td><button class="btn sm danger" onclick="WTPages.deleteCategory(${c.id})"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') || emptyRow(3, '—');
@@ -1835,14 +1878,17 @@
     openModal(id ? 'Edit Item' : 'Create Item', `
       <form onsubmit="WTPages.saveItem(event, ${id || 'null'})">
         <div class="form-grid">
-          ${id ? `<div class="field"><label>Code (auto)</label><input id="itCode" value="${esc(it.itemCode || '')}" readonly></div>` : `<p class="card-subtitle" style="grid-column:1/-1;margin:0">Item code auto-assigns on save (ITM-001).</p>`}
+          <div class="field"><label>Item Code</label><input id="itCode" value="${esc(it.itemCode || '')}" placeholder="Auto-generated if blank"></div>
           <div class="field"><label>Name *</label><input id="itName" value="${esc(it.name || '')}" required></div>
-          <div class="field"><label>Unit Price *</label><input id="itPrice" type="number" step="0.01" value="${it.unitPrice || 0}" required></div>
+          <div class="field"><label>Purchase Price *</label><input id="itPrice" type="number" min="0" step="0.01" value="${it.unitPrice || 0}" required></div>
+          <div class="field"><label>Standard Price</label><input id="itStandardPrice" type="number" min="0" step="0.01" value="${it.standardPrice ?? ''}"></div>
           <div class="field"><label>Unit</label><select id="itUnit"><option value="">—</option>${units.map(u => `<option value="${u.id}" ${it.unitId == u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Brand</label><select id="itBrand"><option value="">—</option>${brands.map(b => `<option value="${b.id}" ${it.brandId == b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Category</label><select id="itCat"><option value="">—</option>${cats.map(c => `<option value="${c.id}" ${it.categoryId == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
           <div class="field full"><label>Description</label><textarea id="itDesc">${esc(it.description || '')}</textarea></div>
           <div class="field full"><label>Image URL</label><input id="itImg" value="${esc(it.imageUrl || '')}" placeholder="/uploads/... or https://..."></div>
+          <div class="field"><label>Effective Date</label><input id="itEffectiveDate" type="date" value="${esc(it.effectiveDate || '')}"></div>
+          <div class="field"><label>Source</label><input id="itSource" value="${esc(it.source || '')}" placeholder="Vendor, quotation, catalog..."></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -1854,11 +1900,14 @@
       itemCode: $('#itCode')?.value.trim() || '',
       name: $('#itName').value.trim(),
       unitPrice: Number($('#itPrice').value),
+      standardPrice: $('#itStandardPrice').value === '' ? null : Number($('#itStandardPrice').value),
       unitId: $('#itUnit').value ? Number($('#itUnit').value) : null,
       brandId: $('#itBrand').value ? Number($('#itBrand').value) : null,
       categoryId: $('#itCat').value ? Number($('#itCat').value) : null,
       description: $('#itDesc')?.value.trim() || null,
-      imageUrl: $('#itImg')?.value.trim() || null
+      imageUrl: $('#itImg')?.value.trim() || null,
+      effectiveDate: $('#itEffectiveDate').value || null,
+      source: $('#itSource').value.trim() || null
     };
     try {
       if (id) await WisetrackAPI.updateItem(id, payload);
@@ -2208,9 +2257,9 @@
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq', picker +
       ` <button class="btn" onclick="WTPages.boqFromMaster()">From Master Items</button>
         <button class="btn primary" onclick="WTPages.boqImport()">Import vendor file (CSV)</button>`)
-      + tableWrap(['ID', 'Title', 'Status', 'Actions'], 'boqBody');
+      + tableWrap(['ID', 'Title', 'Status', 'Latest / Current Baseline', 'Actions'], 'boqBody');
     if (!pid) {
-      $('#boqBody').innerHTML = emptyRow(4, 'No project available.');
+      $('#boqBody').innerHTML = emptyRow(5, 'No project available.');
       return;
     }
     try {
@@ -2219,19 +2268,102 @@
       const list = batches.flat();
       $('#boqBody').innerHTML = list.length ? list.map(b => `
         <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || '—')}</td>
+        <td>${(() => { const vs = b.versions || b.Versions || []; const latest = Math.max(0, ...vs.map(v => Number(v.versionNo || v.VersionNo || 0))); const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `v${latest || '—'} / Baseline v${base?.versionNo || base?.VersionNo || '—'}`; })()}</td>
         <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button></td></tr>`
-      ).join('') : emptyRow(4, 'No BOQ — import or create from master');
-    } catch (e) { $('#boqBody').innerHTML = errRow(4, e); }
+      ).join('') : emptyRow(5, 'No BOQ — import or create from master');
+    } catch (e) { $('#boqBody').innerHTML = errRow(5, e); }
   }
 
   async function boqFromMaster() {
     const pid = await selectedProjectId();
-    const items = await WisetrackAPI.getItems();
-    if (!items.length) { showToast('Create items first', 'danger'); return; }
-    const ids = items.slice(0, 20).map(i => i.id);
+    const items = (await WisetrackAPI.getItems()).filter(i => i.isActive !== false);
+    if (!items.length) { showToast('Create reusable items in Item Master first', 'danger'); return; }
+    openModal('Reuse Item Master items', `
+      <form onsubmit="WTPages.saveBoqFromMaster(event)">
+        <input type="hidden" id="boqMasterProject" value="${pid}">
+        <div class="field"><label>Search reusable items</label><input id="boqMasterSearch" oninput="WTPages.filterBoqMasterItems()" placeholder="Code, item, brand, unit"></div>
+        <div id="boqMasterItems" style="max-height:48vh;overflow:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px">
+          ${items.map(i => `<div class="boq-master-option" data-search="${esc([i.itemCode, i.name, i.description, i.brand?.name, i.unit?.name].filter(Boolean).join(' ').toLowerCase())}" style="padding:10px;border-bottom:1px solid var(--border-light)">
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+              <input type="checkbox" class="boq-master-checkbox" value="${i.id}" onchange="WTPages.toggleBoqMasterLine(this)">
+              <span style="flex:1"><strong>${esc(i.name)}</strong><small style="display:block;color:var(--text-muted)">${esc(i.itemCode)} · ${esc(i.unit?.name || 'No unit')} · ${esc(i.brand?.name || 'No brand')}</small></span>
+              ${i.imageUrl ? `<a href="${esc(i.imageUrl)}" target="_blank" rel="noopener">Image</a>` : ''}
+            </div>
+            <div class="form-grid boq-master-fields" style="display:none;grid-template-columns:repeat(auto-fit,minmax(135px,1fr))">
+              <div class="field"><label>Quantity (${esc(i.unit?.name || 'Unit')})</label><input class="boq-master-qty" type="number" min="0.0001" step="0.0001" value="1" oninput="WTPages.calcBoqMasterTotal(this)"></div>
+              <div class="field"><label>Purchase Price</label><input class="boq-master-price" type="number" min="0" step="0.01" value="${Number(i.unitPrice ?? 0)}" oninput="WTPages.calcBoqMasterTotal(this)"></div>
+              <div class="field"><label>Total</label><output class="boq-master-total">₹${Number(i.unitPrice ?? 0).toLocaleString('en-IN')}</output></div>
+              <div class="field"><label>Description</label><input class="boq-master-description" value="${esc(i.description || i.name)}"></div>
+              <div class="field"><label>Remark</label><input class="boq-master-remark" placeholder="Project-specific remark"></div>
+              <div class="field"><label>Attachment (any file)</label><input class="boq-master-attachment" type="file" onchange="this.dataset.uploadedPath='';this.dataset.uploadedName=''"></div>
+            </div>
+          </div>`).join('')}
+        </div>
+        <p class="card-subtitle">Choose each item, then set project-specific quantity, purchase price, description, remark, and any file attachment. Total is calculated automatically. Item Master records remain reusable.</p>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Add selected items</button></div>
+      </form>`);
+  }
+
+  function filterBoqMasterItems() {
+    const query = ($('#boqMasterSearch')?.value || '').trim().toLowerCase();
+    document.querySelectorAll('.boq-master-option').forEach(row => {
+      row.style.display = (row.dataset.search || '').includes(query) ? 'block' : 'none';
+    });
+  }
+
+  function toggleBoqMasterLine(checkbox) {
+    const fields = checkbox.closest('.boq-master-option')?.querySelector('.boq-master-fields');
+    if (fields) fields.style.display = checkbox.checked ? 'grid' : 'none';
+  }
+
+  function calcBoqMasterTotal(input) {
+    const row = input.closest('.boq-master-option');
+    if (!row) return;
+    const quantity = Number(row.querySelector('.boq-master-qty')?.value || 0);
+    const price = Number(row.querySelector('.boq-master-price')?.value || 0);
+    row.querySelector('.boq-master-total').textContent = `₹${(quantity * price).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  }
+
+  async function saveBoqFromMaster(e) {
+    e.preventDefault();
+    const pid = Number($('#boqMasterProject').value);
+    const selected = [...document.querySelectorAll('.boq-master-checkbox:checked')];
+    if (!selected.length) { showToast('Select at least one item to reuse.', 'danger'); return; }
     try {
-      await WisetrackAPI.createBoqFromMaster(pid, ids);
-      showToast('BOQ created from master'); await pageBoq();
+      const lines = [];
+      for (const checkbox of selected) {
+        const row = checkbox.closest('.boq-master-option');
+        const fileInput = row.querySelector('.boq-master-attachment');
+        const file = fileInput.files[0];
+        if (file && !fileInput.dataset.uploadedPath) {
+          const uploadedFile = await WisetrackAPI.uploadBoqAttachment(pid, file);
+          fileInput.dataset.uploadedPath = uploadedFile.path;
+          fileInput.dataset.uploadedName = uploadedFile.fileName;
+        }
+        lines.push({
+          itemId: Number(checkbox.value),
+          quantity: Number(row.querySelector('.boq-master-qty').value),
+          unitPrice: Number(row.querySelector('.boq-master-price').value),
+          description: row.querySelector('.boq-master-description').value.trim(),
+          remarks: row.querySelector('.boq-master-remark').value.trim() || null,
+          attachmentPath: fileInput.dataset.uploadedPath || null,
+          attachmentName: fileInput.dataset.uploadedName || null
+        });
+      }
+      await WisetrackAPI.createBoqFromMaster(pid, lines);
+      closeModal(); showToast(`${lines.length} item(s) added to project BOQ`); await pageBoq();
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function downloadBoqAttachment(encodedPath, encodedName) {
+    try {
+      const blob = await WisetrackAPI.downloadBoqAttachment(decodeURIComponent(encodedPath));
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = decodeURIComponent(encodedName) || 'boq-attachment';
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -2241,7 +2373,7 @@
       <form onsubmit="WTPages.saveBoqImport(event)">
         <input type="hidden" id="boqProj" value="${pid}">
         <div class="field"><label>Title *</label><input id="boqTitle" value="Imported BOQ" required></div>
-        <div class="field"><label>Excel / CSV / TSV from 3rd party (any column names)</label>
+        <div class="field"><label>Excel / CSV / TSV from 3rd party (flexible column names)</label>
           <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv">
         </div>
         <div class="field"><label>Or paste rows</label>
@@ -2261,7 +2393,7 @@
       const file = $('#boqFile')?.files?.[0];
       const commit = commitFlag !== false;
       let result;
-      if (file && /\.xlsx$/i.test(file.name)) {
+      if (file) {
         const form = new FormData();
         form.append('projectId', $('#boqProj').value);
         form.append('title', $('#boqTitle').value.trim());
@@ -2270,7 +2402,6 @@
         result = await WisetrackAPI.importBoqFile(form);
       } else {
         let text = ($('#boqJson').value || '').trim();
-        if (file) text = await file.text();
         let lines;
         if (text.startsWith('[')) {
           lines = JSON.parse(text);
@@ -2295,8 +2426,9 @@
         });
       }
       if (!result.isValid && (result.errors || []).length) {
-        const csv = 'Row,Field,Message\n' + result.errors.map(er =>
-          `${er.row || er.Row},"${er.field || er.Field}","${er.message || er.Message}"`).join('\n');
+        const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+        const csv = '\uFEFFRow,Field,Message\n' + result.errors.map(er =>
+          [er.row ?? er.Row, er.field ?? er.Field, er.message ?? er.Message].map(csvCell).join(',')).join('\n');
         if (typeof wtDownloadText === 'function') wtDownloadText('boq-validation-errors.csv', csv);
         showToast(`${result.errorCount || result.errors.length} validation errors — report downloaded`, 'danger');
         return;
@@ -2306,7 +2438,14 @@
         return;
       }
       closeModal(); showToast('Imported'); await pageBoq();
-    } catch (err) { showToast(err.message, 'danger'); }
+    } catch (err) {
+      if ($('#boqFile')?.files?.[0]) {
+        const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+        const report = '\uFEFFRow,Field,Message\n' + [0, 'Columns', err.message || 'File could not be read.'].map(csvCell).join(',');
+        if (typeof wtDownloadText === 'function') wtDownloadText('boq-validation-errors.csv', report);
+        showToast(`${err.message || 'File validation failed.'} Error report downloaded; correct the source file and import again.`, 'danger');
+      } else showToast(err.message, 'danger');
+    }
   }
 
   async function viewBoq(id) {
@@ -2314,28 +2453,85 @@
       const b = await WisetrackAPI.getBoq(id);
       const versions = b.versions || b.Versions || [];
       const latest = versions.slice().sort((a, c) => (c.versionNo || c.VersionNo || 0) - (a.versionNo || a.VersionNo || 0))[0];
+      const currentBaseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline);
       const items = latest?.items || latest?.Items || b.items || b.Items || [];
+      const latestVersionId = latest?.id || latest?.Id;
+      const latestIsBaseline = latest?.isCurrentBaseline || latest?.IsCurrentBaseline;
       openModal(`BOQ — ${esc(b.title || b.name || '#' + id)}`, `
         <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <span class="badge blue">${esc(b.status || 'Draft')}</span>
-          <span class="badge gray">Version ${latest?.versionNo || latest?.VersionNo || versions.length || 1}</span>
+          <span class="badge gray">Latest: Version ${latest?.versionNo || latest?.VersionNo || versions.length || 1}</span>
+          <span class="badge green">Current Baseline: Version ${currentBaseline?.versionNo || currentBaseline?.VersionNo || '—'}</span>
           ${latest?.remarks || latest?.Remarks ? `<small style="color:var(--text-muted)">${esc(latest.remarks || latest.Remarks)}</small>` : ''}
         </div>
+        <div class="card" style="padding:12px;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
+            <strong>Version history</strong>
+            <button class="btn primary sm" onclick="WTPages.createBoqRevision(${id})">Create revision from latest</button>
+          </div>
+          <div class="table-wrap"><table class="table"><thead><tr><th>Version</th><th>Created</th><th>Revision Notes</th><th>Baseline</th><th>Action</th></tr></thead><tbody>
+            ${versions.slice().sort((a, c) => (a.versionNo || a.VersionNo || 0) - (c.versionNo || c.VersionNo || 0)).map(v => {
+              const versionNo = v.versionNo || v.VersionNo;
+              const isBaseline = v.isCurrentBaseline || v.IsCurrentBaseline;
+              return `<tr><td>Version ${versionNo}</td><td>${esc((v.createdAt || v.CreatedAt || '').toString().slice(0, 10) || '—')}</td><td>${esc(v.remarks || v.Remarks || '—')}</td>
+                <td>${isBaseline ? '<span class="badge green">Current Baseline</span>' : '—'}</td>
+                <td>${isBaseline ? '—' : `<button class="btn sm" onclick="WTPages.setBoqBaseline(${id},${v.id || v.Id})">Set as baseline</button>`}</td></tr>`;
+            }).join('') || '<tr><td colspan="5">No versions found.</td></tr>'}
+          </tbody></table></div>
+        </div>
+        <p class="card-subtitle">Showing line items from latest version ${latest?.versionNo || latest?.VersionNo || 1}. Revisions are retained. ${latestIsBaseline ? 'Create a revision to make changes; baseline versions are locked.' : 'Edit this draft revision, then set it as the baseline when approved.'}</p>
         <div class="table-wrap"><table class="table">
-          <thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th><th>Remarks</th></tr></thead>
+          <thead><tr><th>#</th><th>Item</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Action</th></tr></thead>
           <tbody>
             ${items.length ? items.map(it => `
               <tr>
                 <td>${it.lineNo ?? it.LineNo ?? it.id ?? '—'}</td>
-                <td>${esc(it.description || it.Description || it.itemName || '—')}</td>
-                <td>${it.quantity ?? it.Quantity ?? 0}</td>
-                <td>₹${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-IN')}</td>
+                <td>${esc(it.itemName || it.ItemName || it.itemCode || it.ItemCode || it.item?.name || it.Item?.name || '—')}</td>
+                <td>${esc(it.unit || it.Unit || it.item?.unit?.name || it.Item?.unit?.name || '—')}</td>
+                <td>${latestIsBaseline ? `₹${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-IN')}` : `<input id="boqPrice-${it.id || it.Id}" type="number" min="0" step="0.01" value="${it.unitPrice ?? it.UnitPrice ?? 0}" style="width:110px">`}</td>
+                <td>${latestIsBaseline ? (it.quantity ?? it.Quantity ?? 0) : `<input id="boqQty-${it.id || it.Id}" type="number" min="0.0001" step="0.0001" value="${it.quantity ?? it.Quantity ?? 0}" style="width:92px">`}</td>
+                <td>${latestIsBaseline ? esc(it.description || it.Description || it.itemName || '—') : `<input id="boqDesc-${it.id || it.Id}" value="${esc(it.description || it.Description || '')}" style="min-width:150px">`}</td>
+                <td>${(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl) ? `<a href="${esc(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
                 <td><strong>₹${Number(it.amount ?? it.Amount ?? 0).toLocaleString('en-IN')}</strong></td>
-                <td>${esc(it.remarks || it.Remarks || '—')}</td>
-              </tr>`).join('') : `<tr><td colspan="6">No line items</td></tr>`}
+                <td>${esc(it.brand || it.Brand || it.item?.brand?.name || it.Item?.brand?.name || '—')}</td>
+                <td>${latestIsBaseline ? esc(it.remarks || it.Remarks || '—') : `<input id="boqRemark-${it.id || it.Id}" value="${esc(it.remarks || it.Remarks || '')}" style="min-width:120px">`}</td>
+                <td>${(it.attachmentPath || it.AttachmentPath) ? `<button class="btn sm" onclick="WTPages.downloadBoqAttachment('${encodeURIComponent(it.attachmentPath || it.AttachmentPath)}','${encodeURIComponent(it.attachmentName || it.AttachmentName || 'boq-attachment')}')">${esc(it.attachmentName || it.AttachmentName || 'Download')}</button>` : '—'}</td>
+                <td>${latestIsBaseline ? '—' : `<button class="btn sm primary" onclick="WTPages.saveBoqRevisionItem(${id},${latestVersionId},${it.id || it.Id})">Save</button>`}</td>
+              </tr>`).join('') : `<tr><td colspan="12">No line items</td></tr>`}
           </tbody>
         </table></div>
       `);
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function createBoqRevision(id) {
+    const remarks = prompt('Revision notes (optional):', '');
+    if (remarks === null) return;
+    try {
+      const version = await WisetrackAPI.createBoqRevision(id, remarks.trim() || null);
+      showToast(`Version ${version.versionNo || version.VersionNo} created. Previous versions are retained.`);
+      await viewBoq(id);
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function saveBoqRevisionItem(boqId, versionId, itemId) {
+    try {
+      await WisetrackAPI.updateBoqRevisionItem(boqId, versionId, itemId, {
+        quantity: Number($(`#boqQty-${itemId}`).value),
+        unitPrice: Number($(`#boqPrice-${itemId}`).value),
+        description: $(`#boqDesc-${itemId}`).value.trim(),
+        remarks: $(`#boqRemark-${itemId}`).value.trim() || null
+      });
+      showToast('Revision line saved. Earlier versions remain unchanged.');
+      await viewBoq(boqId);
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function setBoqBaseline(id, versionId) {
+    try {
+      await WisetrackAPI.setBoqBaseline(id, versionId);
+      showToast('Current project baseline updated.');
+      await viewBoq(id);
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -2357,19 +2553,22 @@
             <button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>`
         : kind === 'daily'
         ? ` <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
+            <input id="dailyReportDate" type="date" value="${new Date().toLocaleDateString('en-CA')}" style="max-width:150px">
+            <button class="btn" onclick="WTPages.loadDailyTaskReport(${pid})">Load report</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
         : ` <button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub / Child</button>
             <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>
             <button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
+      + (kind === 'daily' ? `<div class="card" style="margin-bottom:16px"><h3 class="card-title">Daily progress report</h3><div id="dailyReportContent">Loading report...</div></div>` : '')
       + tableWrap(kind === 'milestones'
-        ? ['ID', 'Title & Package', 'Status', 'Progress', 'Actions']
+        ? ['ID', 'Milestone & Project', 'Schedule', 'Status', 'Progress', 'Actions']
         : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
     
     const nestCols = 8;
     if (!pid) {
-      $('#tasksBody').innerHTML = emptyRow(kind === 'milestones' ? 5 : nestCols, 'No project available. Create / open a project first.');
+      $('#tasksBody').innerHTML = emptyRow(kind === 'milestones' ? 6 : nestCols, 'No project available. Create / open a project first.');
       $('#excList').innerHTML = '<p style="color:var(--text-muted);font-size:12.5px;">Select a project to view exceptions.</p>';
       return;
     }
@@ -2387,22 +2586,35 @@
           batches.flatMap((rows, i) => (rows || []).map(m => ({ ...m, _projectId: scopeIds[i] }))),
           pid
         );
+        const users = await WisetrackAPI.getUsers().catch(() => []);
+        const milestoneFilesById = new Map(await Promise.all(ms.map(async milestone => [
+          Number(milestone.id), await WisetrackAPI.getMilestoneFiles(milestone.id).catch(() => [])
+        ])));
+        const milestoneOwner = (id) => {
+          const user = (users || []).find(u => Number(u.id) === Number(id));
+          return user ? (user.fullName || user.name || user.email) : 'Unassigned';
+        };
         $('#tasksBody').innerHTML = ms.length ? ms.map(m => {
           const pct = progressOf(m);
+          const dependency = ms.find(x => Number(x.id) === Number(m.dependsOnMilestoneId || m.DependsOnMilestoneId));
           return `
           <tr>
             <td>${m.id}</td>
-            <td><strong>${esc(m.name || m.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(nameOf(m._projectId || pid))}</small></td>
+            <td><strong>${esc(m.name || m.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(nameOf(m._projectId || pid))} · Owner: ${esc(milestoneOwner(m.ownerId || m.OwnerId))}</small><small style="display:block;color:var(--text-muted)">${esc(m.description || '')}</small>${dependency ? `<small style="display:block;color:var(--text-muted)">Depends on: ${esc(dependency.name)}</small>` : ''}${(m.completionEvidence || m.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted)">Evidence: ${esc(m.completionEvidence || m.CompletionEvidence)}</small>` : ''}${(milestoneFilesById.get(Number(m.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}</td>
+            <td>${esc(m.startDate || '—')} → ${esc(m.dueDate || '—')}</td>
             <td>${esc(m.status || '—')}</td>
-            <td>${pct}%</td><td>—</td>
+          <td>${pct}%</td><td class="table-actions"><button class="btn sm" onclick="WTPages.openMilestoneModal(${m.id})"><i class="fa-solid fa-pen"></i> Edit</button></td>
           </tr>`;
-        }).join('') : emptyRow(5, `No milestones for ${selectedLabel}. Other projects are hidden.`);
+        }).join('') : emptyRow(6, `No milestones for ${selectedLabel}. Other projects are hidden.`);
       } else {
         const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => [])));
         const tasks = filterRowsForProject(
           batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] }))),
           pid
         );
+        const taskFilesById = new Map(await Promise.all(tasks.map(async task => [
+          Number(task.id), await WisetrackAPI.getTaskFiles(task.id).catch(() => [])
+        ])));
         if (typeof wtApplyTaskDisplayCodes === 'function') wtApplyTaskDisplayCodes(tasks);
         const users = await WisetrackAPI.getUsers().catch(() => []);
         const userName = (id) => {
@@ -2434,7 +2646,8 @@
           const due = s.dueDate || s.DueDate;
           const dueLabel = due ? String(due).slice(0, 10) : 'No due date';
           return `<strong>${esc(s.title || s.name)}</strong>
-            <small style="display:block;color:var(--text-muted)">Owner: ${esc(userName(s.assignedTo || s.AssignedTo))} · Due: ${esc(dueLabel)}</small>`;
+            <small style="display:block;color:var(--text-muted)">Owner: ${esc(userName(s.assignedTo || s.AssignedTo))} · Due: ${esc(dueLabel)}</small>
+            ${(s.remarks || s.Remarks) ? `<small style="display:block;color:var(--text-muted)">Latest remark: ${esc(s.remarks || s.Remarks)}</small>` : ''}`;
         };
         const progressCell = (row, pct) => `
           <td>
@@ -2471,6 +2684,10 @@
                 <strong>${esc(t.title || t.name)}</strong>
                 <small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small>
                 <small style="display:block;color:var(--text-muted);">Owner: ${esc(owner)}${ownerLabel ? ' · ' + esc(ownerLabel) : ''}</small>
+                <small style="display:block;color:var(--text-muted);">${esc(t.startDate || t.StartDate || 'No start date')} → ${esc(t.dueDate || t.DueDate || 'No due date')}</small>
+                ${(t.remarks || t.Remarks) ? `<small style="display:block;color:var(--text-muted);">Latest remark: ${esc(t.remarks || t.Remarks)}</small>` : ''}
+                ${(t.completionEvidence || t.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted);">Evidence: ${esc(t.completionEvidence || t.CompletionEvidence)}</small>` : ''}
+                ${(taskFilesById.get(Number(t.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}
                 ${wtDepLineHtml(t)}
               </td>
               ${nestCells(0, dash)}
@@ -2478,6 +2695,8 @@
               ${progressCell(t, pct)}
               <td class="table-actions">
                 ${wtUpdateBtnHtml(t.id, null, t)}
+                ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>` : ''}
+                ${kind === 'planning' && (t.canEdit || t.CanEdit) ? `<button class="btn sm" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i> Edit</button>` : ''}
                 ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-plus"></i> Sub-Task</button>` : ''}
                 ${kind === 'planning' ? wtDepBtnHtml('task', t.id, t) : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
@@ -2496,6 +2715,7 @@
                 ${progressCell(s, spct)}
                 <td class="table-actions">
                   ${wtUpdateBtnHtml(t.id, s.id, s)}
+                  <button class="btn sm" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>
                   ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i> ${addLabel}</button>` : ''}
                   ${kind === 'planning' ? wtDepBtnHtml('sub', s.id, s) : ''}
                   ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
@@ -2525,22 +2745,56 @@
       
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     } catch (e) {
-      $('#tasksBody').innerHTML = errRow(kind === 'milestones' ? 5 : 8, e);
+      $('#tasksBody').innerHTML = errRow(kind === 'milestones' ? 6 : 8, e);
       $('#excList').innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`;
       showToast(e.message, 'danger');
     }
   }
 
-  async function openMilestoneModal() {
+  async function loadDailyTaskReport(projectId) {
+    const target = $('#dailyReportContent');
+    if (!target) return;
+    const date = $('#dailyReportDate')?.value || '';
+    target.innerHTML = 'Loading report...';
+    try {
+      const report = await WisetrackAPI.getDailyTaskReport(projectId, date);
+      const updates = report.taskUpdates || report.TaskUpdates || [];
+      target.innerHTML = `<div style="margin-bottom:10px"><strong>Report date:</strong> ${esc(report.reportDate || report.ReportDate || date)} &nbsp; <strong>Current overall completion:</strong> ${Number(report.overallCompletionPercent ?? report.OverallCompletionPercent ?? 0).toFixed(1)}%</div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Task / Sub-task</th><th>Status</th><th>Completion</th><th>Remarks</th></tr></thead><tbody>
+          ${updates.length ? updates.map(u => `<tr><td>${esc(u.title || u.Title || '')}${(u.subTaskTitle || u.SubTaskTitle) ? `<small style="display:block;color:var(--text-muted)">${esc(u.subTaskTitle || u.SubTaskTitle)}</small>` : ''}</td><td>${esc(u.status || u.Status || '—')}</td><td>${Number(u.completionPercent ?? u.CompletionPercent ?? 0)}%</td><td>${esc(u.remarks || u.Remarks || '—')}</td></tr>`).join('') : '<tr><td colspan="4">No progress updates recorded for this date.</td></tr>'}
+        </tbody></table></div>`;
+    } catch (e) { target.innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`; }
+  }
+
+  async function openMilestoneModal(milestoneId = null) {
     const pid = await selectedProjectId();
-    openModal('Create Milestone', `
+    let milestone = null;
+    let milestones = [];
+    let users = [];
+    try { milestones = await WisetrackAPI.getMilestones(pid); }
+    catch (err) { showToast(err.message, 'danger'); return; }
+    try { users = await WisetrackAPI.getUsers(); } catch { users = []; }
+    if (milestoneId) {
+      milestone = milestones.find(m => Number(m.id) === Number(milestoneId));
+      if (!milestone) { showToast('Milestone not found', 'danger'); return; }
+    }
+    const ownerOptions = `<option value="">Unassigned</option>` + (users || []).map(u => `<option value="${u.id}" ${Number(u.id) === Number(milestone?.ownerId || milestone?.OwnerId) ? 'selected' : ''}>${esc(u.fullName || u.name || u.email)}</option>`).join('');
+    const dependencyOptions = `<option value="">None</option>` + milestones.filter(m => Number(m.id) !== Number(milestoneId)).map(m => `<option value="${m.id}" ${Number(m.id) === Number(milestone?.dependsOnMilestoneId || milestone?.DependsOnMilestoneId) ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+    const status = milestone?.status || milestone?.Status || 'NotStarted';
+    openModal(milestone ? 'Edit Milestone' : 'Create Milestone', `
       <form onsubmit="WTPages.saveMilestone(event)">
         <input type="hidden" id="mProj" value="${pid}">
+        <input type="hidden" id="mId" value="${milestone?.id || ''}">
         <div class="form-grid">
-          <div class="field full"><label>Name *</label><input id="mName" required></div>
-          <div class="field full"><label>Description</label><textarea id="mDesc" placeholder="Optional notes / backward-plan step"></textarea></div>
-          <div class="field"><label>Start Date</label><input id="mStart" type="date"></div>
-          <div class="field"><label>Target Date</label><input id="mDate" type="date"></div>
+          <div class="field full"><label>Name *</label><input id="mName" required value="${esc(milestone?.name || '')}"></div>
+          <div class="field full"><label>Description</label><textarea id="mDesc" placeholder="Optional notes / backward-plan step">${esc(milestone?.description || '')}</textarea></div>
+          <div class="field"><label>Start Date</label><input id="mStart" type="date" value="${esc(milestone?.startDate || '')}"></div>
+          <div class="field"><label>Target Date</label><input id="mDate" type="date" value="${esc(milestone?.dueDate || '')}"></div>
+          <div class="field"><label>Responsible Owner</label><select id="mOwner">${ownerOptions}</select></div>
+          <div class="field"><label>Depends on milestone</label><select id="mDependency">${dependencyOptions}</select></div>
+          <div class="field"><label>Status</label><select id="mStatus">${['NotStarted','InProgress','Delayed','Completed'].map(s => `<option value="${s}" ${s === status ? 'selected' : ''}>${s.replace(/([a-z])([A-Z])/g, '$1 $2')}</option>`).join('')}</select></div>
+          <div class="field full"><label>Completion Evidence (document, link, or reference)</label><textarea id="mEvidence" placeholder="Add a file name, URL, sign-off reference, or evidence note">${esc(milestone?.completionEvidence || milestone?.CompletionEvidence || '')}</textarea></div>
+          <div class="field full"><label>Attach completion evidence</label><input id="mEvidenceFile" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -2549,36 +2803,50 @@
   async function saveMilestone(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createMilestone({
+      const data = {
         projectId: Number($('#mProj').value),
         name: $('#mName').value.trim(),
         description: $('#mDesc')?.value.trim() || null,
         startDate: $('#mStart')?.value || null,
-        dueDate: $('#mDate').value || null
-      });
-      closeModal(); showToast('Milestone created'); await pageTasks('milestones');
+        dueDate: $('#mDate').value || null,
+        ownerId: Number($('#mOwner')?.value) || null,
+        dependsOnMilestoneId: Number($('#mDependency')?.value) || null,
+        status: $('#mStatus')?.value || 'NotStarted',
+        completionEvidence: $('#mEvidence')?.value.trim() || null
+      };
+      const id = Number($('#mId')?.value) || 0;
+      const saved = id ? await WisetrackAPI.updateMilestone(id, data) : await WisetrackAPI.createMilestone(data);
+      const savedId = Number(saved.id || saved.Id || id);
+      const evidenceFile = $('#mEvidenceFile')?.files?.[0];
+      if (evidenceFile && savedId) await WisetrackAPI.uploadFile(evidenceFile, 'Milestones', savedId);
+      closeModal(); showToast(id ? 'Milestone updated' : 'Milestone created'); await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function openMilestoneTemplateModal() {
     const pid = await selectedProjectId();
     let templates = [];
+    let anchorDate = '';
     try { templates = await WisetrackAPI.getTemplates(); } catch { templates = []; }
+    try { const project = await WisetrackAPI.getProject(pid); anchorDate = String(project.endDate || project.EndDate || '').slice(0, 10); } catch { }
     openModal('Milestone templates', `
       <div class="form-grid">
         <div class="field full">
-          <label>Clone saved template into this project</label>
-          <select id="msTpl">${(templates || []).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('') || '<option value="">None saved yet</option>'}</select>
+          <label>Optional reusable template</label>
+          <select id="msTpl"><option value="" selected>No template — define milestones below</option>${(templates || []).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
         </div>
+        <div class="field"><label>Schedule anchor date (for relative template dates)</label><input id="msTplAnchor" type="date" value="${esc(anchorDate)}"></div>
         <div class="field full">
-          <label>Or paste names from Excel / MSP export (one per line)</label>
-          <textarea id="msTplNames" rows="5" placeholder="Procurement&#10;Manufacture&#10;Shipment&#10;Installation&#10;Commissioning&#10;Handover"></textarea>
+          <label>Project-specific milestones (one per line)</label>
+          <textarea id="msTplNames" rows="5" placeholder="Design approval&#10;Site readiness&#10;Custom project milestone"></textarea>
         </div>
-        <div class="field"><label>Save as template name</label><input id="msTplName" placeholder="MEP handover pack"></div>
+        <div class="field full"><label>Import from Excel, MS Project XML, or PDF</label><input id="msTplFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.xml,.mspdi,.pdf" onchange="WTPages.importMilestoneTemplateFile(event)"><small style="color:var(--text-muted)">MS Project: export as XML. PDF import reads selectable text; scanned PDFs need OCR before import.</small></div>
+        <div class="field"><label>Optional: save these names as a reusable template</label><input id="msTplName" placeholder="Optional template name"></div>
       </div>
       <div class="modalfoot" style="padding:0;margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="btn" onclick="WTPages.cloneMilestoneTemplate()">Clone into project</button>
+        <button type="button" class="btn" onclick="WTPages.cloneMilestoneTemplate()">Add milestones to project</button>
         <button type="button" class="btn primary" onclick="WTPages.saveMilestoneTemplate()">Save template</button>
+        <button type="button" class="btn" onclick="WTPages.saveCurrentMilestonesAsTemplate()">Save this project's milestones as template</button>
       </div>`);
     window._wtMsTplProject = pid;
   }
@@ -2594,101 +2862,224 @@
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
+  async function saveCurrentMilestonesAsTemplate() {
+    const pid = Number(window._wtMsTplProject);
+    const name = ($('#msTplName')?.value || '').trim();
+    if (!name) { showToast('Enter a template name.', 'danger'); return; }
+    try {
+      const rows = await WisetrackAPI.getMilestones(pid);
+      if (!rows?.length) { showToast('This project has no milestones to save.', 'danger'); return; }
+      const anchor = rows.reduce((max, m) => m.dueDate && (!max || m.dueDate > max) ? m.dueDate : max, '');
+      const anchorDate = anchor ? new Date(`${anchor}T00:00:00`) : null;
+      const items = rows.map(m => {
+        const offset = (value) => value && anchorDate
+          ? Math.round((new Date(`${value}T00:00:00`) - anchorDate) / 86400000)
+          : null;
+        return {
+          name: m.name,
+          description: m.description || null,
+          startOffsetDays: offset(m.startDate),
+          dueOffsetDays: offset(m.dueDate)
+        };
+      });
+      await WisetrackAPI.saveTemplate({ name, templateJson: JSON.stringify(items) });
+      showToast('Project milestones saved as a reusable template');
+      closeModal();
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function importMilestoneTemplateFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      let names = [];
+      const ext = file.name.toLowerCase().split('.').pop();
+      if (['csv', 'tsv'].includes(ext)) {
+        const text = await file.text();
+        names = text.split(/\r?\n/).map(line => line.split(ext === 'tsv' ? '\t' : ',')[0].replace(/^\uFEFF/, '').replace(/^\s*["']|["']\s*$/g, '').trim()).filter(Boolean);
+        if (/^(milestone|task|name|title)$/i.test(names[0] || '')) names.shift();
+      } else if (['xml', 'mspdi'].includes(ext)) {
+        const xml = new DOMParser().parseFromString(await file.text(), 'application/xml');
+        if (xml.querySelector('parsererror')) throw new Error('Could not read this XML file. Export it as Microsoft Project XML and try again.');
+        names = [...xml.getElementsByTagName('*')].filter(node => node.localName === 'Task').map(task => {
+          const n = [...task.children].find(child => child.localName === 'Name');
+          return n?.textContent?.trim();
+        }).filter(Boolean);
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        if (!window.XLSX) await loadMilestoneImportScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        names = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false }).map(row => String(row[0] || '').trim()).filter(Boolean);
+        if (/^(milestone|task|name|title)$/i.test(names[0] || '')) names.shift();
+      } else if (ext === 'pdf') {
+        if (!window.pdfjsLib) await loadMilestoneImportScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+        for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+          const page = await pdf.getPage(pageNo);
+          const content = await page.getTextContent();
+          const lines = new Map();
+          for (const item of content.items) {
+            const y = Math.round(item.transform?.[5] || 0);
+            lines.set(y, `${lines.get(y) || ''} ${item.str}`.trim());
+          }
+          names.push(...[...lines.entries()].sort((a, b) => b[0] - a[0]).map(([, line]) => line));
+        }
+        names = names.map(s => s.trim()).filter(Boolean);
+      } else throw new Error('Choose an Excel, CSV/TSV, MS Project XML, or PDF file.');
+      if (!names.length) throw new Error('No milestone names found in the file.');
+      $('#msTplNames').value = [...new Set(names)].join('\n');
+      showToast(`${new Set(names).size} milestone names imported. Review them, then add or save as a template.`);
+    } catch (err) { showToast(err.message || 'Could not import this file.', 'danger'); }
+  }
+
+  function loadMilestoneImportScript(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('File import library could not load. Check your internet connection or paste milestone names instead.'));
+      document.head.appendChild(script);
+    });
+  }
+
   async function cloneMilestoneTemplate() {
     const templateId = Number($('#msTpl')?.value);
     const pid = window._wtMsTplProject;
     const pasted = ($('#msTplNames')?.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     try {
-      if (pasted.length && !templateId) {
-        const saved = await WisetrackAPI.saveTemplate({ name: `Import ${new Date().toISOString().slice(0, 10)}`, templateJson: JSON.stringify(pasted) });
-        await WisetrackAPI.cloneTemplate({ templateId: saved.id || saved.Id, projectId: pid });
+      if (pasted.length) {
+        const templateName = ($('#msTplName')?.value || '').trim();
+        for (const name of pasted) {
+          await WisetrackAPI.createMilestone({ projectId: Number(pid), name, description: null, startDate: null, dueDate: null });
+        }
+        if (templateName) await WisetrackAPI.saveTemplate({ name: templateName, templateJson: JSON.stringify(pasted) });
       } else {
-        if (!templateId) { showToast('Select a template or paste names.', 'danger'); return; }
-        await WisetrackAPI.cloneTemplate({ templateId, projectId: pid });
+        if (!templateId) { showToast('Enter project-specific milestones or select a template.', 'danger'); return; }
+        await WisetrackAPI.cloneTemplate({ templateId, projectId: pid, anchorDate: $('#msTplAnchor')?.value || null });
       }
-      closeModal(); showToast('Milestones cloned'); await pageTasks('milestones');
+      closeModal(); showToast(pasted.length ? 'Project milestones added' : 'Template milestones added'); await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function planBackwardFromHandover() {
     const pid = await selectedProjectId();
     if (!pid) { showToast('Select a project first', 'danger'); return; }
-    let handover = '';
+    let completionDate = '';
     try {
       const p = await WisetrackAPI.getProject(pid);
-      handover = String(p.endDate || p.EndDate || '').slice(0, 10);
+      completionDate = String(p.endDate || p.EndDate || '').slice(0, 10);
     } catch (_) { /* date filled by user */ }
     openModal('Plan backward from handover (PM-17)', `
       <form onsubmit="WTPages.saveBackwardPlan(event)">
         <input type="hidden" id="bwProj" value="${pid}">
-        <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Creates the standard chain from the handover date backward: Procurement → Payment → Manufacture → Shipment → Arrival → Installation → Commissioning → Handover.</p>
+        <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Plan backward from the required project completion date. Edit the activities for this project; nothing is applied to other projects.</p>
         <div class="form-grid">
-          <div class="field"><label>Handover / opening date *</label><input id="bwHandover" type="date" value="${esc(handover)}" required></div>
-          <div class="field"><label>Days per step</label><input id="bwDays" type="number" min="1" value="14"></div>
+          <div class="field full"><label>Activities in schedule order (earliest first; one per line)</label><textarea id="bwSteps" rows="7">Procurement&#10;Payment&#10;Manufacture / Readiness&#10;Shipment&#10;Arrival&#10;Transfer&#10;Installation&#10;Commissioning&#10;Handover&#10;Project Completion</textarea><small style="color:var(--text-muted)">Optional duration per activity: add | days, e.g. Procurement | 21. Leave it out to use the default duration.</small></div>
+          <div class="field"><label>Required project completion date *</label><input id="bwCompletion" type="date" value="${esc(completionDate)}" required></div>
+          <div class="field"><label>Default activity duration (days)</label><input id="bwDays" type="number" min="1" value="14"></div>
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Create chain</button></div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Create backward schedule</button></div>
       </form>`);
   }
 
   async function saveBackwardPlan(e) {
     e.preventDefault();
     const pid = Number($('#bwProj').value);
-    const handover = $('#bwHandover').value;
+    const completionDate = $('#bwCompletion').value;
     const stepDays = Math.max(1, Number($('#bwDays').value) || 14);
-    if (!pid || !handover) { showToast('Handover date required', 'danger'); return; }
-    const steps = ['Procurement', 'Payment', 'Manufacture / readiness', 'Shipment', 'Arrival / transfer', 'Installation', 'Commissioning', 'Handover'];
-    const end = new Date(handover + 'T00:00:00');
+    if (!pid || !completionDate) { showToast('Project completion date required', 'danger'); return; }
+    const steps = ($('#bwSteps')?.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(line => {
+      const match = line.match(/^(.*?)\s*\|\s*(\d+)\s*$/);
+      return match
+        ? { name: match[1].trim(), days: Number(match[2]) }
+        : { name: line, days: stepDays };
+    }).filter(s => s.name);
+    if (!steps.length) { showToast('Add at least one project milestone.', 'danger'); return; }
+    const completion = new Date(`${completionDate}T00:00:00`);
+    const toLocalDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     try {
-      for (let i = 0; i < steps.length; i++) {
-        const due = new Date(end);
-        due.setDate(due.getDate() - ((steps.length - 1 - i) * stepDays));
+      let due = new Date(completion);
+      const schedule = [];
+      for (let i = steps.length - 1; i >= 0; i--) {
         const start = new Date(due);
-        start.setDate(start.getDate() - stepDays);
-        await WisetrackAPI.createMilestone({
+        start.setDate(start.getDate() - steps[i].days);
+        schedule.push({
           projectId: pid,
-          name: steps[i],
-          description: 'Backward-scheduled from handover (PM-17)',
-          startDate: start.toISOString().slice(0, 10),
-          dueDate: due.toISOString().slice(0, 10)
+          name: steps[i].name,
+          description: `Backward-scheduled from project completion (${completionDate}) (PM-17)`,
+          startDate: toLocalDate(start),
+          dueDate: toLocalDate(due)
         });
+        due = start;
       }
+      for (const milestone of schedule.reverse()) await WisetrackAPI.createMilestone(milestone);
       closeModal();
-      showToast('Backward plan created');
+      showToast('Backward schedule created');
       await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
-  async function openTaskModal() {
+  async function openTaskModal(taskId = null) {
     const pid = await selectedProjectId();
     const currentUserId = localStorage.getItem('WISETRACK_USER_ID') || '';
+    let editingTask = null;
+    let loadedTasks = [];
+    try {
+      if (taskId) {
+        const rows = await WisetrackAPI.getTasks(pid);
+        loadedTasks = Array.isArray(rows) ? rows : [];
+      }
+      editingTask = loadedTasks.find(t => Number(t.id) === Number(taskId)) || null;
+      if (taskId && !editingTask) { showToast('Task not found.', 'danger'); return; }
+    } catch (err) { showToast(err.message, 'danger'); return; }
     let ownerOpts = '<option value="">Unassigned</option>';
     let dependOpts = '<option value="">None — can start anytime</option>';
+    let milestoneOpts = '<option value="">No milestone</option>';
     try {
       const loaded = typeof wtLoadLiveTasksAndOwners === 'function'
         ? await wtLoadLiveTasksAndOwners()
         : { owners: [], tasks: [] };
+      loadedTasks = loaded.tasks || loadedTasks;
       const owners = loaded.owners || [];
       ownerOpts = (owners.length ? owners : []).map(u => {
-        const selected = String(u.id) === String(currentUserId) ? 'selected' : '';
+        const selectedOwner = editingTask?.assignedTo ?? editingTask?.AssignedTo ?? currentUserId;
+        const selected = String(u.id) === String(selectedOwner) ? 'selected' : '';
         return `<option value="${u.id}" ${selected}>${esc(u.fullName)} (${esc(u.role || 'Team')})</option>`;
       }).join('') || `<option value="${esc(currentUserId)}" selected>Me</option>`;
-      dependOpts += wtBuildDependOptions(loaded.tasks || [], null, null);
+      dependOpts += wtBuildDependOptions(loadedTasks, 'task', taskId);
+      const milestones = await WisetrackAPI.getMilestones(pid);
+      milestoneOpts += (milestones || []).map(m => `<option value="${m.id}" ${Number(m.id) === Number(editingTask?.milestoneId || editingTask?.MilestoneId) ? 'selected' : ''}>${esc(m.name)}${m.dueDate ? ` · Due ${esc(m.dueDate)}` : ''}</option>`).join('');
     } catch (_) { /* keep fallback */ }
     const adminDep = (typeof wtIsAdmin === 'function' && wtIsAdmin())
       ? `<div class="field full"><label>Depends on (optional)</label><select id="tDepend">${dependOpts}</select>
          <small style="color:var(--text-muted)">Until that item is finished, this task cannot be started.</small></div>`
       : '';
-    openModal('Create Task', `
+    const taskStatus = String(editingTask?.status || editingTask?.Status || 'NotStarted').replace(/\s+/g, '');
+    openModal(editingTask ? 'Edit Task' : 'Create Task', `
       <form onsubmit="WTPages.saveTask(event)">
         <input type="hidden" id="tProj" value="${pid}">
+        <input type="hidden" id="tId" value="${editingTask?.id || ''}">
         <div class="form-grid">
-          <div class="field full"><label>Title *</label><input id="tTitle" required></div>
+          <div class="field full"><label>Title *</label><input id="tTitle" required value="${esc(editingTask?.title || editingTask?.Title || '')}"></div>
           <div class="field full"><label>Assign to user *</label><select id="tOwner">${ownerOpts}</select></div>
           ${adminDep}
-          <div class="field full"><label>Description</label><textarea id="tDesc"></textarea></div>
+          <div class="field"><label>Milestone</label><select id="tMilestone">${milestoneOpts}</select></div>
+          <div class="field"><label>Start Date</label><input id="tStartDate" type="date" value="${esc(editingTask?.startDate || editingTask?.StartDate || '')}"></div>
+          <div class="field"><label>Due Date</label><input id="tDueDate" type="date" value="${esc(editingTask?.dueDate || editingTask?.DueDate || '')}"></div>
+          <div class="field"><label>Status</label><select id="tStatus">${['NotStarted','InProgress','Delayed','Completed'].map(s => `<option value="${s}" ${s === taskStatus ? 'selected' : ''}>${s.replace(/([a-z])([A-Z])/g, '$1 $2')}</option>`).join('')}</select></div>
+          <div class="field full"><label>Description</label><textarea id="tDesc">${esc(editingTask?.description || editingTask?.Description || '')}</textarea></div>
+          <div class="field full"><label>Completion Evidence (document, link, or reference)</label><textarea id="tEvidence" placeholder="Add a file name, URL, sign-off reference, or evidence note">${esc(editingTask?.completionEvidence || editingTask?.CompletionEvidence || '')}</textarea></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
+    if (editingTask && typeof wtIsAdmin === 'function' && wtIsAdmin()) {
+      const dependency = editingTask.dependsOnSubTaskId || editingTask.DependsOnSubTaskId
+        ? `sub:${editingTask.dependsOnSubTaskId || editingTask.DependsOnSubTaskId}`
+        : (editingTask.dependsOnTaskId || editingTask.DependsOnTaskId ? `task:${editingTask.dependsOnTaskId || editingTask.DependsOnTaskId}` : '');
+      const selector = $('#tDepend');
+      if (selector) selector.value = dependency;
+    }
   }
 
   function wtBuildDependOptions(tasks, excludeKind, excludeId) {
@@ -2719,15 +3110,23 @@
     e.preventDefault();
     try {
       const dep = parseDependValue($('#tDepend')?.value);
-      await WisetrackAPI.createTask({
+      const data = {
         projectId: Number($('#tProj').value),
+        milestoneId: Number($('#tMilestone')?.value) || null,
         title: $('#tTitle').value.trim(),
         description: $('#tDesc').value.trim(),
+        status: $('#tStatus')?.value || 'NotStarted',
+        completionEvidence: $('#tEvidence')?.value.trim() || null,
+        startDate: $('#tStartDate').value || null,
+        dueDate: $('#tDueDate').value || null,
         assignedTo: Number($('#tOwner')?.value) || Number(localStorage.getItem('WISETRACK_USER_ID')) || null,
         dependsOnTaskId: dep.dependsOnTaskId,
         dependsOnSubTaskId: dep.dependsOnSubTaskId
-      });
-      closeModal(); showToast('Task created'); await pageTasks('planning');
+      };
+      const id = Number($('#tId')?.value) || 0;
+      if (id) await WisetrackAPI.updateTask(id, data);
+      else await WisetrackAPI.createTask(data);
+      closeModal(); showToast(id ? 'Task updated' : 'Task created'); await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2899,6 +3298,10 @@
             <input id="tuRem" placeholder="Site issues, delay reasons...">
           </div>
           <div class="field full">
+            <label>Completion evidence reference</label>
+            <textarea id="tuEvidence" placeholder="Sign-off, document, or evidence link"></textarea>
+          </div>
+          <div class="field full">
             <label>Attachment</label>
             <input id="tuFile" type="file">
           </div>
@@ -2939,6 +3342,7 @@
         status: $('#tuStatus')?.value || null,
         remarks: [($('#tuRem').value || '').trim(), ($('#tuNotes')?.value || '').trim()].filter(Boolean).join(' | ') || null
       };
+      payload.completionEvidence = $('#tuEvidence')?.value.trim() || null;
       const pctEl = $('#tuPct');
       if (pctEl && !pctEl.disabled) payload.completionPercent = Number(pctEl.value);
       const file = $('#tuFile')?.files?.[0];
@@ -2949,6 +3353,35 @@
       await WisetrackAPI.addTaskUpdate(payload);
       closeModal(); showToast(subTaskId ? 'Sub-task updated' : 'Task updated'); await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function openTaskHistory(taskId, subTaskId = null) {
+    openModal('Task Update History', 'Loading update history…');
+    try {
+      const [updates, files, users] = await Promise.all([
+        WisetrackAPI.getTaskHistory(taskId, subTaskId),
+        WisetrackAPI.getTaskFiles(taskId).catch(() => []),
+        WisetrackAPI.getUsers().catch(() => [])
+      ]);
+      const userName = (id) => {
+        const user = (users || []).find(u => Number(u.id) === Number(id));
+        return user ? (user.fullName || user.name || user.email) : (id ? `User #${id}` : 'System');
+      };
+      const history = updates || [];
+      openModal('Task Update History', `
+        <p style="margin:0 0 12px;color:var(--text-muted)">${history.length} saved update${history.length === 1 ? '' : 's'}</p>
+        ${(files || []).length ? `<div style="margin-bottom:14px"><strong>Uploaded evidence</strong><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${files.map(file => `<button class="btn sm" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join('')}</div></div>` : ''}
+        <div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Task / Sub-task</th><th>Status</th><th>Completion</th><th>Remark</th><th>Updated by</th></tr></thead><tbody>
+          ${history.length ? history.map(row => `<tr><td>${esc(row.updateDate || '')}<small style="display:block;color:var(--text-muted)">${esc(String(row.createdAt || '').slice(11, 16))}</small></td><td>${esc(row.itemTitle || '')}</td><td>${esc(row.status || '—')}</td><td>${row.completionPercent == null ? '—' : `${Number(row.completionPercent)}%`}</td><td style="white-space:pre-wrap">${esc(row.remarks || '—')}</td><td>${esc(userName(row.updatedById))}</td></tr>`).join('') : '<tr><td colspan="6">No previous updates recorded for this item.</td></tr>'}
+        </tbody></table></div>`);
+    } catch (err) {
+      openModal('Task Update History', `<p style="color:#dc2626">${esc(err.message || 'Could not load update history.')}</p>`);
+    }
+  }
+
+  async function downloadTaskEvidence(fileId) {
+    try { await WisetrackAPI.downloadFileById(fileId); }
+    catch (err) { showToast(err.message, 'danger'); }
   }
 
   // ---------- ISSUES ----------
@@ -3735,10 +4168,10 @@
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
     openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC,
     openPurchaseModal, savePurchase, openActualModal, saveActual, saveVarianceExplanation,
-    boqFromMaster, boqImport, saveBoqImport, viewBoq, downloadReport,
-    openMilestoneModal, saveMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, cloneMilestoneTemplate,
+    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, createBoqRevision, saveBoqRevisionItem, setBoqBaseline, downloadReport,
+    openMilestoneModal, saveMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
-    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate,
+    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory,
     openDependencyModal, saveDependency,
     openCreateSubTaskModal: (p, s) => openCreateSubTaskModal(p, s),
     saveSubTask: (e) => handleCreateSubTask(e),

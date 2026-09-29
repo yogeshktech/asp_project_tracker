@@ -127,6 +127,9 @@ public class ExceptionItemDto
 {
     public string Type { get; set; } = string.Empty;
     public long RelatedId { get; set; }
+    public long ProjectId { get; set; }
+    public string ProjectName { get; set; } = string.Empty;
+    public string ItemKind { get; set; } = "Task";
     public string Title { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
 }
@@ -175,9 +178,23 @@ public class DailySiteReportDto
 public class TaskDailyStatusDto
 {
     public long TaskId { get; set; }
+    public long? SubTaskId { get; set; }
     public string Title { get; set; } = string.Empty;
+    public string? SubTaskTitle { get; set; }
     public decimal CompletionPercent { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string? Remarks { get; set; }
+}
+
+public class TaskHistoryItemDto
+{
+    public long Id { get; set; }
+    public string ItemTitle { get; set; } = string.Empty;
+    public DateOnly UpdateDate { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public long? UpdatedById { get; set; }
+    public decimal? CompletionPercent { get; set; }
+    public string? Status { get; set; }
     public string? Remarks { get; set; }
 }
 
@@ -198,6 +215,7 @@ public class TaskItemDto
     public long? MilestoneId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? CompletionEvidence { get; set; }
     public long? AssignedTo { get; set; }
     public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }
@@ -206,6 +224,7 @@ public class TaskItemDto
     public string? Remarks { get; set; }
     public List<SubTaskItemDto> SubTasks { get; set; } = new();
     public bool CanDelete { get; set; }
+    public bool CanEdit { get; set; }
     public bool CanEditPercent { get; set; }
     public string DisplayCode { get; set; } = string.Empty;
     public long? DependsOnTaskId { get; set; }

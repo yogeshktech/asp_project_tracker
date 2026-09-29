@@ -11,6 +11,9 @@ public interface IBOQRepository
     Task<Boq> AddAsync(Boq boq);
     Task<BoqVersion> AddVersionAsync(BoqVersion version);
     Task AddItemsAsync(IEnumerable<BoqItem> items);
+    Task SetCurrentBaselineAsync(long boqId, long versionId);
+    Task<BoqItem?> GetItemAsync(long itemId);
+    Task UpdateItemAsync(BoqItem item);
 }
 
 public class BOQRepository : IBOQRepository
@@ -24,7 +27,7 @@ public class BOQRepository : IBOQRepository
 
     public Task<Boq?> GetAsync(long id) =>
         _db.Boqs.Include(b => b.Versions).ThenInclude(v => v.Items)
-            .FirstOrDefaultAsync(b => b.Id == id);
+            .AsNoTracking().FirstOrDefaultAsync(b => b.Id == id);
 
     public async Task<Boq> AddAsync(Boq boq)
     {
@@ -43,6 +46,22 @@ public class BOQRepository : IBOQRepository
     public async Task AddItemsAsync(IEnumerable<BoqItem> items)
     {
         _db.BoqItems.AddRange(items);
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task SetCurrentBaselineAsync(long boqId, long versionId)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        await _db.Database.ExecuteSqlInterpolatedAsync($"UPDATE boq_versions SET is_current_baseline = FALSE WHERE boq_id = {boqId}");
+        await _db.Database.ExecuteSqlInterpolatedAsync($"UPDATE boq_versions SET is_current_baseline = TRUE WHERE boq_id = {boqId} AND id = {versionId}");
+        await transaction.CommitAsync();
+    }
+
+    public Task<BoqItem?> GetItemAsync(long itemId) => _db.BoqItems.FirstOrDefaultAsync(i => i.Id == itemId);
+
+    public async Task UpdateItemAsync(BoqItem item)
+    {
+        _db.BoqItems.Update(item);
         await _db.SaveChangesAsync();
     }
 }

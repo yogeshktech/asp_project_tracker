@@ -8,6 +8,7 @@ public interface ITaskRepository
 {
     Task<List<Milestone>> GetMilestonesAsync(long projectId);
     Task<Milestone> AddMilestoneAsync(Milestone milestone);
+    Task UpdateMilestoneAsync(Milestone milestone);
     Task<List<ProjectTask>> GetTasksAsync(long projectId);
     Task<ProjectTask?> GetTaskAsync(long id);
     Task<ProjectTask> AddTaskAsync(ProjectTask task);
@@ -18,6 +19,7 @@ public interface ITaskRepository
     Task DeleteSubTaskAsync(long id);
     Task UpdateSubTaskAsync(SubTask subTask);
     Task<TaskUpdate> AddUpdateAsync(TaskUpdate update);
+    Task<List<TaskUpdate>> GetTaskHistoryAsync(long taskId, long? subTaskId);
     Task AddAttachmentAsync(TaskAttachment attachment);
     Task<TaskUpdate?> GetLastUpdateAsync(long taskId);
     Task<List<TaskUpdate>> GetUpdatesForDateAsync(long projectId, DateOnly date);
@@ -36,6 +38,12 @@ public class TaskRepository : ITaskRepository
         _db.Milestones.Add(milestone);
         await _db.SaveChangesAsync();
         return milestone;
+    }
+
+    public async Task UpdateMilestoneAsync(Milestone milestone)
+    {
+        _db.Milestones.Update(milestone);
+        await _db.SaveChangesAsync();
     }
 
     public Task<List<ProjectTask>> GetTasksAsync(long projectId) =>
@@ -118,6 +126,12 @@ public class TaskRepository : ITaskRepository
         await _db.SaveChangesAsync();
         return update;
     }
+
+    public Task<List<TaskUpdate>> GetTaskHistoryAsync(long taskId, long? subTaskId) =>
+        _db.TaskUpdates.Where(u => u.TaskId == taskId && (!subTaskId.HasValue || u.SubTaskId == subTaskId.Value))
+            .OrderByDescending(u => u.CreatedAt)
+            .AsNoTracking()
+            .ToListAsync();
 
     public async Task AddAttachmentAsync(TaskAttachment attachment)
     {

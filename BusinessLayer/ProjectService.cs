@@ -280,13 +280,50 @@ public class ProjectService : IProjectService
         foreach (var field in fieldRights.Where(x => x.Value.Equals("view", StringComparison.OrdinalIgnoreCase) || x.Value.Equals("hidden", StringComparison.OrdinalIgnoreCase)))
             if (ProjectFieldChanged(project, dto, field.Key))
                 throw new UnauthorizedAccessException($"No edit permission on project field {field.Key}.");
+        var previousEndDate = project.EndDate;
         ApplyDto(project, dto);
+        if (previousEndDate != project.EndDate && project.EndDate.HasValue)
+            await ShiftBackwardScheduleMilestonesAsync(id, previousEndDate, project.EndDate.Value);
         if (string.IsNullOrWhiteSpace(project.Code))
             project.Code = await NextProjectCodeAsync(project.ParentProjectId);
         project.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateProjectAsync(project);
         await _audit.LogAsync(userId, "Update", "Project", id);
         return await MapForUserAsync(project, userId);
+    }
+
+    private async Task ShiftBackwardScheduleMilestonesAsync(long projectId, DateOnly? previousProjectEndDate, DateOnly newCompletionDate)
+    {
+        const string marker = "Backward-scheduled from project completion (";
+        const string legacyMarker = "Backward-scheduled from handover (PM-17)";
+        var milestones = await _db.Milestones
+            .Where(m => m.ProjectId == projectId && m.Description != null &&
+                (m.Description.Contains(marker) || m.Description.Contains(legacyMarker)))
+            .ToListAsync();
+        foreach (var milestone in milestones)
+        {
+            var description = milestone.Description!;
+            var markerStart = description.IndexOf(marker, StringComparison.Ordinal);
+            DateOnly previousCompletionDate;
+            if (markerStart >= 0)
+            {
+                var anchorStart = markerStart + marker.Length;
+                var anchorEnd = description.IndexOf(')', anchorStart);
+                if (anchorEnd < 0 || !DateOnly.TryParse(description[anchorStart..anchorEnd], out previousCompletionDate)) continue;
+            }
+            else
+            {
+                if (!previousProjectEndDate.HasValue || !description.Contains(legacyMarker, StringComparison.Ordinal)) continue;
+                previousCompletionDate = previousProjectEndDate.Value;
+            }
+            var deltaDays = newCompletionDate.DayNumber - previousCompletionDate.DayNumber;
+            if (deltaDays == 0) continue;
+            if (milestone.StartDate.HasValue) milestone.StartDate = milestone.StartDate.Value.AddDays(deltaDays);
+            if (milestone.DueDate.HasValue) milestone.DueDate = milestone.DueDate.Value.AddDays(deltaDays);
+            milestone.Description = markerStart >= 0
+                ? description[..(markerStart + marker.Length)] + $"{newCompletionDate:yyyy-MM-dd}" + description[description.IndexOf(')', markerStart + marker.Length)..]
+                : description.Replace(legacyMarker, $"{marker}{newCompletionDate:yyyy-MM-dd}) (PM-17)", StringComparison.Ordinal);
+        }
     }
 
     public async Task DeleteAsync(long userId, long id)
@@ -375,15 +412,49 @@ public class ProjectService : IProjectService
         var templates = await _repository.GetTemplatesAsync();
         var template = templates.FirstOrDefault(t => t.Id == request.TemplateId)
             ?? throw new InvalidOperationException("Template not found");
-        // Simple JSON array of milestone names expected: ["Design","Procurement",...]
-        var names = System.Text.Json.JsonSerializer.Deserialize<List<string>>(template.TemplateJson) ?? new();
+        using var templateJson = System.Text.Json.JsonDocument.Parse(template.TemplateJson);
+        if (templateJson.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+            throw new InvalidOperationException("Template must contain a JSON array of milestones.");
         var milestones = new List<Milestone>();
-        foreach (var name in names)
+        foreach (var item in templateJson.RootElement.EnumerateArray())
         {
+            var name = item.ValueKind == System.Text.Json.JsonValueKind.String
+                ? item.GetString()
+                : item.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() : null;
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            DateOnly? dueDate = null;
+            if (item.ValueKind == System.Text.Json.JsonValueKind.Object
+                && item.TryGetProperty("dueDate", out var dueProperty)
+                && DateOnly.TryParse(dueProperty.GetString(), out var parsedDue)) dueDate = parsedDue;
+            DateOnly? startDate = null;
+            if (item.ValueKind == System.Text.Json.JsonValueKind.Object
+                && item.TryGetProperty("startDate", out var startProperty)
+                && DateOnly.TryParse(startProperty.GetString(), out var parsedStart)) startDate = parsedStart;
+            if (request.AnchorDate.HasValue && item.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (item.TryGetProperty("startOffsetDays", out var startOffset) && startOffset.TryGetInt32(out var startDays))
+                    startDate = request.AnchorDate.Value.AddDays(startDays);
+                if (item.TryGetProperty("dueOffsetDays", out var dueOffset) && dueOffset.TryGetInt32(out var dueDays))
+                    dueDate = request.AnchorDate.Value.AddDays(dueDays);
+                else if (item.TryGetProperty("offsetDays", out var offset) && offset.TryGetInt32(out var legacyDays))
+                    dueDate = request.AnchorDate.Value.AddDays(legacyDays);
+            }
+            var milestoneDescription = item.ValueKind == System.Text.Json.JsonValueKind.Object
+                && item.TryGetProperty("description", out var descriptionProperty) ? descriptionProperty.GetString() : null;
+            var hasRelativeDates = item.ValueKind == System.Text.Json.JsonValueKind.Object
+                && (item.TryGetProperty("startOffsetDays", out _) || item.TryGetProperty("dueOffsetDays", out _) || item.TryGetProperty("offsetDays", out _));
+            if (request.AnchorDate.HasValue && hasRelativeDates)
+            {
+                var scheduleTag = $"Backward-scheduled from project completion ({request.AnchorDate.Value:yyyy-MM-dd}) (PM-17)";
+                milestoneDescription = string.IsNullOrWhiteSpace(milestoneDescription) ? scheduleTag : $"{milestoneDescription}\n{scheduleTag}";
+            }
             milestones.Add(await _tasks.AddMilestoneAsync(new Milestone
             {
                 ProjectId = request.ProjectId,
                 Name = name,
+                Description = milestoneDescription,
+                StartDate = startDate,
+                DueDate = dueDate,
                 Status = "NotStarted",
                 CreatedAt = DateTime.UtcNow
             }));

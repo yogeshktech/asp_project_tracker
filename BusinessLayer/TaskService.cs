@@ -8,17 +8,20 @@ namespace project_tracker_madhu.BusinessLayer.Tasks;
 
 public interface ITaskService
 {
-    Task<List<Milestone>> GetMilestonesAsync(long projectId);
+    Task<List<Milestone>> GetMilestonesAsync(long projectId, long userId);
     Task<Milestone> CreateMilestoneAsync(CreateMilestoneRequest request, long? userId);
+    Task<Milestone> UpdateMilestoneAsync(long milestoneId, CreateMilestoneRequest request, long userId);
     Task<List<TaskItemDto>> GetTasksAsync(long projectId, long userId);
+    Task<List<TaskHistoryItemDto>> GetTaskHistoryAsync(long taskId, long? subTaskId, long userId);
     Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId);
+    Task<ProjectTask> UpdateTaskAsync(long taskId, CreateTaskRequest request, long userId);
     Task<SubTaskItemDto> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId);
     Task DeleteTaskAsync(long taskId, long userId);
     Task DeleteSubTaskAsync(long subTaskId, long userId);
     Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId);
     Task<TaskBulkImportResultDto> BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId);
-    Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId);
-    Task<DailySiteReportDto> GetDailyReportAsync(long projectId, DateOnly? date);
+    Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId, long userId);
+    Task<DailySiteReportDto> GetDailyReportAsync(long projectId, DateOnly? date, long userId);
     Task SetTaskDependencyAsync(long taskId, SetTaskDependencyRequest request, long userId);
     Task SetSubTaskDependencyAsync(long subTaskId, SetTaskDependencyRequest request, long userId);
 }
@@ -36,10 +39,28 @@ public class TaskService : ITaskService
         _audit = audit;
     }
 
-    public Task<List<Milestone>> GetMilestonesAsync(long projectId) => _repository.GetMilestonesAsync(projectId);
+    public async Task<List<Milestone>> GetMilestonesAsync(long projectId, long userId)
+    {
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks")) return new();
+        var milestones = await _repository.GetMilestonesAsync(projectId);
+        var tasks = await _repository.GetTasksAsync(projectId);
+        foreach (var milestone in milestones)
+        {
+            var attached = tasks.Where(t => t.MilestoneId == milestone.Id).ToList();
+            if (attached.Count == 0) continue;
+            milestone.CompletionPercent = attached.Average(t => t.CompletionPercent);
+        }
+        return milestones;
+    }
 
     public async Task<Milestone> CreateMilestoneAsync(CreateMilestoneRequest request, long? userId)
     {
+        if (string.IsNullOrWhiteSpace(request.Name)) throw new InvalidOperationException("Milestone name is required.");
+        if (request.StartDate.HasValue && request.DueDate.HasValue && request.StartDate.Value > request.DueDate.Value)
+            throw new InvalidOperationException("Milestone start date must be on or before its target date.");
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, request.ProjectId, "Tasks", "edit");
+        await EnsureMilestoneDependencyAsync(request.ProjectId, null, request.DependsOnMilestoneId);
+        await EnsureMilestoneCanStartAsync(request.ProjectId, request.DependsOnMilestoneId, request.Status);
         var milestone = await _repository.AddMilestoneAsync(new Milestone
         {
             ProjectId = request.ProjectId,
@@ -47,12 +68,75 @@ public class TaskService : ITaskService
             Description = request.Description,
             StartDate = request.StartDate,
             DueDate = request.DueDate,
-            Status = "NotStarted",
+            OwnerId = request.OwnerId,
+            DependsOnMilestoneId = request.DependsOnMilestoneId,
+            CompletionEvidence = request.CompletionEvidence,
+            Status = NormalizeMilestoneStatus(request.Status),
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "Milestone", milestone.Id);
         return milestone;
     }
+
+    public async Task<Milestone> UpdateMilestoneAsync(long milestoneId, CreateMilestoneRequest request, long userId)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name)) throw new InvalidOperationException("Milestone name is required.");
+        if (request.StartDate.HasValue && request.DueDate.HasValue && request.StartDate.Value > request.DueDate.Value)
+            throw new InvalidOperationException("Milestone start date must be on or before its target date.");
+        var milestone = (await _repository.GetMilestonesAsync(request.ProjectId))
+            .FirstOrDefault(m => m.Id == milestoneId)
+            ?? throw new InvalidOperationException("Milestone not found in this project.");
+        await _permissions.EnsureModuleAsync(userId, request.ProjectId, "Tasks", "edit");
+        await EnsureMilestoneDependencyAsync(request.ProjectId, milestoneId, request.DependsOnMilestoneId);
+        await EnsureMilestoneCanStartAsync(request.ProjectId, request.DependsOnMilestoneId, request.Status);
+        milestone.Name = request.Name.Trim();
+        milestone.Description = request.Description;
+        milestone.StartDate = request.StartDate;
+        milestone.DueDate = request.DueDate;
+        milestone.OwnerId = request.OwnerId;
+        milestone.DependsOnMilestoneId = request.DependsOnMilestoneId;
+        milestone.CompletionEvidence = request.CompletionEvidence;
+        milestone.Status = NormalizeMilestoneStatus(request.Status);
+        await _repository.UpdateMilestoneAsync(milestone);
+        await _audit.LogAsync(userId, "Update", "Milestone", milestone.Id);
+        return milestone;
+    }
+
+    private async Task EnsureMilestoneDependencyAsync(long projectId, long? milestoneId, long? dependencyId)
+    {
+        if (!dependencyId.HasValue) return;
+        var milestones = await _repository.GetMilestonesAsync(projectId);
+        var dependency = milestones.FirstOrDefault(m => m.Id == dependencyId.Value)
+            ?? throw new InvalidOperationException("Select a dependency milestone from this project.");
+        var seen = new HashSet<long>();
+        var current = dependency;
+        while (true)
+        {
+            if (milestoneId.HasValue && current.Id == milestoneId.Value)
+                throw new InvalidOperationException("That milestone dependency would create a cycle.");
+            if (!seen.Add(current.Id) || !current.DependsOnMilestoneId.HasValue) break;
+            var next = milestones.FirstOrDefault(m => m.Id == current.DependsOnMilestoneId.Value);
+            if (next == null) break;
+            current = next;
+        }
+    }
+
+    private async Task EnsureMilestoneCanStartAsync(long projectId, long? dependencyId, string? status)
+    {
+        if (!dependencyId.HasValue || NormalizeMilestoneStatus(status) == "NotStarted") return;
+        var dependency = (await _repository.GetMilestonesAsync(projectId)).FirstOrDefault(m => m.Id == dependencyId.Value);
+        if (dependency == null || !LooksComplete(dependency.Status, dependency.CompletionPercent))
+            throw new InvalidOperationException("This milestone is waiting on its dependency and cannot be started yet.");
+    }
+
+    private static string NormalizeMilestoneStatus(string? status) => (status ?? "").Replace(" ", "", StringComparison.Ordinal).ToLowerInvariant() switch
+    {
+        "inprogress" => "InProgress",
+        "delayed" => "Delayed",
+        "completed" => "Completed",
+        "notstarted" => "NotStarted",
+        _ => "NotStarted"
+    };
 
     public async Task<List<TaskItemDto>> GetTasksAsync(long projectId, long userId)
     {
@@ -75,10 +159,33 @@ public class TaskService : ITaskService
         return mapped;
     }
 
+    public async Task<List<TaskHistoryItemDto>> GetTaskHistoryAsync(long taskId, long? subTaskId, long userId)
+    {
+        var task = await _repository.GetTaskAsync(taskId) ?? throw new InvalidOperationException("Task not found.");
+        if (!await _permissions.CanViewModuleAsync(userId, task.ProjectId, "Tasks"))
+            throw new UnauthorizedAccessException("You cannot view this task's history.");
+        if (subTaskId.HasValue && !(task.SubTasks ?? Array.Empty<SubTask>()).Any(s => s.Id == subTaskId.Value))
+            throw new InvalidOperationException("Sub-task does not belong to the selected task.");
+        var updates = await _repository.GetTaskHistoryAsync(taskId, subTaskId);
+        return updates.Select(update => new TaskHistoryItemDto
+        {
+            Id = update.Id,
+            ItemTitle = update.SubTaskId.HasValue
+                ? (task.SubTasks ?? Array.Empty<SubTask>()).FirstOrDefault(s => s.Id == update.SubTaskId.Value)?.Title ?? "Sub-task"
+                : task.Title,
+            UpdateDate = update.UpdateDate,
+            CreatedAt = update.CreatedAt,
+            UpdatedById = update.UpdatedBy,
+            CompletionPercent = update.CompletionPercent,
+            Status = update.Status,
+            Remarks = update.Remarks
+        }).ToList();
+    }
+
     private static TaskItemDto MapTask(ProjectTask t, long userId, bool isAdmin, bool canEdit, bool canUpdate, bool canDelete)
     {
         var canDeleteTask = isAdmin || canDelete || t.AssignedTo == userId;
-        var canEditPercent = isAdmin || canUpdate || canEdit || t.AssignedTo == userId;
+        var canEditPercent = isAdmin || t.AssignedTo == userId;
         return new TaskItemDto
         {
             Id = t.Id,
@@ -93,9 +200,11 @@ public class TaskService : ITaskService
             CompletionPercent = t.CompletionPercent,
             Remarks = t.Remarks,
             CanDelete = canDeleteTask,
+            CanEdit = isAdmin || canEdit,
             CanEditPercent = canEditPercent,
             DependsOnTaskId = t.DependsOnTaskId,
             DependsOnSubTaskId = t.DependsOnSubTaskId,
+            CompletionEvidence = t.CompletionEvidence,
             SubTasks = new()
         };
     }
@@ -142,7 +251,7 @@ public class TaskService : ITaskService
         CompletionPercent = s.CompletionPercent,
         Remarks = s.Remarks,
         CanDelete = isAdmin || canDelete || s.AssignedTo == userId || parentAssignedTo == userId,
-        CanEditPercent = isAdmin || canUpdate || canEdit || s.AssignedTo == userId || parentAssignedTo == userId,
+        CanEditPercent = isAdmin || s.AssignedTo == userId || parentAssignedTo == userId,
         DependsOnTaskId = s.DependsOnTaskId,
         DependsOnSubTaskId = s.DependsOnSubTaskId
     };
@@ -160,6 +269,10 @@ public class TaskService : ITaskService
     public async Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, request.ProjectId, "Tasks", "edit");
+        if (request.StartDate.HasValue && request.DueDate.HasValue && request.StartDate.Value > request.DueDate.Value)
+            throw new InvalidOperationException("Task start date must be on or before its due date.");
+        if (request.MilestoneId.HasValue && !(await _repository.GetMilestonesAsync(request.ProjectId)).Any(m => m.Id == request.MilestoneId.Value))
+            throw new InvalidOperationException("Select a milestone that belongs to this project.");
         if (request.DependsOnTaskId.HasValue || request.DependsOnSubTaskId.HasValue)
         {
             if (userId.HasValue && !await _permissions.IsAdminAsync(userId.Value))
@@ -179,14 +292,54 @@ public class TaskService : ITaskService
             DependsOnSubTaskId = request.DependsOnSubTaskId,
             Title = request.Title,
             Description = request.Description,
+            CompletionEvidence = request.CompletionEvidence,
             AssignedTo = request.AssignedTo ?? userId,
             StartDate = request.StartDate,
             DueDate = request.DueDate,
             Remarks = request.Remarks,
-            Status = "NotStarted",
+            Status = NormalizeMilestoneStatus(request.Status),
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "Task", task.Id);
+        return task;
+    }
+
+    public async Task<ProjectTask> UpdateTaskAsync(long taskId, CreateTaskRequest request, long userId)
+    {
+        var task = await _repository.GetTaskAsync(taskId) ?? throw new InvalidOperationException("Task not found.");
+        if (task.ProjectId != request.ProjectId) throw new InvalidOperationException("Task project cannot be changed.");
+        await _permissions.EnsureModuleAsync(userId, task.ProjectId, "Tasks", "edit");
+        if (string.IsNullOrWhiteSpace(request.Title)) throw new InvalidOperationException("Task title is required.");
+        if (request.StartDate.HasValue && request.DueDate.HasValue && request.StartDate.Value > request.DueDate.Value)
+            throw new InvalidOperationException("Task start date must be on or before its due date.");
+        if (request.MilestoneId.HasValue && !(await _repository.GetMilestonesAsync(task.ProjectId)).Any(m => m.Id == request.MilestoneId.Value))
+            throw new InvalidOperationException("Select a milestone that belongs to this project.");
+        var isAdmin = await _permissions.IsAdminAsync(userId);
+        if (!isAdmin && (request.DependsOnTaskId.HasValue || request.DependsOnSubTaskId.HasValue))
+            throw new UnauthorizedAccessException("Only Admin can set a dependency.");
+        if (isAdmin)
+            ApplyRequestedDependency(await _repository.GetTasksAsync(task.ProjectId), "T:" + task.Id, new SetTaskDependencyRequest
+            {
+                DependsOnTaskId = request.DependsOnTaskId,
+                DependsOnSubTaskId = request.DependsOnSubTaskId
+            }, task.Id, null);
+
+        task.Title = request.Title.Trim();
+        task.Description = request.Description;
+        task.CompletionEvidence = request.CompletionEvidence;
+        task.AssignedTo = request.AssignedTo;
+        task.MilestoneId = request.MilestoneId;
+        task.StartDate = request.StartDate;
+        task.DueDate = request.DueDate;
+        task.Status = NormalizeMilestoneStatus(request.Status);
+        if (isAdmin)
+        {
+            task.DependsOnTaskId = request.DependsOnSubTaskId.HasValue ? null : request.DependsOnTaskId;
+            task.DependsOnSubTaskId = request.DependsOnSubTaskId;
+        }
+        task.UpdatedAt = DateTime.UtcNow;
+        await _repository.UpdateTaskAsync(task);
+        await _audit.LogAsync(userId, "Update", "Task", task.Id);
         return task;
     }
 
@@ -285,12 +438,18 @@ public class TaskService : ITaskService
         var isAdmin = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
         SubTask? sub = null;
         if (request.SubTaskId.HasValue)
-            sub = task.SubTasks.FirstOrDefault(s => s.Id == request.SubTaskId);
+            sub = task.SubTasks.FirstOrDefault(s => s.Id == request.SubTaskId)
+                ?? throw new InvalidOperationException("Sub-task does not belong to the selected task.");
 
-        var canChangePercent = isAdmin || task.AssignedTo == userId;
-
+        if (request.CompletionPercent.HasValue && (request.CompletionPercent.Value < 0 || request.CompletionPercent.Value > 100))
+            throw new InvalidOperationException("Completion must be between 0 and 100 percent.");
+        var canChangePercent = isAdmin || task.AssignedTo == userId || (sub != null && sub.AssignedTo == userId);
+        var canSubmitUpdate = isAdmin || (userId.HasValue && await _permissions.CanUpdateModuleAsync(userId.Value, task.ProjectId, "Tasks"))
+            || task.AssignedTo == userId || (sub != null && sub.AssignedTo == userId);
+        if (!canSubmitUpdate)
+            throw new UnauthorizedAccessException("You need Tasks update permission or task ownership to submit an update.");
         if (request.CompletionPercent.HasValue && !canChangePercent)
-            throw new UnauthorizedAccessException("Only the task owner can change % completion.");
+            throw new UnauthorizedAccessException("Only the task owner can change completion percentage.");
 
         var projectTasks = await _repository.GetTasksAsync(task.ProjectId);
         if (sub != null)
@@ -303,6 +462,8 @@ public class TaskService : ITaskService
             if (request.CompletionPercent.HasValue) sub.CompletionPercent = request.CompletionPercent.Value;
             if (!string.IsNullOrWhiteSpace(request.Status)) sub.Status = request.Status;
             if (!string.IsNullOrWhiteSpace(request.Remarks)) sub.Remarks = request.Remarks;
+            if (task.SubTasks.Count > 0)
+                task.CompletionPercent = task.SubTasks.Average(s => s.CompletionPercent);
         }
         else if (request.CompletionPercent.HasValue && canChangePercent)
         {
@@ -313,6 +474,8 @@ public class TaskService : ITaskService
             task.Status = request.Status;
         if (!string.IsNullOrWhiteSpace(request.Remarks))
             task.Remarks = request.Remarks;
+        if (!string.IsNullOrWhiteSpace(request.CompletionEvidence))
+            task.CompletionEvidence = request.CompletionEvidence.Trim();
         task.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateTaskAsync(task);
 
@@ -368,8 +531,9 @@ public class TaskService : ITaskService
         return result;
     }
 
-    public async Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId)
+    public async Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId, long userId)
     {
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks")) return new();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var inactiveSince = DateTime.UtcNow.AddDays(-7);
         var tasks = await _repository.GetTasksAsync(projectId);
@@ -404,8 +568,10 @@ public class TaskService : ITaskService
         return exceptions;
     }
 
-    public async Task<DailySiteReportDto> GetDailyReportAsync(long projectId, DateOnly? date)
+    public async Task<DailySiteReportDto> GetDailyReportAsync(long projectId, DateOnly? date, long userId)
     {
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks"))
+            throw new UnauthorizedAccessException("You cannot view task reports for this project.");
         var reportDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var tasks = await _repository.GetTasksAsync(projectId);
         var updates = await _repository.GetUpdatesForDateAsync(projectId, reportDate);
@@ -418,7 +584,11 @@ public class TaskService : ITaskService
             TaskUpdates = updates.Select(u => new TaskDailyStatusDto
             {
                 TaskId = u.TaskId,
+                SubTaskId = u.SubTaskId,
                 Title = tasks.FirstOrDefault(t => t.Id == u.TaskId)?.Title ?? $"Task {u.TaskId}",
+                SubTaskTitle = u.SubTaskId.HasValue
+                    ? tasks.FirstOrDefault(t => t.Id == u.TaskId)?.SubTasks.FirstOrDefault(s => s.Id == u.SubTaskId)?.Title
+                    : null,
                 CompletionPercent = u.CompletionPercent ?? 0,
                 Status = u.Status ?? "",
                 Remarks = u.Remarks

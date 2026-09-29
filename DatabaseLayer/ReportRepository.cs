@@ -145,7 +145,7 @@ public class ReportRepository : IReportRepository
     public async Task<DailySiteReportDto> GetDailySiteReportAsync(long projectId, DateOnly date)
     {
         var tasks = await _db.Tasks.Where(t => t.ProjectId == projectId).AsNoTracking().ToListAsync();
-        var updates = await _db.TaskUpdates.Include(u => u.Task)
+        var updates = await _db.TaskUpdates.Include(u => u.Task).ThenInclude(t => t.SubTasks)
             .Where(u => u.Task.ProjectId == projectId && u.UpdateDate == date)
             .AsNoTracking()
             .ToListAsync();
@@ -158,7 +158,9 @@ public class ReportRepository : IReportRepository
             TaskUpdates = updates.Select(u => new TaskDailyStatusDto
             {
                 TaskId = u.TaskId,
+                SubTaskId = u.SubTaskId,
                 Title = tasks.FirstOrDefault(t => t.Id == u.TaskId)?.Title ?? "",
+                SubTaskTitle = u.SubTaskId.HasValue ? u.Task.SubTasks.FirstOrDefault(s => s.Id == u.SubTaskId)?.Title : null,
                 CompletionPercent = u.CompletionPercent ?? 0,
                 Status = u.Status ?? "",
                 Remarks = u.Remarks
@@ -199,23 +201,72 @@ public class ReportRepository : IReportRepository
 
     public async Task<List<ExceptionItemDto>> GetExceptionsAsync(IEnumerable<long> projectIds)
     {
-        var ids = projectIds.ToList();
+        var ids = projectIds.Distinct().ToList();
+        if (ids.Count == 0) return new();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var inactiveSince = DateTime.UtcNow.AddDays(-7);
+        var atRiskUntil = today.AddDays(7);
         var list = new List<ExceptionItemDto>();
 
-        var overdue = await _db.Tasks
-            .Where(t => ids.Contains(t.ProjectId) && t.DueDate < today && t.Status != "Completed")
-            .Take(20)
+        var tasks = await _db.Tasks.Include(t => t.Project)
+            .Where(t => ids.Contains(t.ProjectId) && t.Status != "Completed" && t.CompletionPercent < 100)
+            .AsNoTracking().ToListAsync();
+        var taskIds = tasks.Select(t => t.Id).ToList();
+        var latestTaskUpdates = await _db.TaskUpdates
+            .Where(u => taskIds.Contains(u.TaskId))
+            .GroupBy(u => new { u.TaskId, u.SubTaskId })
+            .Select(g => new { g.Key.TaskId, g.Key.SubTaskId, LastUpdate = g.Max(u => u.CreatedAt) })
             .ToListAsync();
-        list.AddRange(overdue.Select(t => new ExceptionItemDto
-        {
-            Type = "OverdueTask",
-            RelatedId = t.Id,
-            Title = t.Title,
-            Message = "Task overdue"
-        }));
+        var taskLastUpdates = latestTaskUpdates.Where(u => u.SubTaskId == null)
+            .ToDictionary(u => u.TaskId, u => (DateTime?)u.LastUpdate);
+        var subTaskLastUpdates = latestTaskUpdates.Where(u => u.SubTaskId != null)
+            .ToDictionary(u => u.SubTaskId!.Value, u => (DateTime?)u.LastUpdate);
 
-        return list;
+        void AddTaskException(string type, long id, long projectId, string projectName, string kind, string title, string message) =>
+            list.Add(new ExceptionItemDto { Type = type, RelatedId = id, ProjectId = projectId, ProjectName = projectName, ItemKind = kind, Title = title, Message = message });
+
+        foreach (var t in tasks)
+        {
+            var lastUpdate = taskLastUpdates.GetValueOrDefault(t.Id) ?? t.UpdatedAt ?? t.CreatedAt;
+            if (t.DueDate < today)
+                AddTaskException("Overdue", t.Id, t.ProjectId, t.Project.Name, "Task", t.Title, "Task is overdue.");
+            else if ((t.DueDate.HasValue && t.DueDate.Value <= atRiskUntil)
+                || t.Status.Contains("risk", StringComparison.OrdinalIgnoreCase)
+                || t.Status.Contains("blocked", StringComparison.OrdinalIgnoreCase))
+                AddTaskException("AtRisk", t.Id, t.ProjectId, t.Project.Name, "Task", t.Title, "Task due within 7 days and not complete.");
+            if (lastUpdate < inactiveSince)
+                AddTaskException("Inactive", t.Id, t.ProjectId, t.Project.Name, "Task", t.Title, "No progress update in the last 7 days.");
+            if (t.Status.Contains("critical", StringComparison.OrdinalIgnoreCase))
+                AddTaskException("Critical", t.Id, t.ProjectId, t.Project.Name, "Task", t.Title, "Task is marked critical.");
+        }
+
+        var activeSubTasks = await _db.SubTasks.Include(s => s.Task).ThenInclude(t => t.Project)
+            .Where(s => taskIds.Contains(s.TaskId) && s.Status != "Completed" && s.CompletionPercent < 100)
+            .AsNoTracking().ToListAsync();
+        foreach (var s in activeSubTasks)
+        {
+            var lastUpdate = subTaskLastUpdates.GetValueOrDefault(s.Id) ?? s.CreatedAt;
+            if (s.DueDate < today)
+                AddTaskException("Overdue", s.Id, s.Task.ProjectId, s.Task.Project.Name, "Sub-task", s.Title, "Sub-task is overdue.");
+            else if ((s.DueDate.HasValue && s.DueDate.Value <= atRiskUntil)
+                || s.Status.Contains("risk", StringComparison.OrdinalIgnoreCase)
+                || s.Status.Contains("blocked", StringComparison.OrdinalIgnoreCase))
+                AddTaskException("AtRisk", s.Id, s.Task.ProjectId, s.Task.Project.Name, "Sub-task", s.Title, "Sub-task due within 7 days and not complete.");
+            if (lastUpdate < inactiveSince)
+                AddTaskException("Inactive", s.Id, s.Task.ProjectId, s.Task.Project.Name, "Sub-task", s.Title, "No progress update in the last 7 days.");
+            if (s.Status.Contains("critical", StringComparison.OrdinalIgnoreCase))
+                AddTaskException("Critical", s.Id, s.Task.ProjectId, s.Task.Project.Name, "Sub-task", s.Title, "Sub-task is marked critical.");
+        }
+
+        var criticalIssues = await _db.Issues.Include(i => i.Project).Include(i => i.Priority)
+            .Where(i => ids.Contains(i.ProjectId) && i.Status != "Closed" && i.Status != "Resolved"
+                && i.Priority != null && (i.Priority.Code == "CRITICAL" || i.Priority.Name == "Critical"))
+            .AsNoTracking().ToListAsync();
+        foreach (var issue in criticalIssues)
+            AddTaskException("Critical", issue.Id, issue.ProjectId, issue.Project.Name, "Issue", issue.Title, "Critical issue is still open.");
+
+        return list.OrderBy(e => e.Type == "Critical" ? 0 : e.Type == "Overdue" ? 1 : e.Type == "AtRisk" ? 2 : 3)
+            .ThenBy(e => e.ProjectName).ThenBy(e => e.Title).Take(100).ToList();
+
     }
 }

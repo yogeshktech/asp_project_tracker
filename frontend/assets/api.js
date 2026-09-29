@@ -136,6 +136,9 @@ const WisetrackAPI = {
     return data;
   },
   getProjectFiles(projectId) { return this.get(`/files?module=Project&relatedId=${projectId}`); },
+  getTaskFiles(taskId) { return this.get(`/files?module=Tasks&relatedId=${taskId}`); },
+  getMilestoneFiles(milestoneId) { return this.get(`/files?module=Milestones&relatedId=${milestoneId}`); },
+  downloadFileById(id) { return this.downloadFile(`/files/${id}`); },
   async downloadFile(path) {
     const res = await fetch(`${API_BASE}${path}`, { headers: this._headers(false) });
     if (!res.ok) throw new Error(`Download failed (${res.status})`);
@@ -215,15 +218,30 @@ const WisetrackAPI = {
   // BOQ
   getBoqs(projectId) { return this.get(`/boq/project/${projectId}`); },
   getBoq(id) { return this.get(`/boq/${id}`); },
+  createBoqRevision(id, remarks) { return this.post(`/boq/${id}/versions`, { remarks }); },
+  setBoqBaseline(id, versionId) { return this.post(`/boq/${id}/versions/${versionId}/baseline`, {}); },
+  updateBoqRevisionItem(id, versionId, itemId, data) { return this.put(`/boq/${id}/versions/${versionId}/items/${itemId}`, data); },
   importBoq(data) { return this.post('/boq/import', data); },
   importBoqFile(data) { return this._fetch('/boq/import-file', { method: 'POST', body: data }).then(r => r.json().then(v => { if (!r.ok) throw new Error(v.message || 'BOQ import failed'); return v; })); },
-  createBoqFromMaster(projectId, itemIds) { return this.post('/boq/from-master', { projectId, itemIds }); },
+  createBoqFromMaster(projectId, lines) { return this.post('/boq/from-master', { projectId, lines }); },
+  uploadBoqAttachment(projectId, file) {
+    const form = new FormData(); form.append('projectId', projectId); form.append('file', file);
+    return this._fetch('/boq/attachments', { method: 'POST', body: form });
+  },
+  async downloadBoqAttachment(path) {
+    const res = await fetch(`${API_BASE}${path}`, { headers: this._headers(false) });
+    if (!res.ok) throw new Error(res.status === 403 ? 'You do not have access to this BOQ attachment.' : 'Attachment download failed.');
+    return res.blob();
+  },
 
   // Tasks
   getMilestones(projectId) { return this.get(`/tasks/milestones/${projectId}`); },
   createMilestone(data) { return this.post('/tasks/milestones', data); },
+  updateMilestone(id, data) { return this.put(`/tasks/milestones/${id}`, data); },
   getTasks(projectId) { return this.get(`/tasks/project/${projectId}`); },
+  getTaskHistory(taskId, subTaskId) { return this.get(`/tasks/history/${taskId}${subTaskId ? `?subTaskId=${subTaskId}` : ''}`); },
   createTask(data) { return this.post('/tasks', data); },
+  updateTask(id, data) { return this.put(`/tasks/${id}`, data); },
   deleteTask(id) { return this.del(`/tasks/${id}`); },
   setTaskDependency(id, data) { return this.put(`/tasks/${id}/dependency`, data); },
   createSubTask(data) { return this.post('/tasks/subtasks', data); },
