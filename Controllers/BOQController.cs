@@ -201,6 +201,7 @@ internal static class BOQSpreadsheetReader
         {
             var row = rows[i];
             if (row.All(string.IsNullOrWhiteSpace)) continue;
+            var resultLineErrors = new List<string>();
             decimal Number(string value, string field, bool required)
             {
                 if (string.IsNullOrWhiteSpace(value))
@@ -213,7 +214,6 @@ internal static class BOQSpreadsheetReader
                 resultLineErrors.Add($"{field}: '{value}' is not a valid number.");
                 return 0;
             }
-            var resultLineErrors = new List<string>();
             var quantity = Number(Cell(row, qty), "Quantity", true);
             var unitPrice = Number(Cell(row, price), "Price", true);
             decimal? totalAmount = null;
