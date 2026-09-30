@@ -647,6 +647,57 @@ header.topbar {
   font-family: inherit;
 }
 
+.project-tree-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.project-tree-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 290px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.project-tree-trigger small {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.project-tree-trigger > i { margin-left: auto; font-size: 10px; }
+
+.project-tree-menu {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 12px);
+  left: -70px;
+  width: min(360px, calc(100vw - 36px));
+  max-height: 360px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+
+.project-tree-menu[hidden] { display: none; }
+.project-tree-row { display: flex; align-items: center; gap: 4px; padding-left: calc(var(--tree-depth, 0) * 15px); }
+.project-tree-expand, .project-tree-spacer { width: 28px; height: 32px; flex: 0 0 28px; }
+.project-tree-expand, .project-tree-option { border: 0; background: transparent; color: var(--text-main); cursor: pointer; }
+.project-tree-expand { color: var(--text-muted); }
+.project-tree-option { display: flex; flex: 1; justify-content: space-between; gap: 8px; padding: 7px 8px; border-radius: 5px; text-align: left; }
+.project-tree-option:hover, .project-tree-option.selected { color: var(--primary); background: var(--primary-light); }
+.project-tree-option small { color: var(--text-muted); }
+.project-tree-empty { padding: 12px; color: var(--text-muted); }
+
 /* Search Box */
 .search-box {
   width: 220px;
@@ -949,6 +1000,12 @@ header.topbar {
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border-light);
 }
+
+.card-header > div { min-width: 0; }
+.card-header > .btn { flex: 0 0 auto; }
+.resort-management-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.resort-management-grid > .card { min-width: 0; }
+.resort-management-grid .card-header { flex-wrap: wrap; align-items: flex-start; }
 
 .card-title {
   font-size: 16px;
@@ -2741,6 +2798,7 @@ button.btn[disabled] {
 @media (max-width: 1100px) {
   .g4 { grid-template-columns: repeat(2, 1fr); }
   .g3 { grid-template-columns: repeat(2, 1fr); }
+  .resort-management-grid { grid-template-columns: 1fr; }
   .charts-grid { grid-template-columns: 1fr; }
 }
 

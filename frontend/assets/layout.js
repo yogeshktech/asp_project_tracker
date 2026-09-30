@@ -168,7 +168,10 @@ function wtBuildTopbar() {
       </div>
       <div class="resort-selector-wrap" title="Active Project Scope">
         <label><i class="fa-solid fa-layer-group" style="color:var(--primary); font-size:11px;"></i> Project:</label>
-        <select class="resort-select" id="globalProjectSelector" onchange="onGlobalProjectChange(this.value)" title="Tasks and planning scope"></select>
+        <div class="project-tree-picker" id="globalProjectSelector">
+          <button type="button" class="project-tree-trigger" id="globalProjectButton" aria-expanded="false" onclick="wtToggleProjectMenu()">Loading projects <i class="fa-solid fa-chevron-down"></i></button>
+          <div class="project-tree-menu" id="globalProjectMenu" hidden></div>
+        </div>
       </div>
       <div class="search-box">
         <i class="fa-solid fa-magnifying-glass"></i>

@@ -100,11 +100,7 @@
       localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
       return null;
     }
-    const params = new URLSearchParams(location.search);
-    const requested = params.get('projectId') || params.get('id');
-    const stored = requested && projects.some(p => String(p.id) === String(requested))
-      ? requested
-      : localStorage.getItem('WISETRACK_SELECTED_PROJECT');
+    const stored = localStorage.getItem('WISETRACK_SELECTED_PROJECT');
     if (stored && projects.some(p => String(p.id) === String(stored))) {
       return String(stored);
     }
@@ -112,6 +108,25 @@
     const pid = String(prefer.id);
     localStorage.setItem('WISETRACK_SELECTED_PROJECT', pid);
     return pid;
+  }
+
+  const PROJECT_CONTEXT_TABS = [
+    ['Overview', 'project-detail.html'], ['Planning & WBS', 'planning.html'],
+    ['Milestones', 'milestones.html'], ['Daily Reports', 'daily-report.html'],
+    ['Issues', 'issues.html'], ['BOQ', 'boq.html'], ['Budget', 'budget.html'],
+    ['Costs', 'costs.html'], ['Inventory & Closure', 'inventory.html']
+  ];
+  const PROJECT_CONTEXT_PAGES = new Set(PROJECT_CONTEXT_TABS.map(([, href]) => href));
+
+  function renderProjectContextTabs(page, projectId) {
+    const el = document.getElementById('apiPageRoot');
+    if (!el || !projectId || !PROJECT_CONTEXT_PAGES.has(page)) return;
+    el.querySelector('.project-context-tabs')?.remove();
+    const nav = `<nav class="project-context-tabs" aria-label="Project sections">${PROJECT_CONTEXT_TABS.map(([label, href]) => {
+      const active = page === href;
+      return `<a class="project-context-tab${active ? ' active' : ''}"${active ? ' aria-current="page"' : ''} href="${href}?projectId=${encodeURIComponent(projectId)}">${label}</a>`;
+    }).join('')}</nav>`;
+    el.querySelector('.head')?.insertAdjacentHTML('afterend', nav);
   }
 
   /** Parent + descendant ids — used for BOQ / inventory roll-up only. Tasks use the selected project alone. */
@@ -1108,7 +1123,7 @@
           ${tableWrap(['ID', 'Resort Name', 'Resort Code', 'Location', 'Operational Status', 'Super Admin Actions'], 'resortsBody')}
         </div>
 
-        <div class="grid g2">
+        <div class="grid g2 resort-management-grid">
           <!-- Section 2: Properties under Resorts -->
           <div class="card" style="margin-bottom:0;">
             <div class="card-header">
@@ -1631,15 +1646,7 @@
             <div id="teamList" style="margin-top:16px"></div>
           </div>
         </div>`;
-    const projectTabs = [
-      ['Overview', 'project-detail.html'], ['Planning & WBS', 'planning.html'],
-      ['Milestones', 'milestones.html'], ['Daily Reports', 'daily-report.html'],
-      ['Issues', 'issues.html'], ['BOQ', 'boq.html'], ['Budget', 'budget.html'],
-      ['Costs', 'costs.html'], ['Inventory & Closure', 'inventory.html']
-    ];
-    el.querySelector('.head')?.insertAdjacentHTML('afterend', `<nav class="project-context-tabs" aria-label="Project sections">${projectTabs.map(([label, href], i) =>
-      `<a class="project-context-tab${i === 0 ? ' active' : ''}" href="${href}?projectId=${encodeURIComponent(pid || '')}" onclick="localStorage.setItem('WISETRACK_SELECTED_PROJECT','${String(pid || '').replace(/[^0-9]/g, '')}')">${label}</a>`
-    ).join('')}</nav>`);
+    renderProjectContextTabs('project-detail.html', pid);
     el.insertAdjacentHTML('beforeend', `<section class="card" id="projectDashboard" style="margin-top:18px"><p style="color:var(--text-muted)">Loading project dashboard…</p></section>`);
 
     let apiProjects = [];
@@ -4506,6 +4513,8 @@
   async function boot() {
     try {
       if (typeof requireAuth === 'function' && !requireAuth()) return;
+      const requestedProject = new URLSearchParams(location.search).get('projectId') || new URLSearchParams(location.search).get('id');
+      if (requestedProject && /^\d+$/.test(requestedProject)) localStorage.setItem('WISETRACK_SELECTED_PROJECT', requestedProject);
       if (typeof wtApplyLayout === 'function') wtApplyLayout();
       if (typeof applyLoggedInUser === 'function') await applyLoggedInUser();
       if (typeof fillResortSelector === 'function') await fillResortSelector();
@@ -4545,6 +4554,7 @@
       };
       const fn = map[page];
       if (fn) await fn();
+      if (PROJECT_CONTEXT_PAGES.has(page)) renderProjectContextTabs(page, await selectedProjectId());
       if (typeof watchTablePagination === 'function') watchTablePagination();
       if (typeof initAllTables === 'function') initAllTables();
     } catch (err) {

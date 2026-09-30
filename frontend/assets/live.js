@@ -104,8 +104,9 @@ function wtPreferProject(projects) {
 }
 
 async function fillProjectSelector() {
-  const sel = document.getElementById('globalProjectSelector');
-  if (!sel) return;
+  const button = document.getElementById('globalProjectButton');
+  const menu = document.getElementById('globalProjectMenu');
+  if (!button || !menu) return;
   try {
     const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
     const projects = await WisetrackAPI.getProjects(resortId || undefined).catch(() => []);
@@ -117,17 +118,58 @@ async function fillProjectSelector() {
       if (cur) localStorage.setItem('WISETRACK_SELECTED_PROJECT', cur);
       else localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
     }
-    sel.innerHTML = tree.length
-      ? tree.map(p => {
-          const pad = '\u00A0'.repeat(Math.max(0, Number(p._depth) || 0) * 2);
-          const mark = (Number(p._depth) || 0) > 0 ? '↳ ' : '';
-          const label = `${pad}${mark}${esc(p.name || p.title)} · ${esc(p.code || '#' + p.id)}`;
-          return `<option value="${p.id}" ${String(p.id) === String(cur) ? 'selected' : ''}>${label}</option>`;
-        }).join('')
-      : '<option value="">No projects</option>';
+    const children = new Map();
+    const ids = new Set(tree.map(p => Number(p.id)));
+    tree.forEach(p => {
+      const parent = Number(p.parentProjectId || p.parentId || 0);
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(p);
+    });
+    window.wtProjectExpanded = window.wtProjectExpanded || new Set();
+    const renderNode = (p, depth = 0) => {
+      const id = Number(p.id);
+      const kids = children.get(id) || [];
+      const expanded = window.wtProjectExpanded.has(id);
+      return `<div class="project-tree-row" style="--tree-depth:${depth}">
+        ${kids.length ? `<button type="button" class="project-tree-expand" aria-label="${expanded ? 'Collapse' : 'Expand'} ${esc(p.name || p.title)}" aria-expanded="${expanded}" onclick="wtToggleProjectNode(${id})"><i class="fa-solid fa-chevron-${expanded ? 'down' : 'right'}"></i></button>` : '<span class="project-tree-spacer"></span>'}
+        <button type="button" class="project-tree-option${String(p.id) === String(cur) ? ' selected' : ''}" onclick="wtChooseProject(${id})">${esc(p.name || p.title)} <small>${esc(p.code || '#' + p.id)}</small></button>
+      </div>${kids.length && expanded ? renderBranch(id, depth + 1) : ''}`;
+    };
+    const renderBranch = (parentId, depth = 0) => (children.get(Number(parentId)) || []).map(p => renderNode(p, depth)).join('');
+    const roots = tree.filter(p => {
+      const parent = Number(p.parentProjectId || p.parentId || 0);
+      return !parent || !ids.has(parent);
+    });
+    menu.innerHTML = roots.length ? roots.map(p => renderNode(p)).join('') : '<div class="project-tree-empty">No projects</div>';
+    const selected = tree.find(p => String(p.id) === String(cur));
+    button.innerHTML = `${esc(selected ? (selected.name || selected.title) : 'No projects')} <small>${selected ? esc(selected.code || '#' + selected.id) : ''}</small><i class="fa-solid fa-chevron-down"></i>`;
   } catch (err) {
-    sel.innerHTML = `<option value="">${esc(err.message)}</option>`;
+    menu.innerHTML = `<div class="project-tree-empty">${esc(err.message)}</div>`;
+    button.textContent = 'Projects unavailable';
   }
+}
+
+function wtToggleProjectMenu() {
+  const button = document.getElementById('globalProjectButton');
+  const menu = document.getElementById('globalProjectMenu');
+  if (!button || !menu) return;
+  menu.hidden = !menu.hidden;
+  button.setAttribute('aria-expanded', String(!menu.hidden));
+}
+
+function wtToggleProjectNode(id) {
+  window.wtProjectExpanded = window.wtProjectExpanded || new Set();
+  if (window.wtProjectExpanded.has(Number(id))) window.wtProjectExpanded.delete(Number(id));
+  else window.wtProjectExpanded.add(Number(id));
+  fillProjectSelector();
+  const menu = document.getElementById('globalProjectMenu');
+  const button = document.getElementById('globalProjectButton');
+  if (menu) menu.hidden = false;
+  if (button) button.setAttribute('aria-expanded', 'true');
+}
+
+function wtChooseProject(id) {
+  onGlobalProjectChange(String(id));
 }
 
 async function loadResortsPage() {
