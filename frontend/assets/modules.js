@@ -2006,10 +2006,10 @@
       ` <button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
         <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>`)
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Actions'], 'budgetBody')
-      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)'], 'ccBody');
+      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Actions'], 'ccBody');
     if (!pid) {
       $('#budgetBody').innerHTML = emptyRow(8, 'No project available.');
-      $('#ccBody').innerHTML = emptyRow(8, 'No project available.');
+      $('#ccBody').innerHTML = emptyRow(9, 'No project available.');
       return;
     }
     try {
@@ -2020,11 +2020,13 @@
         const allocated = (b.allocations || []).reduce((n, a) => n + Number(a.allocatedAmount || 0), 0);
         const remaining = Number(b.approvedAmount || 0) - allocated;
         const latestVersion = [...(b.versions || [])].sort((a, z) => Number(z.versionNo) - Number(a.versionNo))[0];
+        const canUpdate = !wtCan || wtCan('Budgets', 'update', Number(pid));
+        const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
         return `<tr><td>${b.id}</td><td>${esc(b.name)}</td>
           <td>${esc(b.currency || 'INR')} ${Number(b.approvedAmount || 0).toLocaleString('en-IN')}</td>
           <td>${esc(b.currency || 'INR')} ${allocated.toLocaleString('en-IN')}</td><td>${esc(b.currency || 'INR')} ${remaining.toLocaleString('en-IN')}</td>
           <td>${esc(b.currency || 'INR')}</td><td>${latestVersion ? `v${latestVersion.versionNo}` : '—'}</td>
-          <td><button class="btn sm" onclick="WTPages.openBudgetHistory(${b.id})">History</button> <button class="btn sm" onclick="WTPages.openBudgetRevision(${b.id})">Revise</button> <button class="btn sm" onclick="WTPages.openAllocationModal(${b.id})">Allocate</button></td></tr>`;
+          <td class="table-actions"><button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> <button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') || emptyRow(8, 'No budgets');
       const allocationMap = new Map();
       for (const b of budgets || []) for (const a of b.allocations || []) allocationMap.set(a.costCenterId, (allocationMap.get(a.costCenterId) || 0) + Number(a.allocatedAmount || 0));
@@ -2032,6 +2034,9 @@
         const rollup = ragByCenter.get(c.id) || {};
         const allocated = allocationMap.get(c.id) || 0;
         const status = rollup.ragStatus || 'Green';
+        const ccProjectId = Number(c.projectId || pid);
+        const canEditCenter = !wtCan || wtCan('Budgets', 'update', ccProjectId);
+        const canDeleteCenter = !wtCan || wtCan('Budgets', 'delete', ccProjectId);
         return `<tr><td>${esc(c.name)}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
           <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.budget ?? allocated).toLocaleString('en-IN')}</td>
           <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-IN')}</td>
@@ -2039,24 +2044,29 @@
           <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.forecast ?? rollup.spent ?? 0).toLocaleString('en-IN')}</td>
           <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.variance ?? allocated).toLocaleString('en-IN')}</td>
           <td><span class="badge ${rollup.budgetStatus === 'Over Budget' ? 'red' : rollup.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(rollup.budgetStatus || 'On Budget')}</span></td>
-          <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td></tr>`;
-      }).join('') || emptyRow(8, 'No cost centers. Add sub-projects to use them as cost centers.');
+          <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td>
+          <td class="table-actions">${canEditCenter ? `<button class="btn sm" title="Edit cost center" aria-label="Edit cost center" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDeleteCenter ? `<button class="btn sm danger" title="Delete cost center" aria-label="Delete cost center" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
+      }).join('') || emptyRow(9, 'No cost centers. Add sub-projects to use them as cost centers.');
     } catch (e) {
       $('#budgetBody').innerHTML = errRow(8, e);
-      $('#ccBody').innerHTML = errRow(8, e);
+      $('#ccBody').innerHTML = errRow(9, e);
       showToast(e.message, 'danger');
     }
   }
 
-  async function openBudgetModal() {
+  async function openBudgetModal(id = null) {
     const pid = await selectedProjectId();
-    openModal('Create Budget', `
+    const budget = id ? (await WisetrackAPI.getBudgets(pid)).find(b => Number(b.id) === Number(id)) : null;
+    if (id && !budget) { showToast('Budget not found', 'danger'); return; }
+    openModal(budget ? 'Edit Budget' : 'Create Budget', `
       <form onsubmit="WTPages.saveBudget(event)">
         <input type="hidden" id="bProj" value="${pid}">
+        <input type="hidden" id="bId" value="${budget?.id || ''}">
         <div class="form-grid">
-          <div class="field full"><label>Name *</label><input id="bName" required></div>
-          <div class="field"><label>Approved Amount *</label><input id="bAmt" type="number" step="0.01" required></div>
-          <div class="field"><label>Currency</label><input id="bCur" value="INR"></div>
+          <div class="field full"><label>Name *</label><input id="bName" value="${esc(budget?.name || '')}" required></div>
+          <div class="field"><label>Approved Amount *</label><input id="bAmt" type="number" step="0.01" value="${budget?.approvedAmount ?? ''}" required></div>
+          <div class="field"><label>Currency</label><input id="bCur" value="${esc(budget?.currency || 'INR')}"></div>
+          ${budget ? '<div class="field full"><label>Reason for baseline change (required if amount/currency changes)</label><input id="bReason" maxlength="2000"></div>' : ''}
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -2065,14 +2075,24 @@
   async function saveBudget(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createBudget({
+      const id = Number($('#bId')?.value) || 0;
+      const payload = {
         projectId: Number($('#bProj').value),
         name: $('#bName').value.trim(),
         approvedAmount: Number($('#bAmt').value),
-        currency: $('#bCur').value.trim() || 'INR'
-      });
-      closeModal(); showToast('Budget created'); await pageBudget();
+        currency: $('#bCur').value.trim() || 'INR',
+        remarks: $('#bReason')?.value.trim() || null
+      };
+      if (id) await WisetrackAPI.updateBudget(id, payload);
+      else await WisetrackAPI.createBudget(payload);
+      closeModal(); showToast(id ? 'Budget updated' : 'Budget created'); await pageBudget();
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function deleteBudget(id, name) {
+    if (!confirm(`Delete budget "${name || id}" and its allocations/version history?`)) return;
+    try { await WisetrackAPI.deleteBudget(id); showToast('Budget deleted'); await pageBudget(); }
+    catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function reviseBudget(id) {
@@ -2153,13 +2173,16 @@
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
-  async function openCostCenterModal() {
+  async function openCostCenterModal(id = null) {
     const pid = await selectedProjectId();
-    openModal('Cost Center', `
+    const existing = id ? (await WisetrackAPI.getCostCenters(pid)).find(c => Number(c.id) === Number(id)) : null;
+    if (id && !existing) { showToast('Cost center not found', 'danger'); return; }
+    openModal(existing ? 'Edit Cost Center' : 'Cost Center', `
       <form onsubmit="WTPages.saveCC(event)">
-        <input type="hidden" id="ccProj" value="${pid}">
+        <input type="hidden" id="ccProj" value="${existing?.projectId || pid}">
+        <input type="hidden" id="ccId" value="${existing?.id || ''}">
         <div class="form-grid">
-          <div class="field"><label>Name *</label><input id="ccName" required></div>
+          <div class="field"><label>Name *</label><input id="ccName" value="${esc(existing?.name || '')}" required></div>
         </div>
         <p class="card-subtitle" style="margin:8px 0 0">Code auto-assigns (CC-001).</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -2169,12 +2192,15 @@
   async function saveCC(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.createCostCenter({ projectId: Number($('#ccProj').value), name: $('#ccName').value.trim() });
-      closeModal(); showToast('Created'); await pageBudget();
+      const id = Number($('#ccId')?.value) || 0;
+      const data = { projectId: Number($('#ccProj').value), name: $('#ccName').value.trim() };
+      if (id) await WisetrackAPI.updateCostCenter(id, data); else await WisetrackAPI.createCostCenter(data);
+      closeModal(); showToast(id ? 'Cost center updated' : 'Created'); await pageBudget();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function deleteCC(id) {
+    if (!confirm('Delete this cost center? This may fail if it is linked to existing cost entries or allocations.')) return;
     try { await WisetrackAPI.deleteCostCenter(id); await pageBudget(); } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -2264,11 +2290,11 @@
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
       + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)'], 'costCenterFinanceBody')
-      + tableWrap(['ID', 'Type', 'Capture Level', 'Amount', 'Date', 'Notes'], 'costsBody');
+      + tableWrap(['ID', 'Type', 'Capture Level', 'Amount', 'Date', 'Notes', 'Actions'], 'costsBody');
     if (!pid) {
       $('#varianceBox').innerHTML = 'No project available.';
       $('#costCenterFinanceBody').innerHTML = emptyRow(8, 'No project available.');
-      $('#costsBody').innerHTML = emptyRow(6, 'No project available.');
+      $('#costsBody').innerHTML = emptyRow(7, 'No project available.');
       return;
     }
     try {
@@ -2313,10 +2339,12 @@
         ...(purchases || []).map(x => ({ ...x, _t: 'Purchase' })),
         ...(actuals || []).map(x => ({ ...x, _t: 'Actual' }))
       ];
-      $('#costsBody').innerHTML = rows.length ? rows.map(r => `
-        <tr><td>${r.id}</td><td>${r._t}</td><td>${r.boqItemId && r.costCenterId ? `BOQ #${r.boqItemId} · CC #${r.costCenterId}` : r.costCenterId ? `Cost Center #${r.costCenterId}` : r.boqItemId ? `BOQ Line #${r.boqItemId}` : 'Project'}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
-        <td>${esc(r.costDate || r.purchaseDate || r.createdAt || '—')}</td><td>${esc(r.remarks || r.description || r.notes || '—')}</td></tr>`
-      ).join('') : emptyRow(6, 'No cost entries');
+      $('#costsBody').innerHTML = rows.length ? rows.map(r => {
+        const canUpdate = !wtCan || wtCan('Costs', 'update', Number(pid));
+        const canDelete = !wtCan || wtCan('Costs', 'delete', Number(pid));
+        return `<tr><td>${r.id}</td><td>${r._t}</td><td>${r.boqItemId && r.costCenterId ? `BOQ #${r.boqItemId} / CC #${r.costCenterId}` : r.costCenterId ? `Cost Center #${r.costCenterId}` : r.boqItemId ? `BOQ Line #${r.boqItemId}` : 'Project'}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
+          <td>${esc(r.costDate || r.purchaseDate || r.createdAt || 'N/A')}</td><td>${esc(r.remarks || r.description || r.notes || 'N/A')}</td><td class="table-actions">${canUpdate ? `<button class="btn sm" title="Edit ${r._t.toLowerCase()}" aria-label="Edit ${r._t.toLowerCase()}" onclick="WTPages.open${r._t}Modal(${r.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete ${r._t.toLowerCase()}" aria-label="Delete ${r._t.toLowerCase()}" onclick="WTPages.deleteCost('${r._t}', ${r.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
+      }).join('') : emptyRow(7, 'No cost entries');
     } catch (e) { showToast(e.message, 'danger'); }
   }
   async function saveVarianceExplanation() {
@@ -2334,8 +2362,10 @@
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
-  async function openPurchaseModal() {
+  async function openPurchaseModal(id = null) {
     const pid = await selectedProjectId();
+    const existing = id ? (await WisetrackAPI.getPurchases(pid)).find(x => Number(x.id) === Number(id)) : null;
+    if (id && !existing) { showToast('Purchase not found', 'danger'); return; }
     const [centers, boqs] = await Promise.all([
       WisetrackAPI.getCostCenters(pid).catch(() => []), WisetrackAPI.getBoqs(pid).catch(() => [])
     ]);
@@ -2346,25 +2376,28 @@
       return (version?.items || []).map(i => ({ ...i, boqTitle: b.title }));
     });
     const lineOptions = boqLines.map(i => `<option value="${i.id}">${esc(i.boqTitle)} · ${esc(i.lineNo || '')} ${esc(i.itemCode || i.description || i.itemName || 'BOQ line')}</option>`).join('');
-    openModal('Add Purchase', `
+    openModal(existing ? 'Edit Purchase' : 'Add Purchase', `
       <form onsubmit="WTPages.savePurchase(event)">
         <input type="hidden" id="pProj" value="${pid}">
+        <input type="hidden" id="pId" value="${existing?.id || ''}">
         <div class="form-grid">
-          <div class="field"><label>Amount *</label><input id="pAmt" type="number" min="0.01" step="0.01" required></div>
-          <div class="field"><label>Date</label><input id="pDate" type="date"></div>
+          <div class="field"><label>Amount *</label><input id="pAmt" type="number" min="0.01" step="0.01" value="${existing?.amount ?? ''}" required></div>
+          <div class="field"><label>Date</label><input id="pDate" type="date" value="${existing?.purchaseDate || ''}"></div>
           <div class="field full"><label>BOQ Line (optional)</label><select id="pBoq"><option value="">Project-level purchase</option>${lineOptions}</select></div>
           <div class="field full"><label>Cost Center</label><select id="pCC"><option value="">-- None --</option>${ccOptions}</select></div>
-          <div class="field"><label>Vendor</label><input id="pVendor"></div>
-          <div class="field"><label>Description / Reference</label><input id="pRem"></div>
+          <div class="field"><label>Vendor</label><input id="pVendor" value="${esc(existing?.vendor || '')}"></div>
+          <div class="field"><label>Description / Reference</label><input id="pRem" value="${esc(existing?.description || '')}"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
+    if (existing) { $('#pBoq').value = existing.boqItemId || ''; $('#pCC').value = existing.costCenterId || ''; }
   }
 
   async function savePurchase(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.addPurchase({
+      const id = Number($('#pId')?.value) || 0;
+      const data = {
         projectId: Number($('#pProj').value),
         boqItemId: Number($('#pBoq').value) || null,
         amount: Number($('#pAmt').value),
@@ -2372,13 +2405,16 @@
         costCenterId: Number($('#pCC').value) || null,
         vendor: $('#pVendor').value.trim() || null,
         description: $('#pRem').value.trim()
-      });
-      closeModal(); showToast('Purchase saved'); await pageCosts();
+      };
+      if (id) await WisetrackAPI.updatePurchase(id, data); else await WisetrackAPI.addPurchase(data);
+      closeModal(); showToast(id ? 'Purchase updated' : 'Purchase saved'); await pageCosts();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
-  async function openActualModal() {
+  async function openActualModal(id = null) {
     const pid = await selectedProjectId();
+    const existing = id ? (await WisetrackAPI.getActuals(pid)).find(x => Number(x.id) === Number(id)) : null;
+    if (id && !existing) { showToast('Actual cost not found', 'danger'); return; }
     const [centers, boqs] = await Promise.all([
       WisetrackAPI.getCostCenters(pid).catch(() => []), WisetrackAPI.getBoqs(pid).catch(() => [])
     ]);
@@ -2389,32 +2425,46 @@
       return (version?.items || []).map(i => ({ ...i, boqTitle: b.title }));
     });
     const lineOptions = boqLines.map(i => `<option value="${i.id}">${esc(i.boqTitle)} · ${esc(i.lineNo || '')} ${esc(i.itemCode || i.description || i.itemName || 'BOQ line')}</option>`).join('');
-    openModal('Add Actual Cost', `
+    openModal(existing ? 'Edit Actual Cost' : 'Add Actual Cost', `
       <form onsubmit="WTPages.saveActual(event)">
         <input type="hidden" id="aProj" value="${pid}">
+        <input type="hidden" id="aId" value="${existing?.id || ''}">
         <div class="form-grid">
-          <div class="field"><label>Amount *</label><input id="aAmt" type="number" min="0.01" step="0.01" required></div>
-          <div class="field"><label>Date</label><input id="aDate" type="date"></div>
+          <div class="field"><label>Amount *</label><input id="aAmt" type="number" min="0.01" step="0.01" value="${existing?.amount ?? ''}" required></div>
+          <div class="field"><label>Date</label><input id="aDate" type="date" value="${existing?.costDate || ''}"></div>
           <div class="field full"><label>BOQ Line (optional)</label><select id="aBoq"><option value="">Project-level actual</option>${lineOptions}</select></div>
           <div class="field full"><label>Cost Center</label><select id="aCC"><option value="">-- None --</option>${ccOptions}</select></div>
-          <div class="field full"><label>Remarks</label><input id="aRem"></div>
+          <div class="field full"><label>Remarks</label><input id="aRem" value="${esc(existing?.description || '')}"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
+    if (existing) { $('#aBoq').value = existing.boqItemId || ''; $('#aCC').value = existing.costCenterId || ''; }
   }
 
   async function saveActual(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.addActual({
+      const id = Number($('#aId')?.value) || 0;
+      const data = {
         projectId: Number($('#aProj').value),
         boqItemId: Number($('#aBoq').value) || null,
         amount: Number($('#aAmt').value),
         costDate: $('#aDate').value || null,
         costCenterId: Number($('#aCC').value) || null,
         description: $('#aRem').value.trim()
-      });
-      closeModal(); showToast('Actual saved'); await pageCosts();
+      };
+      if (id) await WisetrackAPI.updateActual(id, data); else await WisetrackAPI.addActual(data);
+      closeModal(); showToast(id ? 'Actual updated' : 'Actual saved'); await pageCosts();
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function deleteCost(type, id) {
+    if (!confirm(`Delete this ${type.toLowerCase()} cost record?`)) return;
+    try {
+      if (type === 'Purchase') await WisetrackAPI.deletePurchase(id);
+      else await WisetrackAPI.deleteActual(id);
+      showToast(`${type} deleted`);
+      await pageCosts();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -2778,7 +2828,10 @@
             <td><strong>${esc(m.name || m.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(nameOf(m._projectId || pid))} · Owner: ${esc(milestoneOwner(m.ownerId || m.OwnerId))}</small><small style="display:block;color:var(--text-muted)">${esc(m.description || '')}</small>${dependency ? `<small style="display:block;color:var(--text-muted)">Depends on: ${esc(dependency.name)}</small>` : ''}${(m.completionEvidence || m.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted)">Evidence: ${esc(m.completionEvidence || m.CompletionEvidence)}</small>` : ''}${(milestoneFilesById.get(Number(m.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}</td>
             <td>${esc(m.startDate || '—')} → ${esc(m.dueDate || '—')}</td>
             <td>${esc(m.status || '—')}</td>
-          <td>${pct}%</td><td class="table-actions"><button class="btn sm" onclick="WTPages.openMilestoneModal(${m.id})"><i class="fa-solid fa-pen"></i> Edit</button></td>
+          <td>${pct}%</td><td class="table-actions">
+            ${(!wtCan || wtCan('Tasks', 'edit', Number(pid))) ? `<button class="btn sm" title="Edit milestone" aria-label="Edit milestone" onclick="WTPages.openMilestoneModal(${m.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
+            ${wtCan && wtCan('Tasks', 'delete', Number(pid)) ? `<button class="btn sm danger" title="Delete milestone" aria-label="Delete milestone" onclick="WTPages.deleteMilestone(${m.id}, '${esc(m.name || m.title)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+          </td>
           </tr>`;
         }).join('') : emptyRow(6, `No milestones for ${selectedLabel}. Other projects are hidden.`);
       } else {
@@ -2997,6 +3050,12 @@
       if (evidenceFile && savedId) await WisetrackAPI.uploadFile(evidenceFile, 'Milestones', savedId);
       closeModal(); showToast(id ? 'Milestone updated' : 'Milestone created'); await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function deleteMilestone(id, name) {
+    if (!confirm(`Delete milestone "${name || id}"? Linked tasks will remain and become unassigned.`)) return;
+    try { await WisetrackAPI.deleteMilestone(id); showToast('Milestone deleted'); await pageTasks('milestones'); }
+    catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function openMilestoneTemplateModal() {
@@ -3579,6 +3638,8 @@
       const scopeIds = [Number(pid)];
       const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getIssues(id).catch(() => [])));
       const issues = filterRowsForProject(batches.flat(), pid);
+      const canUpdateIssues = !wtCan || wtCan('Issues', 'update', Number(pid));
+      const canDeleteIssues = !wtCan || wtCan('Issues', 'delete', Number(pid));
       $('#issuesBody').innerHTML = issues.length ? issues.map(i => `
         <tr>
           <td>${i.id}</td>
@@ -3592,48 +3653,63 @@
           <td class="table-actions">
             <button class="btn sm" onclick="WTPages.commentIssue(${i.id})">Comment</button>
             <button class="btn sm danger" onclick="WTPages.escalateIssue(${i.id})">Escalate</button>
+            ${canUpdateIssues ? `<button class="btn sm" title="Edit issue" aria-label="Edit issue" onclick="WTPages.openIssueModal(${i.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
+            ${canDeleteIssues ? `<button class="btn sm danger" title="Delete issue" aria-label="Delete issue" onclick="WTPages.deleteIssue(${i.id}, '${esc(i.title || i.what)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
           </td>
         </tr>`).join('') : emptyRow(9, 'No issues');
     } catch (e) { $('#issuesBody').innerHTML = errRow(9, e); }
   }
 
-  async function openIssueModal() {
+  async function openIssueModal(id = null) {
     const pid = await selectedProjectId();
+    const existing = id ? await WisetrackAPI.getIssue(id) : null;
     let priorities = [];
     try { priorities = await WisetrackAPI.getIssuePriorities(); } catch { /* optional */ }
     const now = new Date();
     const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    openModal('Log Issue / Incident', `
+    openModal(existing ? 'Edit Issue / Incident' : 'Log Issue / Incident', `
       <form onsubmit="WTPages.saveIssue(event)">
         <input type="hidden" id="iProj" value="${pid}">
+        <input type="hidden" id="iId" value="${existing?.id || ''}">
         <div class="form-grid">
-          <div class="field full"><label>What is the issue *</label><input id="iWhat" required placeholder="Short description of the incident"></div>
-          <div class="field"><label>Where is the issue *</label><input id="iWhere" required placeholder="Location / area"></div>
-          <div class="field"><label>When it happened *</label><input id="iWhen" type="datetime-local" value="${local}" required></div>
-          <div class="field full"><label>Impact *</label><textarea id="iImpact" required placeholder="Safety, schedule, cost, operations..."></textarea></div>
+          <div class="field full"><label>What is the issue *</label><input id="iWhat" value="${esc(existing?.what || existing?.title || '')}" required placeholder="Short description of the incident"></div>
+          <div class="field"><label>Where is the issue *</label><input id="iWhere" value="${esc(existing?.location || '')}" required placeholder="Location / area"></div>
+          <div class="field"><label>When it happened *</label><input id="iWhen" type="datetime-local" value="${existing?.occurredAt ? new Date(existing.occurredAt).toISOString().slice(0,16) : local}" required></div>
+          <div class="field full"><label>Impact *</label><textarea id="iImpact" required placeholder="Safety, schedule, cost, operations...">${esc(existing?.impact || '')}</textarea></div>
           <div class="field"><label>Priority</label><select id="iPri">${(priorities || []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="1">High</option>'}</select></div>
+          ${existing ? `<div class="field"><label>Status</label><select id="iStatus">${['Open','In Progress','Resolved','Closed'].map(s => `<option ${s.toLowerCase() === String(existing.status || '').toLowerCase() ? 'selected' : ''}>${s}</option>`).join('')}</select></div>` : ''}
           <div class="field"><label>Reported By</label><input value="${esc(localStorage.getItem('WISETRACK_USER_NAME') || '')}" readonly></div>
         </div>
         <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0">High / Critical priority emails internal stakeholders automatically.</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save &amp; Notify</button></div>
       </form>`);
+    if (existing) $('#iPri').value = existing.priorityId || '';
   }
 
   async function saveIssue(e) {
     e.preventDefault();
     try {
       const what = $('#iWhat').value.trim();
-      await WisetrackAPI.createIssue({
+      const id = Number($('#iId')?.value) || 0;
+      const data = {
         projectId: Number($('#iProj').value),
         title: what,
         what,
         location: $('#iWhere').value.trim(),
         occurredAt: $('#iWhen').value ? new Date($('#iWhen').value).toISOString() : null,
         impact: $('#iImpact').value.trim(),
-        priorityId: Number($('#iPri').value) || null
-      });
-      closeModal(); showToast('Issue logged. High-priority mail is sent when applicable.'); await pageIssues();
+        priorityId: Number($('#iPri').value) || null,
+        status: $('#iStatus')?.value || 'Open'
+      };
+      if (id) await WisetrackAPI.updateIssue(id, data); else await WisetrackAPI.createIssue(data);
+      closeModal(); showToast(id ? 'Issue updated' : 'Issue logged. High-priority mail is sent when applicable.'); await pageIssues();
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function deleteIssue(id, title) {
+    if (!confirm(`Delete issue "${title || id}"?`)) return;
+    try { await WisetrackAPI.deleteIssue(id); showToast('Issue deleted'); await pageIssues(); }
+    catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function commentIssue(id) {
@@ -4583,17 +4659,18 @@
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
     openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC,
+    deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
-    openPurchaseModal, savePurchase, openActualModal, saveActual, saveVarianceExplanation,
+    openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, createBoqRevision, saveBoqRevisionItem, setBoqBaseline, downloadReport,
-    openMilestoneModal, saveMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
+    openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory,
     openDependencyModal, saveDependency,
     openCreateSubTaskModal: (p, s) => openCreateSubTaskModal(p, s),
     saveSubTask: (e) => handleCreateSubTask(e),
     refreshPlanning: () => pageTasks('planning'),
-    openIssueModal, saveIssue, commentIssue, escalateIssue,
+    openIssueModal, saveIssue, deleteIssue, commentIssue, escalateIssue,
     openNotifyModal, saveNotify, openEscRuleModal, saveEscRule, setEscRuleActive,
     refreshNotifications: () => pageNotifications(),
     loadPortfolio, loadComparable, runComparable, openReportModal, saveReport,

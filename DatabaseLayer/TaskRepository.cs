@@ -9,6 +9,8 @@ public interface ITaskRepository
     Task<List<Milestone>> GetMilestonesAsync(long projectId);
     Task<Milestone> AddMilestoneAsync(Milestone milestone);
     Task UpdateMilestoneAsync(Milestone milestone);
+    Task DeleteMilestoneAsync(long id);
+    Task<long?> GetMilestoneProjectIdAsync(long id);
     Task<List<ProjectTask>> GetTasksAsync(long projectId);
     Task<ProjectTask?> GetTaskAsync(long id);
     Task<ProjectTask> AddTaskAsync(ProjectTask task);
@@ -45,6 +47,21 @@ public class TaskRepository : ITaskRepository
         _db.Milestones.Update(milestone);
         await _db.SaveChangesAsync();
     }
+
+    public async Task DeleteMilestoneAsync(long id)
+    {
+        var milestone = await _db.Milestones.FirstOrDefaultAsync(m => m.Id == id)
+            ?? throw new InvalidOperationException("Milestone not found.");
+        var tasks = await _db.Tasks.Where(t => t.MilestoneId == id).ToListAsync();
+        foreach (var task in tasks) task.MilestoneId = null;
+        var dependents = await _db.Milestones.Where(m => m.DependsOnMilestoneId == id).ToListAsync();
+        foreach (var dependent in dependents) dependent.DependsOnMilestoneId = null;
+        _db.Milestones.Remove(milestone);
+        await _db.SaveChangesAsync();
+    }
+
+    public Task<long?> GetMilestoneProjectIdAsync(long id) =>
+        _db.Milestones.Where(m => m.Id == id).Select(m => (long?)m.ProjectId).FirstOrDefaultAsync();
 
     public Task<List<ProjectTask>> GetTasksAsync(long projectId) =>
         _db.Tasks.Include(t => t.SubTasks).Where(t => t.ProjectId == projectId).AsNoTracking().ToListAsync();

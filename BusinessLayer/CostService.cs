@@ -9,7 +9,11 @@ namespace project_tracker_madhu.BusinessLayer.Costs;
 public interface ICostService
 {
     Task<PurchaseCost> AddPurchaseAsync(CreatePurchaseCostRequest request, long? userId);
+    Task<PurchaseCost> UpdatePurchaseAsync(long id, CreatePurchaseCostRequest request, long userId);
+    Task DeletePurchaseAsync(long id, long userId);
     Task<ActualCost> AddActualAsync(CreateActualCostRequest request, long? userId);
+    Task<ActualCost> UpdateActualAsync(long id, CreateActualCostRequest request, long userId);
+    Task DeleteActualAsync(long id, long userId);
     Task<CostImportResultDto> ImportAsync(CostImportBatchRequest request, long userId);
     Task<List<PurchaseCost>> GetPurchasesAsync(long userId, long projectId);
     Task<List<ActualCost>> GetActualsAsync(long userId, long projectId);
@@ -70,6 +74,52 @@ public class CostService : ICostService
         });
         await _audit.LogAsync(userId, "Create", "ActualCost", cost.Id);
         return cost;
+    }
+
+    public async Task<PurchaseCost> UpdatePurchaseAsync(long id, CreatePurchaseCostRequest request, long userId)
+    {
+        var cost = await _repository.GetPurchaseAsync(id) ?? throw new InvalidOperationException("Purchase not found.");
+        await _permissions.EnsureModuleAsync(userId, cost.ProjectId, "Costs", "update");
+        if (request.ProjectId != cost.ProjectId) throw new InvalidOperationException("Cost project cannot be changed.");
+        if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
+        await ValidateCostDimensionsAsync(cost.ProjectId, request.BoqItemId, request.CostCenterId);
+        cost.BoqItemId = request.BoqItemId; cost.CostCenterId = request.CostCenterId;
+        cost.Vendor = request.Vendor; cost.Description = request.Description; cost.Amount = request.Amount;
+        cost.PurchaseDate = request.PurchaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        await _repository.UpdatePurchaseAsync(cost);
+        await _audit.LogAsync(userId, "Update", "PurchaseCost", id);
+        return cost;
+    }
+
+    public async Task DeletePurchaseAsync(long id, long userId)
+    {
+        var cost = await _repository.GetPurchaseAsync(id) ?? throw new InvalidOperationException("Purchase not found.");
+        await _permissions.EnsureModuleAsync(userId, cost.ProjectId, "Costs", "delete");
+        await _repository.DeletePurchaseAsync(id);
+        await _audit.LogAsync(userId, "Delete", "PurchaseCost", id);
+    }
+
+    public async Task<ActualCost> UpdateActualAsync(long id, CreateActualCostRequest request, long userId)
+    {
+        var cost = await _repository.GetActualAsync(id) ?? throw new InvalidOperationException("Actual cost not found.");
+        await _permissions.EnsureModuleAsync(userId, cost.ProjectId, "Costs", "update");
+        if (request.ProjectId != cost.ProjectId) throw new InvalidOperationException("Cost project cannot be changed.");
+        if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
+        await ValidateCostDimensionsAsync(cost.ProjectId, request.BoqItemId, request.CostCenterId);
+        cost.BoqItemId = request.BoqItemId; cost.CostCenterId = request.CostCenterId;
+        cost.Description = request.Description; cost.Amount = request.Amount;
+        cost.CostDate = request.CostDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        await _repository.UpdateActualAsync(cost);
+        await _audit.LogAsync(userId, "Update", "ActualCost", id);
+        return cost;
+    }
+
+    public async Task DeleteActualAsync(long id, long userId)
+    {
+        var cost = await _repository.GetActualAsync(id) ?? throw new InvalidOperationException("Actual cost not found.");
+        await _permissions.EnsureModuleAsync(userId, cost.ProjectId, "Costs", "delete");
+        await _repository.DeleteActualAsync(id);
+        await _audit.LogAsync(userId, "Delete", "ActualCost", id);
     }
 
     public async Task<CostImportResultDto> ImportAsync(CostImportBatchRequest request, long userId)

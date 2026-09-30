@@ -10,6 +10,7 @@ public interface IBudgetRepository
     Task<Budget?> GetAsync(long id);
     Task<Budget> AddAsync(Budget budget);
     Task UpdateAsync(Budget budget);
+    Task DeleteAsync(long id);
     Task<CostCenter?> GetCostCenterAsync(long id);
     Task<CostCenter> AddCostCenterAsync(CostCenter costCenter);
     Task UpdateCostCenterAsync(CostCenter costCenter);
@@ -48,6 +49,13 @@ public class BudgetRepository : IBudgetRepository
     public async Task UpdateAsync(Budget budget)
     {
         _db.Entry(budget).State = EntityState.Modified;
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync(long id)
+    {
+        var budget = await _db.Budgets.FindAsync(id) ?? throw new InvalidOperationException("Budget not found.");
+        _db.Budgets.Remove(budget);
         await _db.SaveChangesAsync();
     }
 

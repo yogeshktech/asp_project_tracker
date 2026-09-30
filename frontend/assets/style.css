@@ -343,11 +343,26 @@ a:hover {
   z-index: 50;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.08);
   border-right: 1px solid var(--sidebar-border);
-  transition: transform 0.25s var(--ease-smooth), background 0.25s ease;
+  transition: width 0.25s var(--ease-smooth), transform 0.25s var(--ease-smooth), background 0.25s ease;
 }
 
+.side-collapse {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  cursor: pointer;
+}
+.side-collapse:hover { color: var(--sidebar-text); background: var(--bg-sidebar-active); }
+
 .side-header {
-  padding: 18px 20px 16px;
+  padding: 18px 14px 16px;
   border-bottom: 1px solid var(--sidebar-border);
   display: flex;
   align-items: center;
@@ -560,6 +575,26 @@ a:hover {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  transition: margin-left 0.25s var(--ease-smooth), width 0.25s var(--ease-smooth);
+}
+
+@media (min-width: 961px) {
+  body.sidebar-collapsed .side { width: 76px; }
+  body.sidebar-collapsed .main { margin-left: 76px; width: calc(100% - 76px); }
+  body.sidebar-collapsed .side-header { justify-content: center; padding: 16px 8px; }
+  body.sidebar-collapsed .side-header .logo > div,
+  body.sidebar-collapsed .side-user .user-meta,
+  body.sidebar-collapsed .side-user > a { display: none; }
+  body.sidebar-collapsed .side-header .logo { justify-content: center; }
+  body.sidebar-collapsed .side-header .side-collapse { position: absolute; right: -12px; top: 54px; z-index: 2; background: var(--bg-sidebar); }
+  body.sidebar-collapsed .side-scroll { padding: 12px 9px 20px; }
+  body.sidebar-collapsed .nav-group-title { justify-content: center; padding: 13px 0 6px; font-size: 0; }
+  body.sidebar-collapsed .nav-group-title::after { flex: 0 0 18px; }
+  body.sidebar-collapsed .nav-link { justify-content: center; padding: 9px 6px; }
+  body.sidebar-collapsed .nav-link > span:not(.nav-icon),
+  body.sidebar-collapsed .nav-pill { display: none; }
+  body.sidebar-collapsed .nav-icon { width: 30px; height: 28px; font-size: 15px; }
+  body.sidebar-collapsed .side-user { justify-content: center; padding: 12px 8px; }
 }
 
 /* Sticky Frosted Header */
@@ -2900,6 +2935,8 @@ button.btn[disabled] {
   .side-close {
     display: inline-flex;
   }
+
+  .side-collapse { display: none; }
 
   .side-backdrop {
     display: none;

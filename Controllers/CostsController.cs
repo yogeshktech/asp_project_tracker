@@ -23,6 +23,22 @@ public class CostsController : ControllerBase
     public async Task<IActionResult> AddPurchase([FromBody] CreatePurchaseCostRequest request) =>
         Ok(await _costService.AddPurchaseAsync(request, UserId));
 
+    [HttpPut("purchases/{id:long}")]
+    public async Task<IActionResult> UpdatePurchase(long id, [FromBody] CreatePurchaseCostRequest request)
+    {
+        try { return Ok(await _costService.UpdatePurchaseAsync(id, request, UserId)); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpDelete("purchases/{id:long}")]
+    public async Task<IActionResult> DeletePurchase(long id)
+    {
+        try { await _costService.DeletePurchaseAsync(id, UserId); return NoContent(); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
+    }
+
     [HttpGet("actuals/{projectId:long}")]
     public async Task<IActionResult> Actuals(long projectId) =>
         Ok(await _costService.GetActualsAsync(UserId, projectId));
@@ -30,6 +46,22 @@ public class CostsController : ControllerBase
     [HttpPost("actuals")]
     public async Task<IActionResult> AddActual([FromBody] CreateActualCostRequest request) =>
         Ok(await _costService.AddActualAsync(request, UserId));
+
+    [HttpPut("actuals/{id:long}")]
+    public async Task<IActionResult> UpdateActual(long id, [FromBody] CreateActualCostRequest request)
+    {
+        try { return Ok(await _costService.UpdateActualAsync(id, request, UserId)); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpDelete("actuals/{id:long}")]
+    public async Task<IActionResult> DeleteActual(long id)
+    {
+        try { await _costService.DeleteActualAsync(id, UserId); return NoContent(); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
+    }
 
     [HttpPost("import")]
     public async Task<IActionResult> Import([FromBody] CostImportBatchRequest request) =>

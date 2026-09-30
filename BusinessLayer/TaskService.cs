@@ -11,6 +11,7 @@ public interface ITaskService
     Task<List<Milestone>> GetMilestonesAsync(long projectId, long userId);
     Task<Milestone> CreateMilestoneAsync(CreateMilestoneRequest request, long? userId);
     Task<Milestone> UpdateMilestoneAsync(long milestoneId, CreateMilestoneRequest request, long userId);
+    Task DeleteMilestoneAsync(long milestoneId, long userId);
     Task<List<TaskItemDto>> GetTasksAsync(long projectId, long userId);
     Task<List<TaskHistoryItemDto>> GetTaskHistoryAsync(long taskId, long? subTaskId, long userId);
     Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId);
@@ -100,6 +101,16 @@ public class TaskService : ITaskService
         await _repository.UpdateMilestoneAsync(milestone);
         await _audit.LogAsync(userId, "Update", "Milestone", milestone.Id);
         return milestone;
+    }
+
+    public async Task DeleteMilestoneAsync(long milestoneId, long userId)
+    {
+        // Resolve the owning project without trusting a project id supplied by the client.
+        var owningProject = await _repository.GetMilestoneProjectIdAsync(milestoneId);
+        if (!owningProject.HasValue) throw new InvalidOperationException("Milestone not found.");
+        await _permissions.EnsureModuleAsync(userId, owningProject.Value, "Tasks", "delete");
+        await _repository.DeleteMilestoneAsync(milestoneId);
+        await _audit.LogAsync(userId, "Delete", "Milestone", milestoneId);
     }
 
     private async Task EnsureMilestoneDependencyAsync(long projectId, long? milestoneId, long? dependencyId)

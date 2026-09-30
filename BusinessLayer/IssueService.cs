@@ -13,6 +13,8 @@ public interface IIssueService
     Task<List<Issue>> GetByProjectAsync(long userId, long projectId);
     Task<Issue?> GetAsync(long userId, long id);
     Task<Issue> CreateAsync(CreateIssueRequest request, long? userId);
+    Task<Issue> UpdateAsync(long id, CreateIssueRequest request, long userId);
+    Task DeleteAsync(long id, long userId);
     Task AddCommentAsync(long userId, long issueId, string comment);
     Task EscalateHighPriorityAsync(long issueId);
     Task<List<IssuePriority>> GetPrioritiesAsync();
@@ -78,6 +80,34 @@ public class IssueService : IIssueService
 
         await _audit.LogAsync(userId, "Create", "Issue", issue.Id);
         return issue;
+    }
+
+    public async Task<Issue> UpdateAsync(long id, CreateIssueRequest request, long userId)
+    {
+        var issue = await _repository.GetAsync(id) ?? throw new InvalidOperationException("Issue not found.");
+        await _permissions.EnsureModuleAsync(userId, issue.ProjectId, "Issues", "update");
+        if (request.ProjectId != issue.ProjectId) throw new InvalidOperationException("Issue project cannot be changed.");
+        if (string.IsNullOrWhiteSpace(request.What) && string.IsNullOrWhiteSpace(request.Title))
+            throw new InvalidOperationException("Issue description is required.");
+        issue.Title = string.IsNullOrWhiteSpace(request.Title) ? request.What!.Trim() : request.Title.Trim();
+        issue.What = request.What;
+        issue.Location = request.Location;
+        issue.OccurredAt = request.OccurredAt;
+        issue.Impact = request.Impact;
+        issue.PriorityId = request.PriorityId;
+        if (!string.IsNullOrWhiteSpace(request.Status)) issue.Status = request.Status.Trim();
+        issue.UpdatedAt = DateTime.UtcNow;
+        await _repository.UpdateAsync(issue);
+        await _audit.LogAsync(userId, "Update", "Issue", id);
+        return issue;
+    }
+
+    public async Task DeleteAsync(long id, long userId)
+    {
+        var issue = await _repository.GetAsync(id) ?? throw new InvalidOperationException("Issue not found.");
+        await _permissions.EnsureModuleAsync(userId, issue.ProjectId, "Issues", "delete");
+        await _repository.DeleteAsync(id);
+        await _audit.LogAsync(userId, "Delete", "Issue", id);
     }
 
     public async Task AddCommentAsync(long userId, long issueId, string comment)

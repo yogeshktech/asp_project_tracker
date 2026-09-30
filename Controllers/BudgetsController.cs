@@ -27,6 +27,14 @@ public class BudgetsController : ControllerBase
     public async Task<IActionResult> Update(long id, [FromBody] UpdateBudgetRequest request) =>
         Ok(await _budgetService.UpdateAsync(id, request, UserId));
 
+    [HttpDelete("{id:long}")]
+    public async Task<IActionResult> Delete(long id)
+    {
+        try { await _budgetService.DeleteAsync(id, UserId); return NoContent(); }
+        catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
     [HttpPost("{id:long}/revise")]
     public async Task<IActionResult> Revise(long id, [FromBody] BudgetVersionRequest request) =>
         Ok(await _budgetService.ReviseAsync(id, request.TotalAmount, request.Remarks, UserId));

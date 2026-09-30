@@ -128,6 +128,7 @@ function wtBuildSidebar() {
         <div class="logo-badge"><i class="fa-solid fa-compass-drafting"></i></div>
         <div><div>WISETRACK</div><div class="logo-sub">Project Control Suite</div></div>
       </a>
+      <button type="button" class="side-collapse" data-wt-sidebar-toggle="1" aria-label="Collapse sidebar" title="Collapse sidebar"><i class="fa-solid fa-angles-left"></i></button>
       <button type="button" class="side-close" data-wt-nav-close="1" aria-label="Close menu"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div class="side-scroll">`;
@@ -138,7 +139,7 @@ function wtBuildSidebar() {
     }
     if (typeof wtPageAllowed === 'function' && !wtPageAllowed(item.href)) continue;
     const active = page === item.href ? ' active' : '';
-    html += `<a class="nav-link${active}" href="${item.href}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
+    html += `<a class="nav-link${active}" href="${item.href}" title="${item.label}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
   }
   const storedName = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
   const initials = storedName.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
@@ -205,6 +206,7 @@ function wtApplyLayout() {
   if (side) side.innerHTML = wtBuildSidebar();
   const top = document.querySelector('header.topbar');
   if (top) top.innerHTML = wtBuildTopbar();
+  wtSetSidebarCollapsed(localStorage.getItem('WISETRACK_SIDEBAR_COLLAPSED') === 'true', false);
 
   // Apply active theme
   if (typeof initTheme === 'function') initTheme();
@@ -213,7 +215,27 @@ function wtApplyLayout() {
   document.querySelectorAll('.main > footer, .workflow-guide-banner').forEach(el => el.remove());
 }
 
+function wtSetSidebarCollapsed(collapsed, persist = true) {
+  document.body.classList.toggle('sidebar-collapsed', !!collapsed);
+  const button = document.querySelector('[data-wt-sidebar-toggle]');
+  if (button) {
+    button.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    button.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    button.innerHTML = `<i class="fa-solid fa-angles-${collapsed ? 'right' : 'left'}"></i>`;
+  }
+  if (persist) localStorage.setItem('WISETRACK_SIDEBAR_COLLAPSED', String(!!collapsed));
+}
+
+function wtToggleSidebarCollapsed() {
+  wtSetSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed'));
+}
+
 document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-wt-sidebar-toggle]')) {
+    e.preventDefault();
+    wtToggleSidebarCollapsed();
+    return;
+  }
   if (e.target.closest('[data-wt-nav-toggle]')) {
     e.preventDefault();
     wtToggleNav();

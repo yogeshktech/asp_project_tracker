@@ -33,6 +33,22 @@ public class IssuesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateIssueRequest request) =>
         Ok(await _issueService.CreateAsync(request, UserId));
 
+    [HttpPut("{id:long}")]
+    public async Task<IActionResult> Update(long id, [FromBody] CreateIssueRequest request)
+    {
+        try { return Ok(await _issueService.UpdateAsync(id, request, UserId)); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpDelete("{id:long}")]
+    public async Task<IActionResult> Delete(long id)
+    {
+        try { await _issueService.DeleteAsync(id, UserId); return NoContent(); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
+    }
+
     [HttpPost("{id:long}/comments")]
     public async Task<IActionResult> Comment(long id, [FromBody] CreateIssueCommentRequest request)
     {

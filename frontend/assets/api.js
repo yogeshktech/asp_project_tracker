@@ -189,6 +189,7 @@ const WisetrackAPI = {
   getBudgets(projectId) { return this.get(`/budgets/project/${projectId}`); },
   createBudget(data) { return this.post('/budgets', data); },
   updateBudget(id, data) { return this.put(`/budgets/${id}`, data); },
+  deleteBudget(id) { return this.del(`/budgets/${id}`); },
   reviseBudget(id, data) { return this.post(`/budgets/${id}/revise`, data); },
   getCostCenters(projectId) { return this.get(`/budgets/cost-centers${projectId ? '?projectId=' + projectId : ''}`); },
   createCostCenter(data) { return this.post('/budgets/cost-centers', data); },
@@ -238,6 +239,7 @@ const WisetrackAPI = {
   getMilestones(projectId) { return this.get(`/tasks/milestones/${projectId}`); },
   createMilestone(data) { return this.post('/tasks/milestones', data); },
   updateMilestone(id, data) { return this.put(`/tasks/milestones/${id}`, data); },
+  deleteMilestone(id) { return this.del(`/tasks/milestones/${id}`); },
   getTasks(projectId) { return this.get(`/tasks/project/${projectId}`); },
   getTaskHistory(taskId, subTaskId) { return this.get(`/tasks/history/${taskId}${subTaskId ? `?subTaskId=${subTaskId}` : ''}`); },
   createTask(data) { return this.post('/tasks', data); },
@@ -255,8 +257,12 @@ const WisetrackAPI = {
   // Costs
   getPurchases(projectId) { return this.get(`/costs/purchases/${projectId}`); },
   addPurchase(data) { return this.post('/costs/purchases', data); },
+  updatePurchase(id, data) { return this.put(`/costs/purchases/${id}`, data); },
+  deletePurchase(id) { return this.del(`/costs/purchases/${id}`); },
   getActuals(projectId) { return this.get(`/costs/actuals/${projectId}`); },
   addActual(data) { return this.post('/costs/actuals', data); },
+  updateActual(id, data) { return this.put(`/costs/actuals/${id}`, data); },
+  deleteActual(id) { return this.del(`/costs/actuals/${id}`); },
   importCosts(data) { return this.post('/costs/import', data); },
   getVariance(projectId) { return this.get(`/costs/variance/${projectId}`); },
 
@@ -265,6 +271,8 @@ const WisetrackAPI = {
   getIssues(projectId) { return this.get(`/issues/project/${projectId}`); },
   getIssue(id) { return this.get(`/issues/${id}`); },
   createIssue(data) { return this.post('/issues', data); },
+  updateIssue(id, data) { return this.put(`/issues/${id}`, data); },
+  deleteIssue(id) { return this.del(`/issues/${id}`); },
   addIssueComment(issueId, comment) { return this.post(`/issues/${issueId}/comments`, { comment }); },
   escalateIssue(id) { return this.post(`/issues/${id}/escalate`); },
 

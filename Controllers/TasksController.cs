@@ -34,6 +34,14 @@ public class TasksController : ControllerBase
         catch (UnauthorizedAccessException) { return Forbid(); }
     }
 
+    [HttpDelete("milestones/{id:long}")]
+    public async Task<IActionResult> DeleteMilestone(long id)
+    {
+        try { await _taskService.DeleteMilestoneAsync(id, UserId); return NoContent(); }
+        catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
     [HttpGet("project/{projectId:long}")]
     public async Task<IActionResult> GetByProject(long projectId) =>
         Ok(await _taskService.GetTasksAsync(projectId, UserId));

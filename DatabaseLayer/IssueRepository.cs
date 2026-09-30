@@ -10,6 +10,7 @@ public interface IIssueRepository
     Task<Issue?> GetAsync(long id);
     Task<Issue> AddAsync(Issue issue);
     Task UpdateAsync(Issue issue);
+    Task DeleteAsync(long id);
     Task AddCommentAsync(IssueComment comment);
     Task AddAttachmentAsync(IssueAttachment attachment);
     Task<List<IssuePriority>> GetPrioritiesAsync();
@@ -38,6 +39,14 @@ public class IssueRepository : IIssueRepository
     public async Task UpdateAsync(Issue issue)
     {
         _db.Issues.Update(issue);
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync(long id)
+    {
+        var issue = await _db.Issues.Include(i => i.Comments).Include(i => i.Attachments).FirstOrDefaultAsync(i => i.Id == id)
+            ?? throw new InvalidOperationException("Issue not found.");
+        _db.Issues.Remove(issue);
         await _db.SaveChangesAsync();
     }
 

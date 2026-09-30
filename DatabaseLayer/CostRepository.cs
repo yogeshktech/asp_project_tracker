@@ -8,7 +8,13 @@ namespace project_tracker_madhu.DatabaseLayer.Costs;
 public interface ICostRepository
 {
     Task<PurchaseCost> AddPurchaseAsync(PurchaseCost cost);
+    Task<PurchaseCost?> GetPurchaseAsync(long id);
+    Task UpdatePurchaseAsync(PurchaseCost cost);
+    Task DeletePurchaseAsync(long id);
     Task<ActualCost> AddActualAsync(ActualCost cost);
+    Task<ActualCost?> GetActualAsync(long id);
+    Task UpdateActualAsync(ActualCost cost);
+    Task DeleteActualAsync(long id);
     Task<bool> CostCenterBelongsToProjectAsync(long projectId, long costCenterId);
     Task<bool> BoqItemBelongsToProjectAsync(long projectId, long boqItemId);
     Task<List<PurchaseCost>> GetPurchasesAsync(long projectId);
@@ -38,6 +44,24 @@ public class CostRepository : ICostRepository
         _db.ActualCosts.Add(cost);
         await _db.SaveChangesAsync();
         return cost;
+    }
+
+    public Task<PurchaseCost?> GetPurchaseAsync(long id) => _db.PurchaseCosts.FirstOrDefaultAsync(c => c.Id == id);
+    public async Task UpdatePurchaseAsync(PurchaseCost cost) { _db.PurchaseCosts.Update(cost); await _db.SaveChangesAsync(); }
+    public async Task DeletePurchaseAsync(long id)
+    {
+        var cost = await _db.PurchaseCosts.FindAsync(id) ?? throw new InvalidOperationException("Purchase not found.");
+        _db.PurchaseCosts.Remove(cost);
+        await _db.SaveChangesAsync();
+    }
+
+    public Task<ActualCost?> GetActualAsync(long id) => _db.ActualCosts.FirstOrDefaultAsync(c => c.Id == id);
+    public async Task UpdateActualAsync(ActualCost cost) { _db.ActualCosts.Update(cost); await _db.SaveChangesAsync(); }
+    public async Task DeleteActualAsync(long id)
+    {
+        var cost = await _db.ActualCosts.FindAsync(id) ?? throw new InvalidOperationException("Actual cost not found.");
+        _db.ActualCosts.Remove(cost);
+        await _db.SaveChangesAsync();
     }
 
     public Task<List<PurchaseCost>> GetPurchasesAsync(long projectId) =>

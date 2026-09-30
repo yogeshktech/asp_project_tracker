@@ -14,6 +14,7 @@ public interface IBudgetService
     Task<List<Budget>> GetByProjectAsync(long userId, long projectId);
     Task<Budget> CreateAsync(CreateBudgetRequest request, long? userId);
     Task<Budget> UpdateAsync(long budgetId, UpdateBudgetRequest request, long? userId);
+    Task DeleteAsync(long budgetId, long userId);
     Task<BudgetVersion> ReviseAsync(long budgetId, decimal totalAmount, string? remarks, long? userId);
     Task<CostCenter> CreateCostCenterAsync(CreateCostCenterRequest request, long? userId);
     Task<List<CostCenter>> GetCostCentersAsync(long userId, long? projectId);
@@ -104,6 +105,14 @@ public class BudgetService : IBudgetService
         await transaction.CommitAsync();
         await _audit.LogAsync(userId, "Update", "Budget", budget.Id, baselineChanged ? $"Version {next}" : "Budget details updated");
         return budget;
+    }
+
+    public async Task DeleteAsync(long budgetId, long userId)
+    {
+        var budget = await _repository.GetAsync(budgetId) ?? throw new InvalidOperationException("Budget not found.");
+        await _permissions.EnsureModuleAsync(userId, budget.ProjectId, "Budgets", "delete");
+        await _repository.DeleteAsync(budgetId);
+        await _audit.LogAsync(userId, "Delete", "Budget", budgetId);
     }
 
     public async Task<BudgetVersion> ReviseAsync(long budgetId, decimal totalAmount, string? remarks, long? userId)
