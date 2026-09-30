@@ -1917,6 +1917,34 @@ button.btn[disabled] {
   border-bottom-color: var(--primary);
 }
 
+.project-context-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0 0 18px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--border-color);
+  scrollbar-width: thin;
+}
+
+.project-context-tab {
+  flex: 0 0 auto;
+  padding: 9px 13px;
+  border-radius: 7px 7px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.project-context-tab:hover,
+.project-context-tab.active {
+  color: var(--primary);
+  background: var(--primary-light);
+  border-bottom-color: var(--primary);
+}
+
 .alert {
   padding: 14px 18px;
   border-radius: var(--radius-sm);

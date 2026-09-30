@@ -100,7 +100,11 @@
       localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
       return null;
     }
-    const stored = localStorage.getItem('WISETRACK_SELECTED_PROJECT');
+    const params = new URLSearchParams(location.search);
+    const requested = params.get('projectId') || params.get('id');
+    const stored = requested && projects.some(p => String(p.id) === String(requested))
+      ? requested
+      : localStorage.getItem('WISETRACK_SELECTED_PROJECT');
     if (stored && projects.some(p => String(p.id) === String(stored))) {
       return String(stored);
     }
@@ -1627,6 +1631,15 @@
             <div id="teamList" style="margin-top:16px"></div>
           </div>
         </div>`;
+    const projectTabs = [
+      ['Overview', 'project-detail.html'], ['Planning & WBS', 'planning.html'],
+      ['Milestones', 'milestones.html'], ['Daily Reports', 'daily-report.html'],
+      ['Issues', 'issues.html'], ['BOQ', 'boq.html'], ['Budget', 'budget.html'],
+      ['Costs', 'costs.html'], ['Inventory & Closure', 'inventory.html']
+    ];
+    el.querySelector('.head')?.insertAdjacentHTML('afterend', `<nav class="project-context-tabs" aria-label="Project sections">${projectTabs.map(([label, href], i) =>
+      `<a class="project-context-tab${i === 0 ? ' active' : ''}" href="${href}?projectId=${encodeURIComponent(pid || '')}" onclick="localStorage.setItem('WISETRACK_SELECTED_PROJECT','${String(pid || '').replace(/[^0-9]/g, '')}')">${label}</a>`
+    ).join('')}</nav>`);
     el.insertAdjacentHTML('beforeend', `<section class="card" id="projectDashboard" style="margin-top:18px"><p style="color:var(--text-muted)">Loading project dashboard…</p></section>`);
 
     let apiProjects = [];
@@ -1747,10 +1760,6 @@
       <div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn sm primary" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i> + Add Sub-Package</button>
         <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i> Edit Profile</button>
-        <a class="btn sm" href="planning.html">Tasks</a>
-        <a class="btn sm" href="budget.html">Budget</a>
-        <a class="btn sm" href="issues.html">Issues</a>
-        <a class="btn sm" href="costs.html">Costs</a>
       </div>
       <div id="wsExtra" style="margin-top:16px;"></div>
     `;
