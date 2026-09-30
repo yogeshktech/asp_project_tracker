@@ -184,14 +184,16 @@
   function wtDepBtnHtml(kind, id, row) {
     if (typeof wtIsAdmin !== 'function' || !wtIsAdmin()) return '';
     const has = !!(row?.dependsOnTaskId || row?.DependsOnTaskId || row?.dependsOnSubTaskId || row?.DependsOnSubTaskId);
-    return `<button class="btn sm" onclick="event.stopPropagation(); WTPages.openDependencyModal('${kind}', ${id})">${has ? 'Undepend' : 'Depend'}</button>`;
+    const label = has ? 'Remove dependency' : 'Set dependency';
+    return `<button class="btn sm icon-action" data-tooltip="${label}" aria-label="${label}" title="${label}" onclick="event.stopPropagation(); WTPages.openDependencyModal('${kind}', ${id})"><i class="fa-solid ${has ? 'fa-link-slash' : 'fa-link'}"></i></button>`;
   }
   function wtUpdateBtnHtml(taskId, subId, row) {
     if (wtRowBlocked(row)) {
-      return `<button class="btn sm" disabled title="${esc(wtRowBlockReason(row) || 'Waiting on dependency')}">Waiting</button>`;
+      const reason = esc(wtRowBlockReason(row) || 'Waiting on dependency');
+      return `<button class="btn sm icon-action" disabled data-tooltip="Waiting: ${reason}" aria-label="Waiting: ${reason}" title="${reason}"><i class="fa-solid fa-hourglass-half"></i></button>`;
     }
     const extra = subId ? `, ${subId}` : '';
-    return `<button class="btn sm" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${taskId}${extra})"><i class="fa-solid fa-pen"></i> Update</button>`;
+    return `<button class="btn sm icon-action" data-tooltip="Update progress" aria-label="Update progress" title="Update progress" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${taskId}${extra})"><i class="fa-solid fa-chart-line"></i></button>`;
   }
 
   async function projectPickerHtml(selectId = 'ctxProjectId') {
@@ -2736,6 +2738,10 @@
       + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
     
     const nestCols = 8;
+    if (kind === 'planning') {
+      el.querySelector('#tasksBody')?.closest('.table-wrap')?.classList.add('planning-table-wrap');
+      el.querySelector('#tasksBody')?.closest('table')?.classList.add('planning-table');
+    }
     if (!pid) {
       $('#tasksBody').innerHTML = emptyRow(kind === 'milestones' ? 6 : nestCols, 'No project available. Create / open a project first.');
       $('#excList').innerHTML = '<p style="color:var(--text-muted);font-size:12.5px;">Select a project to view exceptions.</p>';
@@ -2864,11 +2870,11 @@
               ${progressCell(t, pct)}
               <td class="table-actions">
                 ${wtUpdateBtnHtml(t.id, null, t)}
-                ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>` : ''}
-                ${kind === 'planning' && (t.canEdit || t.CanEdit) ? `<button class="btn sm" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i> Edit</button>` : ''}
-                ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-plus"></i> Sub-Task</button>` : ''}
+                ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>` : ''}
+                ${kind === 'planning' && (t.canEdit || t.CanEdit) ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
+                ${kind === 'planning' ? `<button class="btn sm primary icon-action" data-tooltip="Add sub-task" aria-label="Add sub-task" title="Add sub-task" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-layer-group"></i></button>` : ''}
                 ${kind === 'planning' ? wtDepBtnHtml('task', t.id, t) : ''}
-                ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+                ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
               </td>
             </tr>`;
           const nestedRows = (kind === 'planning' || kind === 'daily') ? walked.map(({ node: s, depth, index }) => {
@@ -2884,10 +2890,10 @@
                 ${progressCell(s, spct)}
                 <td class="table-actions">
                   ${wtUpdateBtnHtml(t.id, s.id, s)}
-                  <button class="btn sm" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>
-                  ${kind === 'planning' ? `<button class="btn sm primary" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i> ${addLabel}</button>` : ''}
+                  <button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                  ${kind === 'planning' ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel.toLowerCase()} task" aria-label="Add ${addLabel.toLowerCase()} task" title="Add ${addLabel.toLowerCase()} task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}
                   ${kind === 'planning' ? wtDepBtnHtml('sub', s.id, s) : ''}
-                  ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+                  ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
               </tr>`;
           }).join('') : '';
