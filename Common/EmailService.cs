@@ -31,30 +31,37 @@ public class SmtpEmailService : IEmailService
             return;
         }
 
-        var host = _config["Email:SmtpHost"] ?? throw new InvalidOperationException("Email:SmtpHost missing");
-        var port = _config.GetValue("Email:SmtpPort", 587);
-        var from = _config["Email:From"] ?? "noreply@wisetrack.local";
-        var user = _config["Email:Username"];
-        var pass = _config["Email:Password"];
-
-        using var client = new SmtpClient(host, port)
+        try
         {
-            EnableSsl = _config.GetValue("Email:UseSsl", true),
-            Credentials = string.IsNullOrEmpty(user) ? CredentialCache.DefaultNetworkCredentials : new NetworkCredential(user, pass)
-        };
+            var host = _config["Email:SmtpHost"] ?? throw new InvalidOperationException("Email:SmtpHost missing");
+            var port = _config.GetValue("Email:SmtpPort", 587);
+            var from = _config["Email:From"] ?? "noreply@wisetrack.local";
+            var user = _config["Email:Username"];
+            var pass = _config["Email:Password"];
 
-        using var message = new MailMessage
+            using var client = new SmtpClient(host, port)
+            {
+                EnableSsl = _config.GetValue("Email:UseSsl", true),
+                Credentials = string.IsNullOrEmpty(user) ? CredentialCache.DefaultNetworkCredentials : new NetworkCredential(user, pass)
+            };
+
+            using var message = new MailMessage
+            {
+                From = new MailAddress(from),
+                Subject = subject,
+                Body = body,
+                IsBodyHtml = false
+            };
+            foreach (var to in recipients)
+                message.To.Add(to);
+            if (attachment is { Length: > 0 })
+                message.Attachments.Add(new Attachment(new MemoryStream(attachment), attachmentName ?? "wisetrack-report.csv", attachmentContentType ?? "text/csv"));
+
+            await client.SendMailAsync(message);
+        }
+        catch (Exception ex)
         {
-            From = new MailAddress(from),
-            Subject = subject,
-            Body = body,
-            IsBodyHtml = false
-        };
-        foreach (var to in recipients)
-            message.To.Add(to);
-        if (attachment is { Length: > 0 })
-            message.Attachments.Add(new Attachment(new MemoryStream(attachment), attachmentName ?? "wisetrack-report.csv", attachmentContentType ?? "text/csv"));
-
-        await client.SendMailAsync(message);
+            _logger.LogWarning(ex, "Email delivery failed; the application operation will continue.");
+        }
     }
 }

@@ -3874,6 +3874,15 @@
         <hr><small>Generated ${new Date().toLocaleString()} · Reporting period ${period}</small>
         </div>`;
       result.innerHTML = reportHtml;
+      await WisetrackAPI.createReport({
+        name: `Monthly Project Report · ${period}`,
+        reportType: 'monthly',
+        projectId,
+        filterJson: JSON.stringify({ period, decisions }),
+        selectedColumns: 'project,period,decisions',
+        recipientUserIds: []
+      });
+      showToast('Monthly report generated and saved to report history.');
     } catch (error) {
       result.innerHTML = `<p style="color:var(--danger,#b91c1c)">Could not generate the report: ${esc(error.message || 'Request failed')}</p>`;
     }

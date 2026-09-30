@@ -1,12 +1,38 @@
 // WISETRACK APPLICATION CONTROLLER & INTERACTIVITY
 
-// Toast Notification (Top Center Floating Banner)
+// Toast notifications use Toastr when its CDN assets are ready, with an offline fallback.
 function showToast(message, type = 'success') {
+  const text = String(message ?? '');
+  const toastrApi = window.toastr;
+  if (toastrApi) {
+    toastrApi.options = {
+      closeButton: true,
+      progressBar: true,
+      positionClass: 'toast-top-center',
+      newestOnTop: true,
+      preventDuplicates: true,
+      escapeHtml: true,
+      timeOut: 3500,
+      extendedTimeOut: 1000,
+      showDuration: 200,
+      hideDuration: 300,
+      showEasing: 'swing',
+      hideEasing: 'linear',
+      showMethod: 'fadeIn',
+      hideMethod: 'fadeOut'
+    };
+    const method = type === 'danger' || type === 'error' ? 'error'
+      : type === 'warning' || type === 'warn' ? 'warning'
+      : type === 'info' ? 'info' : 'success';
+    toastrApi[method](text);
+    return;
+  }
+
   let toast = document.getElementById('toast');
   if (!toast) {
     toast = document.createElement('div');
     toast.id = 'toast';
-    toast.className = 'toast';
+    toast.className = 'wt-toast';
     document.body.appendChild(toast);
   }
 
@@ -19,8 +45,14 @@ function showToast(message, type = 'success') {
     icon = '<i class="fa-solid fa-circle-info" style="font-size:16px;"></i>';
   }
 
-  toast.innerHTML = `<span style="display:inline-flex; align-items:center;">${icon}</span> <span>${message}</span>`;
-  toast.className = `toast show ${type}`;
+  toast.replaceChildren();
+  const iconNode = document.createElement('span');
+  iconNode.style.cssText = 'display:inline-flex;align-items:center';
+  iconNode.innerHTML = icon;
+  const messageNode = document.createElement('span');
+  messageNode.textContent = text;
+  toast.append(iconNode, messageNode);
+  toast.className = `wt-toast show ${type}`;
 
   if (window.__toastTimeout) clearTimeout(window.__toastTimeout);
   window.__toastTimeout = setTimeout(() => {

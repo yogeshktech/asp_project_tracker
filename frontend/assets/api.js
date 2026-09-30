@@ -317,3 +317,39 @@ const WisetrackAPI = {
   saveTemplate(data) { return this.post('/projects/milestone-templates', data); },
   cloneTemplate(data) { return this.post('/projects/milestone-templates/clone', data); },
 };
+
+// Load the shared Toastr library asynchronously so toast messages work on every app page.
+// The existing showToast helpers retain their in-app fallback if a CDN is unavailable.
+(function loadWisetrackToastr() {
+  const cssUrl = 'https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.css';
+  const jqueryUrl = 'https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js';
+  const toastrUrl = 'https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.js';
+
+  if (!document.querySelector('link[data-wt-toastr-css]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = cssUrl;
+    link.dataset.wtToastrCss = 'true';
+    document.head.appendChild(link);
+  }
+
+  const loadScript = (url, marker) => new Promise((resolve, reject) => {
+    if (document.querySelector(`script[data-wt-library="${marker}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = url;
+    script.async = true;
+    script.dataset.wtLibrary = marker;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Could not load ${marker}`));
+    document.head.appendChild(script);
+  });
+
+  window.WT_TOASTR_READY = (window.jQuery ? Promise.resolve() : loadScript(jqueryUrl, 'jquery'))
+    .then(() => window.toastr ? undefined : loadScript(toastrUrl, 'toastr'))
+    .catch(error => {
+      console.warn('Toastr unavailable; using Wisetrack toast fallback.', error);
+    });
+})();

@@ -63,6 +63,9 @@ public class RoleRepository : IRoleRepository
         if (await _db.UserRoles.AnyAsync(ur => ur.RoleId == id))
             throw new InvalidOperationException("Role is assigned to users. Remove assignments first.");
 
+        var escalationRules = await _db.EscalationRules.Where(rule => rule.TargetRoleId == id).ToListAsync();
+        foreach (var rule in escalationRules) rule.TargetRoleId = null;
+
         var rolePerms = _db.RolePermissions.Where(rp => rp.RoleId == id);
         _db.RolePermissions.RemoveRange(rolePerms);
         _db.Roles.Remove(role);

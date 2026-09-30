@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using project_tracker_madhu.Common;
+using project_tracker_madhu.DatabaseLayer.Context;
 using project_tracker_madhu.DatabaseLayer.Reports;
 using project_tracker_madhu.Models.Entities;
 using project_tracker_madhu.Models.Requests;
@@ -34,13 +35,15 @@ public class ReportService : IReportService
     private readonly IPermissionService _permissions;
     private readonly IAuditService _audit;
     private readonly IEmailService _email;
+    private readonly AppDbContext _db;
 
-    public ReportService(IReportRepository repository, IPermissionService permissions, IAuditService audit, IEmailService email)
+    public ReportService(IReportRepository repository, IPermissionService permissions, IAuditService audit, IEmailService email, AppDbContext db)
     {
         _repository = repository;
         _permissions = permissions;
         _audit = audit;
         _email = email;
+        _db = db;
     }
 
     public async Task<Report> CreateAsync(CreateReportRequest request, long? userId)
@@ -136,6 +139,9 @@ public class ReportService : IReportService
         {
             "daily" => new[] { "task", "subTask", "status", "percent", "remarks", "updatedAt" },
             "boq" => new[] { "item", "quantity", "purchasePrice", "total", "image", "brand", "remark" },
+            "financial" => new[] { "project", "currency", "budget", "commitment", "actual", "forecast", "variance", "variancePercent", "forecastVariance", "rag" },
+            "handover" => new[] { "project", "status", "owner", "notes", "signedDocument", "mandatoryComplete", "closedAt", "inventory", "quantity", "unit", "inventoryRemarks" },
+            "monthly" => new[] { "project", "period", "decisions" },
             _ => new[] { "project", "status", "owner", "budget", "rag", "progress", "milestones", "issues", "varianceReasons" }
         };
         var columns = (report.SelectedColumns ?? string.Join(',', allowedColumns))
@@ -150,6 +156,11 @@ public class ReportService : IReportService
             ["task"] = "Task", ["subTask"] = "Sub-Task", ["percent"] = "% Complete", ["remarks"] = "Remark", ["updatedAt"] = "Updated Date",
             ["item"] = "Item", ["quantity"] = "Quantity", ["purchasePrice"] = "Purchase Price", ["total"] = "Total", ["image"] = "Image", ["brand"] = "Brand", ["remark"] = "Remark"
         };
+        titles["currency"] = "Currency"; titles["commitment"] = "Purchase Commitment"; titles["actual"] = "Actual Cost";
+        titles["forecast"] = "Forecast"; titles["variance"] = "Budget Variance"; titles["variancePercent"] = "Variance %";
+        titles["forecastVariance"] = "Forecast Variance"; titles["notes"] = "Handover Notes"; titles["signedDocument"] = "Signed Document";
+        titles["mandatoryComplete"] = "Mandatory Complete"; titles["closedAt"] = "Closed At"; titles["inventory"] = "Inventory";
+        titles["unit"] = "Unit"; titles["inventoryRemarks"] = "Inventory Remarks"; titles["period"] = "Period"; titles["decisions"] = "Decisions";
         static string Escape(string? value) => "\"" + (value ?? "").Replace("\"", "\"\"") + "\"";
         static string Safe(string? value) => !string.IsNullOrEmpty(value) && "=+-@\t\r".Contains(value[0]) ? "'" + value : value ?? "";
         var output = new System.Text.StringBuilder();
@@ -196,6 +207,73 @@ public class ReportService : IReportService
                 output.AppendLine(string.Join(',', values.Select(v => Escape(Safe(v)))));
             }
         }
+        else if (type == "financial")
+        {
+            if (!report.ProjectId.HasValue) throw new InvalidOperationException("Financial report requires a project.");
+            var projectId = report.ProjectId.Value;
+            var canBudgets = await _permissions.CanViewModuleAsync(userId, projectId, "Budgets");
+            var canCosts = await _permissions.CanViewModuleAsync(userId, projectId, "Costs");
+            if (!canBudgets && !canCosts) throw new UnauthorizedAccessException("You cannot view financial data for this project.");
+            var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId)
+                ?? throw new InvalidOperationException("Project not found.");
+            var purchases = canCosts ? await _db.PurchaseCosts.Where(x => x.ProjectId == projectId).SumAsync(x => (decimal?)x.Amount) ?? 0 : 0;
+            var actuals = canCosts ? await _db.ActualCosts.Where(x => x.ProjectId == projectId).SumAsync(x => (decimal?)x.Amount) ?? 0 : 0;
+            var budget = canBudgets ? await _db.Budgets.Where(x => x.ProjectId == projectId).SumAsync(x => (decimal?)x.ApprovedAmount) ?? 0 : 0;
+            var forecast = purchases + actuals;
+            var variance = budget - actuals;
+            var values = columns.Select(c => c.ToLowerInvariant() switch
+            {
+                "project" => project.Name, "currency" => project.Currency,
+                "budget" => canBudgets ? Fmt(budget) : "", "commitment" => canCosts ? Fmt(purchases) : "",
+                "actual" => canCosts ? Fmt(actuals) : "", "forecast" => canCosts ? Fmt(forecast) : "",
+                "variance" => canBudgets && canCosts ? Fmt(variance) : "",
+                "variancepercent" => canBudgets && canCosts && budget != 0 ? Fmt(Math.Abs(variance) / budget * 100) : "",
+                "forecastvariance" => canBudgets && canCosts ? Fmt(budget - forecast) : "",
+                "rag" => canBudgets && canCosts ? (actuals > budget ? "Red" : actuals >= budget * 0.8m ? "Amber" : "Green") : "",
+                _ => ""
+            });
+            output.AppendLine(string.Join(',', values.Select(v => Escape(Safe(v)))));
+        }
+        else if (type == "handover")
+        {
+            if (!report.ProjectId.HasValue) throw new InvalidOperationException("Handover report requires a project.");
+            var projectId = report.ProjectId.Value;
+            if (!await _permissions.CanViewModuleAsync(userId, projectId, "Closure"))
+                throw new UnauthorizedAccessException("You cannot view handover data for this project.");
+            var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId)
+                ?? throw new InvalidOperationException("Project not found.");
+            var closure = await _db.ProjectCompletionReports.AsNoTracking().FirstOrDefaultAsync(x => x.ProjectId == projectId);
+            var inventory = await _db.Inventories.AsNoTracking().Where(x => x.ProjectId == projectId).OrderBy(x => x.Id).ToListAsync();
+            var units = await _db.Units.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name);
+            if (inventory.Count == 0) inventory.Add(new Inventory { ProjectId = projectId });
+            foreach (var item in inventory)
+            {
+                var values = columns.Select(c => c.ToLowerInvariant() switch
+                {
+                    "project" => project.Name, "status" => project.Status, "owner" => "",
+                    "notes" => closure?.HandoverNotes, "signeddocument" => closure?.SignedDocumentPath,
+                    "mandatorycomplete" => closure?.IsMandatoryComplete.ToString(), "closedat" => closure?.ClosedAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+                    "inventory" => item.Description, "quantity" => item.Quantity == 0 ? "" : Fmt(item.Quantity),
+                    "unit" => item.UnitId.HasValue && units.TryGetValue(item.UnitId.Value, out var unit) ? unit : "",
+                    "inventoryremarks" => item.Remarks, _ => ""
+                });
+                output.AppendLine(string.Join(',', values.Select(v => Escape(Safe(v)))));
+            }
+        }
+        else if (type == "monthly")
+        {
+            if (!report.ProjectId.HasValue) throw new InvalidOperationException("Monthly report requires a project.");
+            if (!await _permissions.CanViewProjectAsync(userId, report.ProjectId.Value)) throw new UnauthorizedAccessException("You cannot view this project.");
+            using var doc = System.Text.Json.JsonDocument.Parse(report.FilterJson ?? "{}");
+            var root = doc.RootElement;
+            var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == report.ProjectId.Value);
+            var values = columns.Select(c => c.ToLowerInvariant() switch
+            {
+                "project" => project?.Name, "period" => root.TryGetProperty("period", out var period) ? period.GetString() : "",
+                "decisions" => root.TryGetProperty("decisions", out var decisions) ? decisions.GetString() : "", _ => ""
+            });
+            output.AppendLine(string.Join(',', values.Select(v => Escape(Safe(v)))));
+        }
         else
         {
             var rows = (await _repository.GetPortfolioReportAsync(accessible)).Projects.AsEnumerable();
@@ -237,6 +315,8 @@ public class ReportService : IReportService
         }
         catch (System.Text.Json.JsonException) { return new ReportFilterState(); }
     }
+
+    private static string Fmt(decimal value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     public async Task<DailySiteReportDto?> GetDailyReportAsync(long userId, long projectId, DateOnly? date, bool cumulative = false)
     {
