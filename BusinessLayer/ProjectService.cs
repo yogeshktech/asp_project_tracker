@@ -368,7 +368,8 @@ public class ProjectService : IProjectService
                 UserId = pu.UserId,
                 FullName = pu.User?.FullName ?? $"User {pu.UserId}",
                 Email = pu.User?.Email ?? "",
-                TeamRole = pu.TeamRole
+                TeamRole = pu.TeamRole,
+                IsInternal = pu.User?.IsInternal ?? true
             })
             .OrderBy(m => m.FullName)
             .ToList();

@@ -46,6 +46,8 @@ public class AppDbContext : DbContext
     public DbSet<IssueAttachment> IssueAttachments => Set<IssueAttachment>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationRecipient> NotificationRecipients => Set<NotificationRecipient>();
+    public DbSet<ScheduledNotification> ScheduledNotifications => Set<ScheduledNotification>();
+    public DbSet<ScheduledNotificationRecipient> ScheduledNotificationRecipients => Set<ScheduledNotificationRecipient>();
     public DbSet<EscalationRule> EscalationRules => Set<EscalationRule>();
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<ReportRecipient> ReportRecipients => Set<ReportRecipient>();
@@ -67,6 +69,17 @@ public class AppDbContext : DbContext
             .HasOne(x => x.Role).WithMany(x => x.RolePermissions).HasForeignKey(x => x.RoleId);
         modelBuilder.Entity<RolePermission>()
             .HasOne(x => x.Permission).WithMany().HasForeignKey(x => x.PermissionId);
+
+        modelBuilder.Entity<ScheduledNotificationRecipient>().HasKey(x => new { x.ScheduledNotificationId, x.UserId });
+        modelBuilder.Entity<ScheduledNotificationRecipient>()
+            .HasOne(x => x.ScheduledNotification).WithMany(x => x.Recipients)
+            .HasForeignKey(x => x.ScheduledNotificationId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ScheduledNotificationRecipient>()
+            .HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ScheduledNotification>()
+            .HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ScheduledNotification>()
+            .HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<ProjectUser>().HasKey(x => new { x.ProjectId, x.UserId });
         modelBuilder.Entity<BudgetVersion>()

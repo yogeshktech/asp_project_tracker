@@ -284,11 +284,14 @@ const WisetrackAPI = {
 
   // Notifications
   sendNotification(data) { return this.post('/notifications', data); },
-  getInbox() { return this.get('/notifications/inbox'); },
+  getInbox(page = 1, pageSize = 25) { return this.get(`/notifications/inbox?page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`); },
   markRead(recipientId) { return this.post(`/notifications/${recipientId}/read`); },
   getEscalationRules() { return this.get('/notifications/escalation-rules'); },
   createEscalationRule(data) { return this.post('/notifications/escalation-rules', data); },
   updateEscalationRule(id, data) { return this.put(`/notifications/escalation-rules/${id}`, data); },
+  getScheduledNotifications(projectId) { return this.get(`/notifications/scheduled${projectId ? '?projectId=' + encodeURIComponent(projectId) : ''}`); },
+  createScheduledNotification(data) { return this.post('/notifications/scheduled', data); },
+  cancelScheduledNotification(id) { return this.del(`/notifications/scheduled/${id}`); },
 
   // Reports
   getReports() { return this.get('/reports'); },

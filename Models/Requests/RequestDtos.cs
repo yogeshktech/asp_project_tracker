@@ -411,6 +411,18 @@ public class CreateNotificationRequest
     public bool SendEmail { get; set; } = true;
 }
 
+public class CreateScheduledNotificationRequest
+{
+    public long ProjectId { get; set; }
+    public string RelatedType { get; set; } = "Project";
+    public long RelatedId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public DateTimeOffset ScheduledAt { get; set; }
+    public List<long> UserIds { get; set; } = new();
+    public bool SendEmail { get; set; } = true;
+}
+
 public class CreateEscalationRuleRequest
 {
     public string Name { get; set; } = string.Empty;

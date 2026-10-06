@@ -114,7 +114,7 @@
     ['Overview', 'project-detail.html'], ['Planning & WBS', 'planning.html'],
     ['Milestones', 'milestones.html'], ['Daily Reports', 'daily-report.html'],
     ['Issues', 'issues.html'], ['BOQ', 'boq.html'], ['Budget', 'budget.html'],
-    ['Costs', 'costs.html'], ['Inventory & Closure', 'inventory.html']
+    ['Costs', 'costs.html'], ['Inventory', 'inventory.html'], ['Project Closure', 'closure.html']
   ];
   const PROJECT_CONTEXT_PAGES = new Set(PROJECT_CONTEXT_TABS.map(([, href]) => href));
 
@@ -3635,6 +3635,19 @@ WTPages.switchProjView = function(view) {
   }
 
   // ---------- NOTIFICATIONS ----------
+  let notificationInboxPage = 1;
+  let notificationInboxPageSize = 25;
+
+  function changeInboxPage(page, pageSize) {
+    if (pageSize) {
+      notificationInboxPageSize = Math.min(100, Math.max(1, Number(pageSize) || 25));
+      notificationInboxPage = 1;
+    } else {
+      notificationInboxPage = Math.max(1, Number(page) || 1);
+    }
+    pageNotifications();
+  }
+
   function formatTriggerLabel(type) {
     const map = {
       BudgetRagAmber: 'Budget CC ≥80% (Amber)',
@@ -3651,16 +3664,22 @@ WTPages.switchProjView = function(view) {
 
   async function pageNotifications() {
     const el = root();
-    el.innerHTML = pageHead('Notifications & Escalation Rules', '/api/notifications',
+    el.innerHTML = pageHead('Notification Master & Escalation Rules', 'Schedule project, task, and milestone notifications with email delivery.',
       `<button class="btn" onclick="WTPages.openEscRuleModal()">+ Escalation Rule</button>
-       <button class="btn primary" onclick="WTPages.openNotifyModal()">+ Send Notification</button>`)
-      + `<div class="card" style="margin-bottom:16px"><h3 class="card-title" style="margin-bottom:10px">Inbox</h3><div id="inboxList">Loading inbox...</div></div>`
+       <button class="btn" onclick="WTPages.openNotifyModal()">Send Now</button>
+       <button class="btn primary" onclick="WTPages.openScheduledNotificationModal()">+ Schedule Notification</button>`)
+      + `<section class="card" style="margin-bottom:16px"><div class="card-header"><div><h3 class="card-title">Scheduled notification master</h3><div class="card-subtitle">Select a project, task, or milestone, set the delivery date and choose recipients. Showing latest 100 records.</div></div></div>`
+      + tableWrap(['ID', 'Project / Target', 'Notification', 'Scheduled for', 'Recipients', 'Delivery', 'Status', 'Action'], 'scheduledNotificationsBody')
+      + `</section>`
+      + `<div class="card" style="margin-bottom:16px"><h3 class="card-title" style="margin-bottom:10px">Inbox</h3><div id="inboxList">Loading inbox...</div><div id="inboxPager"></div></div>`
       + tableWrap(['ID', 'Rule', 'Trigger', 'Delay (hrs)', 'Target Role', 'Status / Control', 'Created'], 'escBody');
     try {
-      const [inbox, rules, roles] = await Promise.all([
-        WisetrackAPI.getInbox().catch(() => []),
+      const currentProject = Number(localStorage.getItem('WISETRACK_SELECTED_PROJECT')) || undefined;
+      const [inbox, rules, roles, scheduled] = await Promise.all([
+        WisetrackAPI.getInbox(notificationInboxPage, notificationInboxPageSize).catch(() => ({ items: [], page: 1, pageSize: notificationInboxPageSize, totalCount: 0, totalPages: 0 })),
         WisetrackAPI.getEscalationRules().catch(() => []),
-        WisetrackAPI.getRoles().catch(() => [])
+        WisetrackAPI.getRoles().catch(() => []),
+        WisetrackAPI.getScheduledNotifications(currentProject).catch(() => [])
       ]);
       const roleName = (id) => {
         const r = (roles || []).find(x => Number(x.id) === Number(id));
@@ -3690,6 +3709,11 @@ WTPages.switchProjView = function(view) {
           ${unread && rid ? `<button class="btn sm" onclick="WisetrackAPI.markRead(${rid}).then(()=>{showToast('Marked read');WTPages.refreshNotifications&&WTPages.refreshNotifications()})">Mark read</button>` : ''}
         </div>`;
       }).join('') : '<p style="color:var(--text-muted);margin:0">Inbox empty</p>';
+      const totalInbox = Number(inbox?.totalCount) || 0;
+      const totalInboxPages = Number(inbox?.totalPages) || 0;
+      const firstInbox = totalInbox ? ((notificationInboxPage - 1) * notificationInboxPageSize) + 1 : 0;
+      const lastInbox = Math.min(notificationInboxPage * notificationInboxPageSize, totalInbox);
+      $('#inboxPager').innerHTML = totalInbox ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;color:var(--text-muted);font-size:13px;flex-wrap:wrap"><span>Showing ${firstInbox}–${lastInbox} of ${totalInbox}</span><div style="display:flex;align-items:center;gap:8px"><label>Rows <select onchange="WTPages.changeInboxPage(1,this.value)" style="padding:6px;border:1px solid var(--border-light);border-radius:6px"><option ${notificationInboxPageSize===10?'selected':''}>10</option><option ${notificationInboxPageSize===25?'selected':''}>25</option><option ${notificationInboxPageSize===50?'selected':''}>50</option><option ${notificationInboxPageSize===100?'selected':''}>100</option></select></label><button class="btn sm" ${notificationInboxPage<=1?'disabled':''} onclick="WTPages.changeInboxPage(${notificationInboxPage-1})">Previous</button><span>Page ${notificationInboxPage} of ${totalInboxPages}</span><button class="btn sm" ${notificationInboxPage>=totalInboxPages?'disabled':''} onclick="WTPages.changeInboxPage(${notificationInboxPage+1})">Next</button></div></div>` : '';
 
       $('#escBody').innerHTML = (rules || []).length ? rules.map(r => `
         <tr>
@@ -3702,12 +3726,137 @@ WTPages.switchProjView = function(view) {
           <td>${r.createdAt ? esc(new Date(r.createdAt).toLocaleString()) : '—'}</td>
         </tr>`).join('') : emptyRow(7, 'No escalation rules');
 
+      const scheduledRows = Array.isArray(scheduled) ? scheduled : [];
+      $('#scheduledNotificationsBody').innerHTML = scheduledRows.length ? scheduledRows.map(n => `
+        <tr>
+          <td>${n.id}</td>
+          <td><strong>${esc(n.projectName || `Project #${n.projectId}`)}</strong><small style="display:block;color:var(--text-muted)">${esc(n.relatedType)}: ${esc(n.relatedName || `#${n.relatedId}`)}</small></td>
+          <td><strong>${esc(n.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(n.body)}</small></td>
+          <td>${esc(new Date(n.scheduledAt).toLocaleString())}</td>
+          <td>${(n.recipients || []).map(u => esc(u.fullName || u.email)).join(', ')}</td>
+          <td>${n.sendEmail ? 'In-app + Email' : 'In-app'}</td>
+          <td><span class="badge ${n.status === 'Sent' ? 'green' : n.status === 'Failed' ? 'red' : n.status === 'Cancelled' ? 'gray' : 'amber'}">${esc(n.status)}</span>${n.lastError ? `<small style="display:block;color:var(--danger)">${esc(n.lastError)}</small>` : ''}</td>
+          <td>${n.status === 'Pending' ? `<button class="btn sm danger" onclick="WTPages.cancelScheduledNotification(${n.id})">Cancel</button>` : '—'}</td>
+        </tr>`).join('') : emptyRow(8, 'No scheduled notifications for the selected project');
+
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     } catch (e) {
       $('#inboxList').innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`;
       $('#escBody').innerHTML = errRow(7, e);
+      $('#scheduledNotificationsBody').innerHTML = errRow(8, e);
       showToast(e.message, 'danger');
     }
+  }
+
+  async function openScheduledNotificationModal() {
+    const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
+    const projects = await WisetrackAPI.getProjects(resortId).catch(() => []);
+    const currentProject = localStorage.getItem('WISETRACK_SELECTED_PROJECT') || '';
+    const projectOptions = (projects || []).map(p => `<option value="${p.id}" ${String(p.id) === String(currentProject) ? 'selected' : ''}>${esc(p.name || p.title)}${p.code ? ` · ${esc(p.code)}` : ''}</option>`).join('');
+    openModal('Schedule Notification', `
+      <form onsubmit="WTPages.saveScheduledNotification(event)">
+        <div class="form-grid">
+          <div class="field full"><label>Project *</label><select id="snProject" required onchange="WTPages.loadScheduledTargets();WTPages.loadScheduledRecipients()">${projectOptions || '<option value="">No projects available</option>'}</select></div>
+          <div class="field"><label>Target type *</label><select id="snTargetType" onchange="WTPages.loadScheduledTargets()"><option value="Project">Project</option><option value="Task">Task</option><option value="Milestone">Milestone</option></select></div>
+          <div class="field" id="snTargetWrap" style="display:none"><label>Task / Milestone *</label><select id="snTargetId"></select></div>
+          <div class="field"><label>Notification date *</label><input id="snDate" type="date" min="${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)}" required></div>
+          <div class="field"><label>Notification time *</label><input id="snTime" type="time" value="09:00" required><small>Time uses your browser's local timezone.</small></div>
+          <div class="field full"><label>Title *</label><input id="snTitle" maxlength="250" required placeholder="e.g. Review milestone readiness"></div>
+          <div class="field full"><label>Message *</label><textarea id="snBody" required placeholder="Enter the reminder or update to send"></textarea></div>
+          <div class="field full"><label>Project team recipients * (active internal users only)</label><select id="snUsers" multiple required style="min-height:130px"><option value="">Loading project team...</option></select><small>Selected team members receive an in-app notification. Email is optional below.</small></div>
+          <div class="field"><label><input id="snEmail" type="checkbox" checked> Also send email</label></div>
+        </div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save Schedule</button></div>
+      </form>`);
+    await loadScheduledTargets();
+    await loadScheduledRecipients();
+  }
+
+  async function loadScheduledRecipients() {
+    const projectId = Number($('#snProject')?.value);
+    const select = $('#snUsers');
+    if (!projectId || !select) return;
+    select.innerHTML = '<option value="">Loading project team...</option>';
+    try {
+      const team = await WisetrackAPI.getProjectTeam(projectId);
+      const recipients = (Array.isArray(team) ? team : []).filter(u => u.isInternal !== false);
+      select.innerHTML = recipients.map(u => `<option value="${u.userId}">${esc(u.fullName || `User #${u.userId}`)}${u.email ? ` (${esc(u.email)})` : ''}</option>`).join('')
+        || '<option value="">No internal team members are assigned</option>';
+    } catch (err) {
+      select.innerHTML = '<option value="">Could not load project team</option>';
+      showToast(err.message || 'Could not load project team', 'danger');
+    }
+  }
+
+  async function loadScheduledTargets() {
+    const projectId = Number($('#snProject')?.value);
+    const type = $('#snTargetType')?.value;
+    const wrap = $('#snTargetWrap');
+    const target = $('#snTargetId');
+    if (!projectId || !type || !wrap || !target) return;
+    if (type === 'Project') {
+      wrap.style.display = 'none';
+      target.innerHTML = '';
+      return;
+    }
+    wrap.style.display = '';
+    target.innerHTML = '<option value="">Loading...</option>';
+    try {
+      const rows = type === 'Task'
+        ? await WisetrackAPI.getTasks(projectId)
+        : await WisetrackAPI.getMilestones(projectId);
+      const list = Array.isArray(rows) ? rows : [];
+      const options = list.map(row => {
+        const id = row.id || row.taskId || row.milestoneId;
+        const name = row.title || row.name || `#${id}`;
+        return `<option value="${id}">${esc(name)}</option>`;
+      }).join('');
+      target.innerHTML = options || '<option value="">No targets in this project</option>';
+    } catch (err) {
+      target.innerHTML = '<option value="">Could not load targets</option>';
+      showToast(err.message || 'Could not load project targets', 'danger');
+    }
+  }
+
+  async function saveScheduledNotification(e) {
+    e.preventDefault();
+    const projectId = Number($('#snProject').value);
+    const relatedType = $('#snTargetType').value;
+    const relatedId = relatedType === 'Project' ? projectId : Number($('#snTargetId').value);
+    const schedule = new Date(`${$('#snDate').value}T${$('#snTime').value}`);
+    if (!projectId || !relatedId || Number.isNaN(schedule.getTime())) {
+      showToast('Choose a valid project target and date.', 'danger');
+      return;
+    }
+    if (schedule.getTime() <= Date.now()) {
+      showToast('Choose a future date and time.', 'danger');
+      return;
+    }
+    const userIds = [...$('#snUsers').selectedOptions].map(o => Number(o.value)).filter(Boolean);
+    try {
+      await WisetrackAPI.createScheduledNotification({
+        projectId,
+        relatedType,
+        relatedId,
+        title: $('#snTitle').value.trim(),
+        body: $('#snBody').value.trim(),
+        scheduledAt: schedule.toISOString(),
+        userIds,
+        sendEmail: $('#snEmail').checked
+      });
+      localStorage.setItem('WISETRACK_SELECTED_PROJECT', String(projectId));
+      closeModal();
+      showToast('Notification scheduled', 'success');
+      location.reload();
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function cancelScheduledNotification(id) {
+    try {
+      await WisetrackAPI.cancelScheduledNotification(id);
+      showToast('Scheduled notification cancelled');
+      await pageNotifications();
+    } catch (err) { showToast(err.message, 'danger'); }
   }
 
   async function openNotifyModal() {
@@ -4022,14 +4171,12 @@ WTPages.switchProjView = function(view) {
     catch (err) { showToast(err.message, 'danger'); }
   }
 
-  // ---------- CLOSURE / INVENTORY ----------
+  // ---------- INVENTORY ----------
   async function pageInventory() {
     const el = root();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Inventory & Project Closure', 'Leftover inventory + signed PCR required. Only Project Manager can close.',
-      ` <button class="btn" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>
-        <button class="btn" onclick="WTPages.generateHandoverReport()">Generate Handover Report</button>
-        <button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>`)
+    el.innerHTML = pageHead('Project Inventory', 'Record leftover materials and their transfer or storage action.',
+      ` <button class="btn primary" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>`)
       + tableWrap(['ID', 'Item', 'Qty', 'Action'], 'invBody');
     if (!pid) {
       $('#invBody').innerHTML = emptyRow(4, 'No project available.');
@@ -4044,6 +4191,21 @@ WTPages.switchProjView = function(view) {
         <td>${i.quantity ?? i.leftoverQty ?? '—'}</td><td>${esc(i.action || i.disposition || i.remarks || '—')}</td></tr>`
       ).join('') : emptyRow(4, 'No inventory rows');
     } catch (e) { $('#invBody').innerHTML = errRow(4, e); }
+  }
+
+  async function pageClosure() {
+    const el = root();
+    el.innerHTML = pageHead('Project Closure', 'Complete the handover requirements before closing the selected project.',
+      ` <button class="btn" onclick="WTPages.generateHandoverReport()">Generate Handover Report</button>
+        <button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>`)
+      + `<div class="card" style="max-width:900px">
+          <div class="card-header"><div><h3 class="card-title">Mandatory closure checklist</h3><div class="card-subtitle">Project closure is available to an authorized Project Manager.</div></div></div>
+          <ol style="margin:8px 0 0;padding-left:22px;line-height:2;color:var(--text-main)">
+            <li>Reconcile leftover items in <a href="inventory.html">Project Inventory</a>. If none remain, record that with quantity 0.</li>
+            <li>Generate the handover report, complete it, and obtain the required signatures.</li>
+            <li>Upload the signed Project Completion Report (PCR) using <b>Close Project</b>.</li>
+          </ol>
+        </div>`;
   }
 
   async function openInventoryModal() {
@@ -4138,7 +4300,7 @@ WTPages.switchProjView = function(view) {
       });
       closeModal();
       showToast('Project closed');
-      await pageInventory();
+      await pageClosure();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -4361,7 +4523,7 @@ WTPages.switchProjView = function(view) {
             <div class="h-body">
               <a href="dashboard.html">Dashboard</a> for portfolio health (PM-25/26) →
               <a href="reports.html">Reports</a>: choose columns; recipients must be internal emails only (PM-28/29).
-              Close the project from <a href="inventory.html">Inventory & Closure</a> after leftover inventory and signed PCR (PM-30).
+              Record leftovers in <a href="inventory.html">Inventory</a>, then close the project from <a href="closure.html">Project Closure</a> after the signed PCR (PM-30).
             </div>
           </li>
         </ol>
@@ -4541,6 +4703,7 @@ WTPages.switchProjView = function(view) {
         'notifications.html': () => pageNotifications(),
         'reports.html': () => pageReports(),
         'inventory.html': () => pageInventory(),
+        'closure.html': () => pageClosure(),
         'audit-logs.html': () => pageAudit(),
         'settings.html': () => pageSettings(),
         'workflow.html': () => pageWorkflow()
@@ -4583,6 +4746,7 @@ WTPages.switchProjView = function(view) {
     refreshPlanning: () => pageTasks('planning'),
     openIssueModal, saveIssue, deleteIssue, commentIssue, escalateIssue,
     openNotifyModal, saveNotify, openEscRuleModal, saveEscRule, setEscRuleActive,
+    openScheduledNotificationModal, loadScheduledTargets, loadScheduledRecipients, saveScheduledNotification, cancelScheduledNotification, changeInboxPage,
     refreshNotifications: () => pageNotifications(),
     loadPortfolio, loadComparable, runComparable, openReportModal, saveReport,
     openMonthlyReport, generateMonthlyReport, printMonthlyReport,

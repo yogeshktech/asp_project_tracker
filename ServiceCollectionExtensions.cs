@@ -37,6 +37,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddHostedService<EscalationBackgroundService>();
+        services.AddHostedService<ScheduledNotificationBackgroundService>();
 
         services.AddScoped<IAuthRepository, AuthRepository>();
         services.AddScoped<IAuthService, AuthService>();

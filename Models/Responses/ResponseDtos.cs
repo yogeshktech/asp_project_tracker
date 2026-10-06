@@ -2,6 +2,59 @@ using project_tracker_madhu.Models.Requests;
 
 namespace project_tracker_madhu.Models.Responses;
 
+public class PagedResponse<T>
+{
+    public List<T> Items { get; set; } = new();
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalCount { get; set; }
+    public int TotalPages { get; set; }
+}
+
+public class InboxNotificationDto
+{
+    public long Id { get; set; }
+    public bool IsRead { get; set; }
+    public InboxNotificationDetailDto Notification { get; set; } = new();
+}
+
+public class InboxNotificationDetailDto
+{
+    public long Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Body { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string? RelatedType { get; set; }
+    public long? RelatedId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ScheduledNotificationDto
+{
+    public long Id { get; set; }
+    public long ProjectId { get; set; }
+    public string ProjectName { get; set; } = string.Empty;
+    public string RelatedType { get; set; } = string.Empty;
+    public long RelatedId { get; set; }
+    public string RelatedName { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public DateTimeOffset ScheduledAt { get; set; }
+    public bool SendEmail { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? SentAt { get; set; }
+    public string? LastError { get; set; }
+    public List<ScheduledNotificationUserDto> Recipients { get; set; } = new();
+}
+
+public class ScheduledNotificationUserDto
+{
+    public long UserId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+}
+
 public class LoginResponseDto
 {
     public string Token { get; set; } = string.Empty;
@@ -48,6 +101,7 @@ public class ProjectTeamMemberDto
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string? TeamRole { get; set; }
+    public bool IsInternal { get; set; }
 }
 
 public class ProjectResponseDto

@@ -7,7 +7,7 @@ namespace project_tracker_madhu.DatabaseLayer.Notifications;
 public interface INotificationRepository
 {
     Task<Notification> AddAsync(Notification notification, IEnumerable<long> userIds);
-    Task<List<NotificationRecipient>> GetInboxAsync(long userId);
+    Task<(List<NotificationRecipient> Items, int TotalCount)> GetInboxAsync(long userId, int page, int pageSize);
     Task MarkReadAsync(long recipientId);
     Task<EscalationRule> AddRuleAsync(EscalationRule rule);
     Task<EscalationRule?> SetRuleActiveAsync(long ruleId, bool isActive);
@@ -35,12 +35,19 @@ public class NotificationRepository : INotificationRepository
         return notification;
     }
 
-    public Task<List<NotificationRecipient>> GetInboxAsync(long userId) =>
-        _db.NotificationRecipients.Include(r => r.Notification)
-            .Where(r => r.UserId == userId)
+    public async Task<(List<NotificationRecipient> Items, int TotalCount)> GetInboxAsync(long userId, int page, int pageSize)
+    {
+        var query = _db.NotificationRecipients.Where(r => r.UserId == userId);
+        var totalCount = await query.CountAsync();
+        var items = await query.Include(r => r.Notification)
             .OrderByDescending(r => r.Notification.CreatedAt)
+            .ThenByDescending(r => r.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .AsNoTracking()
             .ToListAsync();
+        return (items, totalCount);
+    }
 
     public async Task MarkReadAsync(long recipientId)
     {

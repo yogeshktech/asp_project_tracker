@@ -410,15 +410,18 @@ async function loadNotificationsPage() {
   if (!list) return;
   list.innerHTML = '<div class="card">Loading inbox...</div>';
   try {
-    const inbox = await WisetrackAPI.getInbox();
+    const inbox = await WisetrackAPI.getInbox(1, 25);
     const rows = Array.isArray(inbox) ? inbox : (inbox?.items || []);
-    list.innerHTML = rows.length ? rows.map(n => `
+    list.innerHTML = rows.length ? rows.map(n => {
+      const note = n.notification || n;
+      return `
       <div class="card" style="margin-bottom:12px;">
-        <strong>${esc(n.title || n.subject || 'Notification')}</strong>
-        <p style="color:var(--text-muted);margin:6px 0 0;">${esc(n.message || n.body || '')}</p>
-        <small>${esc(n.createdAt || '')}</small>
+        <strong>${esc(note.title || note.subject || 'Notification')}</strong>
+        <p style="color:var(--text-muted);margin:6px 0 0;">${esc(note.message || note.body || '')}</p>
+        <small>${esc(note.createdAt || '')}</small>
       </div>
-    `).join('') : '<div class="card">Inbox empty.</div>';
+    `;
+    }).join('') : '<div class="card">Inbox empty.</div>';
   } catch (err) {
     list.innerHTML = `<div class="card" style="color:#dc2626;">${esc(err.message)}</div>`;
   }
