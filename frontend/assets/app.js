@@ -2222,15 +2222,25 @@ class UniversalTableEngine {
       this.toolbar.className = 'table-toolbar';
       const sizes = [25, 50, 100, 200];
       this.toolbar.innerHTML = `
-        <div class="table-search">
-          <i class="fa-solid fa-magnifying-glass" style="color:var(--text-muted);"></i>
-          <input type="text" placeholder="Search this table..." value="${this.searchQuery}">
+        <div class="table-tools-left">
+          <div class="table-export-buttons">
+            <button type="button" class="table-export-btn" data-export="copy">Copy</button>
+            <button type="button" class="table-export-btn" data-export="csv">CSV</button>
+            <button type="button" class="table-export-btn" data-export="excel">Excel</button>
+            <button type="button" class="table-export-btn" data-export="pdf">PDF</button>
+            <button type="button" class="table-export-btn" data-export="print">Print</button>
+          </div>
+          <label class="table-search">
+            <i class="fa-solid fa-magnifying-glass" style="color:var(--text-muted);"></i>
+            <input type="text" aria-label="Search this table" placeholder="Search this table..." value="${this.searchQuery}">
+          </label>
         </div>
         <div class="table-page-size">
-          <label>Rows per page:</label>
+          <label>Show</label>
           <select class="table-size-select">
             ${sizes.map(n => `<option value="${n}" ${Number(this.pageSize) === n ? 'selected' : ''}>${n}</option>`).join('')}
           </select>
+          <span>rows</span>
         </div>
       `;
       if (wrap) host.parentNode.insertBefore(this.toolbar, wrap);
@@ -2248,6 +2258,10 @@ class UniversalTableEngine {
         localStorage.setItem('WISETRACK_PAGE_SIZE', String(this.pageSize));
         this.currentPage = 1;
         this.render();
+      });
+
+      this.toolbar.querySelectorAll('[data-export]').forEach(button => {
+        button.addEventListener('click', () => this.export(button.dataset.export));
       });
     }
 
@@ -2365,6 +2379,78 @@ class UniversalTableEngine {
       this.currentPage = p;
       this.render();
     }
+  }
+
+  exportValue(value) {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return /^[=+@-]/.test(text) ? `'${text}` : text;
+  }
+
+  escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  }
+
+  exportRows() {
+    const headers = Array.from(this.table.querySelectorAll('thead th'))
+      .filter(th => !/action|super admin/i.test(th.textContent.trim()));
+    const columns = headers.map(th => Array.from(this.table.querySelectorAll('thead th')).indexOf(th));
+    const rows = this.filteredRows.map(row => columns.map(index => this.exportValue(row.children[index]?.innerText || row.children[index]?.textContent || '')));
+    return { headers: headers.map(th => this.exportValue(th.innerText || th.textContent)), rows };
+  }
+
+  download(content, type, extension) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `wisetrack-${new Date().toISOString().slice(0, 10)}.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  export(format) {
+    const { headers, rows } = this.exportRows();
+    const quoteCsv = value => `"${String(value).replace(/"/g, '""')}"`;
+    const matrix = [headers, ...rows];
+    if (format === 'copy') {
+      const text = matrix.map(row => row.join('\t')).join('\n');
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => this.copyFallback(text));
+      else this.copyFallback(text);
+      return;
+    }
+    if (format === 'csv') {
+      this.download('\uFEFF' + matrix.map(row => row.map(quoteCsv).join(',')).join('\r\n'), 'text/csv;charset=utf-8', 'csv');
+      return;
+    }
+    if (format === 'excel') {
+      const table = `<table><thead><tr>${headers.map(v => `<th>${this.escapeHtml(v)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(v => `<td>${this.escapeHtml(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      this.download(`<!doctype html><html><meta charset="utf-8"><body>${table}</body></html>`, 'application/vnd.ms-excel;charset=utf-8', 'xls');
+      return;
+    }
+    this.printRows(headers, rows, format === 'pdf');
+  }
+
+  copyFallback(text) {
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    document.execCommand('copy');
+    field.remove();
+  }
+
+  printRows(headers, rows, pdf = false) {
+    const win = window.open('', '_blank');
+    if (!win) return;
+    const title = this.table.closest('section')?.querySelector('h1,h2,h3')?.textContent || document.title;
+    const safeTitle = this.escapeHtml(title);
+    const table = `<table><thead><tr>${headers.map(v => `<th>${this.escapeHtml(v)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(v => `<td>${this.escapeHtml(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${pdf ? 'PDF' : 'Print'} - ${safeTitle}</title><style>body{font:12px Arial,sans-serif;padding:24px;color:#111}h1{font-size:18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:6px;text-align:left}th{background:#eee} @media print{button{display:none}}</style></head><body><h1>${safeTitle}</h1>${table}<script>window.onload=()=>window.print()<\/script></body></html>`);
+    win.document.close();
   }
 }
 

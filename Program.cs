@@ -75,18 +75,21 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+if (builder.Configuration.GetValue<bool?>("Database:BootstrapOnStartup") ?? true)
 {
-    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
-    try
+    using (var scope = app.Services.CreateScope())
     {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await DatabaseBootstrap.EnsureSchemaAndSeedAsync(db, app.Environment, logger);
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex,
-            "Database bootstrap failed. Ensure PostgreSQL is reachable and run Database/wisetrack_schema.sql if needed.");
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+        try
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await DatabaseBootstrap.EnsureSchemaAndSeedAsync(db, app.Environment, logger);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Database bootstrap failed. Ensure PostgreSQL is reachable and run Database/wisetrack_schema.sql if needed.");
+        }
     }
 }
 

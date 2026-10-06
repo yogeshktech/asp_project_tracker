@@ -2,6 +2,12 @@
 const API_BASE = (function () {
   const { hostname, origin, protocol } = window.location;
   const customBase = localStorage.getItem('WISETRACK_API_BASE');
+
+  // Keep the UI local during development while sending API requests to the live backend.
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'https://demo-project-tracker.workarya.com/api';
+  }
+
   if (customBase) return customBase.replace(/\/+$/, '');
 
   // Prefer same-origin API when app is served by the ASP.NET host (/app/...)

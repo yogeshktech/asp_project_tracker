@@ -119,44 +119,9 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
     </div>
   </div>
 
-  <div class="kpis">
-    <div class="kpi">
-      <span class="kpi-label">Selected Property</span>
-      <span class="kpi-value" id="currentResortLabel"><?php echo htmlspecialchars($currentResort['name'] ?? 'Master Resort'); ?></span>
-      <span class="kpi-sub"><?php echo htmlspecialchars($currentResort['code'] ?? 'RES-01'); ?></span>
-    </div>
-    <div class="kpi">
-      <span class="kpi-label">WBS Hierarchy Depth</span>
-      <span class="kpi-value">3 Nested Levels</span>
-      <span class="kpi-sub">Root ➔ Sub ➔ Work Package</span>
-    </div>
-    <div class="kpi success">
-      <span class="kpi-label">Active Work Packages</span>
-      <span class="kpi-value"><?php echo count($resortProjects); ?> Packages</span>
-      <span class="kpi-sub">Civil, MEP, HVAC, Interiors</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi-label">Sub-Project Budget</span>
-      <span class="kpi-value"><?php echo htmlspecialchars($currentResort['budget'] ?? '₹48.50 Cr'); ?></span>
-      <span class="kpi-sub"><?php echo htmlspecialchars($currentResort['spent'] ?? '₹34.20 Cr'); ?> Committed</span>
-    </div>
-  </div>
-
-  <!-- Filter & View Selector -->
+  <!-- View Selector -->
   <div class="card" style="padding:14px 20px; margin-bottom:16px;">
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <span style="font-weight:700; font-size:12px; color:var(--text-muted);">FILTER BY RESORT:</span>
-        <select id="projectFilterResort" class="resort-select" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:6px 10px; border-radius:6px;" onchange="location.href='index.php?page=projects&resortId=' + this.value">
-          <option value="all" <?php echo $selectedResortId === 'all' ? 'selected' : ''; ?>>🌐 All Master Resorts (Full Portfolio)</option>
-          <?php foreach ($resorts as $resort): ?>
-            <option value="<?php echo $resort['id']; ?>" <?php echo $resort['id'] === $selectedResortId ? 'selected' : ''; ?>>
-              <?php echo htmlspecialchars($resort['name']); ?> (<?php echo $resort['code']; ?>)
-            </option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-
       <div class="btn-group">
         <button class="btn sm primary" id="btnTree" onclick="toggleProjectView('tree', this)">🌲 Tree Hierarchy View</button>
         <button class="btn sm" id="btnTable" onclick="toggleProjectView('table', this)">▤ Table List View</button>
@@ -344,8 +309,7 @@ function syncClientSideProjects() {
   const allProjects = getProjects();
   if (!allProjects || !allProjects.length) return;
 
-  const resortSel = document.getElementById('projectFilterResort');
-  const selectedResort = resortSel ? resortSel.value : 'all';
+  const selectedResort = localStorage.getItem('WISETRACK_SELECTED_RESORT') || 'all';
 
   const filtered = selectedResort === 'all' 
     ? allProjects 

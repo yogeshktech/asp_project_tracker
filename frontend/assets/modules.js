@@ -30,7 +30,7 @@
   function pageHead(title, sub, actionsHtml = '') {
     return `<div class="head">
       <div style="min-width:0;flex:1">
-        <div class="eyebrow">LIVE API</div>
+        
         <h1>${esc(title)}</h1>
         <p>${esc(sub)}</p>
       </div>
@@ -194,26 +194,6 @@
     }
     const extra = subId ? `, ${subId}` : '';
     return `<button class="btn sm icon-action" data-tooltip="Update progress" aria-label="Update progress" title="Update progress" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${taskId}${extra})"><i class="fa-solid fa-chart-line"></i></button>`;
-  }
-
-  async function projectPickerHtml(selectId = 'ctxProjectId') {
-    const allProjects = projectsAsTree(await loadProjectsList());
-    let cur = localStorage.getItem('WISETRACK_SELECTED_PROJECT') || '';
-    if (!cur || !allProjects.some(p => String(p.id) === String(cur))) {
-      const prefer = pickDefaultProject(allProjects);
-      cur = prefer ? String(prefer.id) : '';
-      if (cur) localStorage.setItem('WISETRACK_SELECTED_PROJECT', cur);
-    }
-    const opts = allProjects.map(p => {
-      const depth = Number(p._depth) || (p.parentProjectId ? 1 : 0);
-      const mark = depth > 0 ? '↳ ' : '';
-      const lvl = p.parentProjectId ? (p.level || 'Sub') : 'Parent';
-      return `<option value="${p.id}" ${String(p.id) === String(cur) ? 'selected' : ''}>${mark}${esc(p.name || p.title)} · ${esc(p.code || '#' + p.id)} (${esc(lvl)})</option>`;
-    }).join('') || '<option value="">No projects</option>';
-    return `<label style="display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;padding:4px 10px;">
-      <span style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;white-space:nowrap;">Project</span>
-      <select id="${selectId}" class="resort-select" style="min-width:240px;max-width:360px;padding:6px;border:0;background:transparent;font-weight:700;" onchange="onGlobalProjectChange(this.value)">${opts}</select>
-    </label>`;
   }
 
   // ---------- ROLES & PERMISSIONS ----------
@@ -1108,20 +1088,14 @@
   // ---------- RESORTS + PROPERTIES + TYPES ----------
   async function pageResorts() {
     const el = root();
-    el.innerHTML = pageHead('Resorts, Properties & Project Types', 'Comprehensive master hierarchy: Master Resorts ➔ Sub-Properties ➔ Engineering Disciplines',
-      `<button class="btn" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-building"></i> + Add Property</button>
-       <button class="btn" onclick="WTPages.openTypeModal()"><i class="fa-solid fa-tags"></i> + Add Project Type</button>
-       <button class="btn primary" onclick="openCreateResortModal()"><i class="fa-solid fa-plus"></i> + Add Resort</button>`)
+    el.innerHTML = pageHead('', '',
+      `<button class="btn" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-building"></i>  Add Property</button>
+       <button class="btn" onclick="WTPages.openTypeModal()"><i class="fa-solid fa-tags"></i>  Add Project Type</button>
+       <button class="btn primary" onclick="openCreateResortModal()"><i class="fa-solid fa-plus"></i>  Add Resort</button>`)
       + `
         <!-- Section 1: Master Resorts Directory -->
         <div class="card" style="margin-bottom:20px;">
-          <div class="card-header">
-            <div>
-              <h3 class="card-title">🏨 1. Master Resorts Directory (CapEx & Destinations)</h3>
-              <div class="card-subtitle">Global resort destinations, locations, regional GM assignment, and CapEx budgets</div>
-            </div>
-            <button class="btn sm primary" onclick="openCreateResortModal()"><i class="fa-solid fa-plus"></i> Add New Resort</button>
-          </div>
+          
           ${tableWrap(['ID', 'Resort Name', 'Resort Code', 'Location', 'Operational Status', 'Super Admin Actions'], 'resortsBody')}
         </div>
 
@@ -1131,7 +1105,6 @@
             <div class="card-header">
               <div>
                 <h3 class="card-title">🏢 2. Resort Properties Master</h3>
-                <div class="card-subtitle">Physical properties, blocks, wings & villa clusters mapped to parent resort</div>
               </div>
               <button class="btn sm primary" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-plus"></i> Add Property</button>
             </div>
@@ -1143,7 +1116,6 @@
             <div class="card-header">
               <div>
                 <h3 class="card-title">🏷️ 3. Project Types & Disciplines</h3>
-                <div class="card-subtitle">Standardized engineering classifications (Civil, MEP, HVAC, Fitout)</div>
               </div>
               <button class="btn sm primary" onclick="WTPages.openTypeModal()"><i class="fa-solid fa-plus"></i> Add Type</button>
             </div>
@@ -1293,45 +1265,13 @@
     const resorts = await WisetrackAPI.getResorts().catch(() => []);
     const selectedResortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] ? String(resorts[0].id) : '1');
 
-    el.innerHTML = pageHead('N-Level Project Hierarchy & Packages', 'Multi-level Work Breakdown Structure (WBS): Major Project ➔ Sub-Projects ➔ Work Packages ➔ Tasks',
+    el.innerHTML = pageHead('', '',
       `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
        <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create N-Level Project</button>`)
       + `
-        <!-- KPI Strip -->
-        <div class="kpis">
-          <div class="kpi">
-            <span class="kpi-label">Selected Property</span>
-            <span class="kpi-value" id="projResortLabel">Loading...</span>
-            <span class="kpi-sub" id="projResortCode">WBS Scope</span>
-          </div>
-          <div class="kpi">
-            <span class="kpi-label">WBS Hierarchy Depth</span>
-            <span class="kpi-value" id="projDepth">3 Nested Levels</span>
-            <span class="kpi-sub">Root ➔ Sub ➔ Work Package</span>
-          </div>
-          <div class="kpi success">
-            <span class="kpi-label">Active Work Packages</span>
-            <span class="kpi-value" id="projActiveCount">12 Packages</span>
-            <span class="kpi-sub">Civil, MEP, HVAC, Fitouts</span>
-          </div>
-          <div class="kpi">
-            <span class="kpi-label">Approved Budget Total</span>
-            <span class="kpi-value" id="projBudgetTotal">Loading...</span>
-            <span class="kpi-sub" id="projSpentTotal">Root project budget baselines</span>
-          </div>
-        </div>
-
-        <!-- Filter & View Selector -->
+        <!-- View Selector -->
         <div class="card" style="padding:14px 20px; margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-            <div style="display:flex; align-items:center; gap:12px;">
-              <span style="font-weight:700; font-size:12px; color:var(--text-muted);">FILTER BY RESORT:</span>
-              <select id="wbsResortFilter" class="resort-select" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:6px 10px; border-radius:6px;">
-                <option value="all">🌐 All Master Resorts (Full Portfolio)</option>
-                ${resorts.map(r => `<option value="${r.id}" ${String(r.id) === String(selectedResortId) ? 'selected' : ''}>${esc(r.name)} (${esc(r.code || 'RES')})</option>`).join('')}
-              </select>
-            </div>
-
             <div class="btn-group">
               <button class="btn sm primary" id="btnViewTree" onclick="WTPages.switchProjView('tree')">🌲 Tree Hierarchy View</button>
               <button class="btn sm" id="btnViewTable" onclick="WTPages.switchProjView('table')">▤ Table List View</button>
@@ -1353,6 +1293,7 @@
                 <tr>
                   <th>LEVEL</th>
                   <th>PROJECT / PACKAGE TITLE</th>
+                  <th>SUB PROJECT</th>
                   <th>WBS CODE</th>
                   <th>DISCIPLINE</th>
                   <th>OWNER / LEAD</th>
@@ -1375,13 +1316,7 @@
         </div>
       `;
 
-    // Hook Resort Filter
-    $('#wbsResortFilter').addEventListener('change', (e) => {
-      localStorage.setItem('WISETRACK_SELECTED_RESORT', e.target.value);
-      renderWBSProjects();
-    });
-
-    WTPages.switchProjView = function(view) {
+WTPages.switchProjView = function(view) {
       $('#wbsTreeView').style.display = view === 'tree' ? 'block' : 'none';
       $('#wbsTableView').style.display = view === 'table' ? 'block' : 'none';
       $('#wbsCardsView').style.display = view === 'cards' ? 'grid' : 'none';
@@ -1402,7 +1337,7 @@
     };
 
     async function renderWBSProjects() {
-      const filterVal = $('#wbsResortFilter').value;
+      const filterVal = localStorage.getItem('WISETRACK_SELECTED_RESORT') || selectedResortId;
       const [allProjectsRaw, allResortsRaw] = await Promise.all([
         WisetrackAPI.getProjects().catch(() => []),
         WisetrackAPI.getResorts().catch(() => [])
@@ -1440,13 +1375,6 @@
       const portfolioBudgetLabel = rootBudgetTotals.size
         ? [...rootBudgetTotals].map(([currency, amount]) => formatBudgetValue(amount, currency)).join(' + ')
         : 'Not set';
-
-      // Update KPI strip
-      $('#projResortLabel').textContent = filterVal === 'all' ? 'All Resorts Portfolio' : matchedResort.name;
-      $('#projResortCode').textContent = filterVal === 'all' ? `${filteredProjects.length} Total Packages` : (matchedResort.code || 'RES');
-      $('#projActiveCount').textContent = `${filteredProjects.length} Packages`;
-      $('#projBudgetTotal').textContent = portfolioBudgetLabel;
-      $('#projSpentTotal').textContent = `${rootBudgetRows.filter(p => p.projectBudgetAmount != null).length} root project budget baseline(s)`;
 
       // 1. Render Recursive N-Level Tree View
       const treeRoot = $('#wbsTreeView');
@@ -1530,16 +1458,7 @@
 
         treeRoot.innerHTML = `
           <div class="tree-node">
-            <div class="tree-header level-0">
-              <span style="font-size:16px;"><i class="fa-solid fa-hotel"></i></span>
-              <div class="tree-title">
-                <strong style="font-size:14px;">${esc(matchedResort.name || 'Master Resort Destination')} (${esc(matchedResort.code || 'RES')})</strong>
-                <small>Master Resort Property · Total CapEx Budget: ${esc(portfolioBudgetLabel)} · ${filteredProjects.length} Nested Packages</small>
-              </div>
-              <div class="tree-meta">
-                <button class="btn sm primary" onclick="openCreateProjectModal();"><i class="fa-solid fa-plus"></i> Add Level-1 Major Project</button>
-              </div>
-            </div>
+            
           </div>
           ${rootProjects.map(rp => buildTreeNodeHtml(rp, 1, matchedResort.name || 'Root')).join('')}
         `;
@@ -1605,7 +1524,6 @@
             <h3 style="font-size:15px; font-weight:800; margin:10px 0 4px;">${esc(p.name || p.title)}</h3>
             ${parentObj ? `<div style="font-size:11px; color:#6b21a8; background:#faf5ff; padding:3px 6px; border-radius:4px; margin-bottom:6px;">↳ Parent: <b>${esc(parentObj.name)}</b></div>` : ''}
             <div style="font-size:11.5px; color:var(--text-muted);">Code: <code>${esc(p.code || '')}</code> · ${esc(p.discipline || 'General')}</div>
-            <p style="font-size:12px; color:var(--text-muted); margin:10px 0; min-height:36px;">${esc(p.desc || 'Engineering deliverable package with milestones and technical specifications.')}</p>
             <div class="progress ${progColor}"><i style="width:${prog}%"></i></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
               <span><b>${prog}%</b> complete</span>
@@ -1633,9 +1551,8 @@
   async function pageProjectDetail() {
     const el = root();
     let pid = await selectedProjectId();
-    const picker = await projectPickerHtml();
 
-    el.innerHTML = pageHead('Project Dashboard', 'Project dates, delivery progress, cost position, activity, risks and actions', picker)
+    el.innerHTML = pageHead('Project Dashboard', 'Project dates, delivery progress, cost position, activity, risks and actions')
       + `<div class="grid g2">
           <div class="card" id="projDetailBox">Loading project workspace...</div>
           <div class="card">
@@ -2000,9 +1917,8 @@
   // ---------- BUDGETS ----------
   async function pageBudget() {
     const el = root();
-    const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Budgets & Cost Centers', '/api/budgets', picker +
+    el.innerHTML = pageHead('Budgets & Cost Centers', '/api/budgets',
       ` <button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
         <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>`)
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Actions'], 'budgetBody')
@@ -2282,9 +2198,8 @@
 
   async function pageCosts() {
     const el = root();
-    const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Purchases, Actuals & Variance', '/api/costs', picker +
+    el.innerHTML = pageHead('Purchases, Actuals & Variance', '/api/costs',
       ` <button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
         <button class="btn" onclick="WTPages.openPurchaseModal()">+ Purchase</button>
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>`)
@@ -2471,9 +2386,8 @@
   // ---------- BOQ ----------
   async function pageBoq() {
     const el = root();
-    const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Bill of Quantities', '/api/boq', picker +
+    el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
       ` <button class="btn" onclick="WTPages.boqFromMaster()">From Master Items</button>
         <button class="btn primary" onclick="WTPages.boqImport()">Import vendor file (CSV)</button>`)
       + tableWrap(['ID', 'Title', 'Status', 'Latest / Current Baseline', 'Actions'], 'boqBody');
@@ -2757,7 +2671,6 @@
   // ---------- TASKS / MILESTONES / PLANNING / DSR ----------
   async function pageTasks(kind) {
     const el = root();
-    const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
     const title = kind === 'milestones' ? 'Milestones' : kind === 'daily' ? 'Daily Site Progress Report (DSR)' : 'Tasks & Planning';
     const selectedMeta = (await loadProjectsList()).find(p => String(p.id) === String(pid));
@@ -2765,7 +2678,7 @@
       ? `${selectedMeta.name || selectedMeta.title || 'Project'} (${selectedMeta.code || '#' + pid})`
       : (pid ? `Project #${pid}` : 'No project');
 
-    el.innerHTML = pageHead(title, `Showing ${selectedLabel} only — other projects stay hidden`, picker +
+    el.innerHTML = pageHead(title, `Showing ${selectedLabel} only — other projects stay hidden`,
       (kind === 'milestones'
         ? ` <button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>
             <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>
@@ -3625,9 +3538,8 @@
   // ---------- ISSUES ----------
   async function pageIssues() {
     const el = root();
-    const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Issues & Escalation', 'Selected project only — other projects’ issues stay hidden', picker +
+    el.innerHTML = pageHead('Issues & Escalation', 'Selected project only — other projects’ issues stay hidden',
       ` <button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>`)
       + tableWrap(['ID', 'What', 'Where', 'When', 'Impact', 'Reported By', 'Priority', 'Status', 'Actions'], 'issuesBody');
     if (!pid) {
@@ -4113,9 +4025,8 @@
   // ---------- CLOSURE / INVENTORY ----------
   async function pageInventory() {
     const el = root();
-    const picker = await projectPickerHtml();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Inventory & Project Closure', 'Leftover inventory + signed PCR required. Only Project Manager can close.', picker +
+    el.innerHTML = pageHead('Inventory & Project Closure', 'Leftover inventory + signed PCR required. Only Project Manager can close.',
       ` <button class="btn" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>
         <button class="btn" onclick="WTPages.generateHandoverReport()">Generate Handover Report</button>
         <button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>`)
