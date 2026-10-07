@@ -457,8 +457,11 @@ async function handleCreateResort(e) {
   try {
     const saved = await WisetrackAPI.createResort({ name, location });
     closeModal();
-    showToast(`Resort "${name}" saved · ${saved.code || saved.Code || 'RST'}`);
-    setTimeout(() => location.reload(), 400);
+    await fillResortSelector();
+    if (typeof WTPages !== 'undefined' && typeof WTPages.refreshResorts === 'function') {
+      await WTPages.refreshResorts();
+    }
+    showToast(`Resort "${name}" created successfully · ${saved.code || saved.Code || 'RST'}`, 'success');
   } catch (err) {
     showToast(err.message, 'danger');
   }
@@ -469,11 +472,13 @@ async function handleEditResort(e, resortId) {
   const name = document.getElementById('editResortName').value;
   const code = document.getElementById('editResortCode').value;
   const location = document.getElementById('editResortLocation').value;
+  const isActive = document.getElementById('editResortIsActive').value === 'true';
   try {
-    await WisetrackAPI.updateResort(resortId, { name, code, location, isActive: true });
+    await WisetrackAPI.updateResort(resortId, { name, code, location, isActive });
     closeModal();
-    showToast(`Resort updated`);
-    setTimeout(() => location.reload(), 400);
+    await fillResortSelector();
+    if (typeof WTPages !== 'undefined' && typeof WTPages.refreshResorts === 'function') await WTPages.refreshResorts();
+    showToast(`Resort updated successfully`);
   } catch (err) {
     showToast(err.message, 'danger');
   }
@@ -719,6 +724,7 @@ async function openEditResortModal(resortId) {
           <div class="field full"><label>Name *</label><input id="editResortName" value="${esc(r.name)}" required></div>
           <div class="field"><label>Code (auto)</label><input id="editResortCode" value="${esc(r.code || '')}" readonly></div>
           <div class="field"><label>Location</label><input id="editResortLocation" value="${esc(r.location || '')}"></div>
+          <div class="field"><label>Status</label><select id="editResortIsActive"><option value="true" ${(r.isActive ?? r.IsActive) ? 'selected' : ''}>Active</option><option value="false" ${(r.isActive ?? r.IsActive) ? '' : 'selected'}>Inactive</option></select></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:16px;">
           <button type="button" class="btn" onclick="closeModal()">Cancel</button>

@@ -1152,7 +1152,7 @@
       body.innerHTML = list.length ? list.map(p => `
         <tr>
           <td>${p.id}</td><td>${p.resortId}</td><td>${esc(p.name)}</td><td>${esc(p.code || '—')}</td>
-          <td><button class="btn sm danger" onclick="WTPages.deleteProperty(${p.id})"><i class="fa-solid fa-trash"></i></button></td>
+          <td class="table-actions"><button class="btn sm" title="Edit property" onclick="WTPages.openEditPropertyModal(${p.id})"><i class="fa-solid fa-pen"></i></button><button class="btn sm danger" title="Delete property" onclick="WTPages.deleteProperty(${p.id})"><i class="fa-solid fa-trash"></i></button></td>
         </tr>`).join('') : emptyRow(5, 'No properties');
     } catch (e) { body.innerHTML = errRow(5, e); }
   }
@@ -1198,6 +1198,41 @@
         location: $('#propLoc').value.trim()
       });
       closeModal(); showToast('Property created'); await refreshProperties();
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function openEditPropertyModal(id) {
+    try {
+      const [properties, resorts] = await Promise.all([WisetrackAPI.getProperties(), WisetrackAPI.getResorts()]);
+      const p = (properties || []).find(item => Number(item.id) === Number(id));
+      if (!p) { showToast('Property not found', 'danger'); return; }
+      openModal('Edit Property', `
+        <form onsubmit="WTPages.updateProperty(event, ${Number(p.id)})">
+          <div class="form-grid">
+            <div class="field"><label>Resort *</label><select id="editPropResort" required>${resorts.map(r => `<option value="${r.id}" ${Number(r.id) === Number(p.resortId) ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></div>
+            <div class="field"><label>Name *</label><input id="editPropName" value="${esc(p.name)}" required></div>
+            <div class="field"><label>Code (auto)</label><input value="${esc(p.code || '')}" readonly></div>
+            <div class="field"><label>Location</label><input id="editPropLoc" value="${esc(p.location || '')}"></div>
+            <div class="field"><label>Status</label><select id="editPropIsActive"><option value="true" ${(p.isActive ?? p.IsActive) ? 'selected' : ''}>Active</option><option value="false" ${(p.isActive ?? p.IsActive) ? '' : 'selected'}>Inactive</option></select></div>
+          </div>
+          <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save changes</button></div>
+        </form>`);
+    } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function updateProperty(e, id) {
+    e.preventDefault();
+    try {
+      const current = (await WisetrackAPI.getProperties()).find(item => Number(item.id) === Number(id));
+      await WisetrackAPI.updateProperty(id, {
+        resortId: Number($('#editPropResort').value),
+        name: $('#editPropName').value.trim(),
+        code: current?.code || '',
+        location: $('#editPropLoc').value.trim(),
+        description: current?.description || '',
+        isActive: $('#editPropIsActive').value === 'true'
+      });
+      closeModal(); showToast('Property updated successfully'); await refreshProperties();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -4741,7 +4776,8 @@ WTPages.switchProjView = function(view) {
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
     openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
-    openPropertyModal, saveProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
+    openPropertyModal, openEditPropertyModal, saveProperty, updateProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
+    refreshResorts: refreshResortsTable,
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
