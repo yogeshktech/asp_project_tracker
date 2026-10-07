@@ -188,7 +188,7 @@ function openCreateResortModal() {
           <label>Resort / Property Name *</label>
           <input type="text" id="resortName" placeholder="e.g. Palm Grove Beach Resort, Kovalam" required>
         </div>
-        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (RST-001, RST-002…).</p>
+        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns from the resort name (for example, ORB-RST-001).</p>
         <div class="field">
           <label>Location / Region *</label>
           <input type="text" id="resortLocation" placeholder="e.g. Kovalam Beach, Kerala" required>

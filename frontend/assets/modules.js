@@ -2697,10 +2697,12 @@ WTPages.switchProjView = function(view) {
       + (kind === 'daily' ? `<div class="card" style="margin-bottom:16px"><h3 class="card-title">Daily progress report</h3><div id="dailyReportContent">Loading report...</div></div>` : '')
       + tableWrap(kind === 'milestones'
         ? ['ID', 'Milestone & Project', 'Schedule', 'Status', 'Progress', 'Actions']
+        : kind === 'planning'
+        ? ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Dependency', 'Owner', 'Start Date', 'End Date', 'Issues', 'Project', 'Status', 'Progress', 'Actions']
         : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
     
-    const nestCols = 8;
+    const nestCols = kind === 'planning' ? 14 : 8;
     if (kind === 'planning') {
       el.querySelector('#tasksBody')?.closest('.table-wrap')?.classList.add('planning-table-wrap');
       el.querySelector('#tasksBody')?.closest('table')?.classList.add('planning-table');
@@ -2753,6 +2755,8 @@ WTPages.switchProjView = function(view) {
           batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] }))),
           pid
         );
+        const projectIssues = kind === 'planning' ? await WisetrackAPI.getIssues(Number(pid)).catch(() => []) : [];
+        const openIssueCount = (projectIssues || []).filter(issue => !/closed|resolved/i.test(String(issue.status || issue.Status || ''))).length;
         const taskFilesById = new Map(await Promise.all(tasks.map(async task => [
           Number(task.id), await WisetrackAPI.getTaskFiles(task.id).catch(() => [])
         ])));
@@ -2783,12 +2787,19 @@ WTPages.switchProjView = function(view) {
         };
         
         const dash = '<span class="nest-empty">—</span>';
-        const nestTitle = (s) => {
-          const due = s.dueDate || s.DueDate;
-          const dueLabel = due ? String(due).slice(0, 10) : 'No due date';
-          return `<strong>${esc(s.title || s.name)}</strong>
-            <small style="display:block;color:var(--text-muted)">Owner: ${esc(userName(s.assignedTo || s.AssignedTo))} · Due: ${esc(dueLabel)}</small>
-            ${(s.remarks || s.Remarks) ? `<small style="display:block;color:var(--text-muted)">Latest remark: ${esc(s.remarks || s.Remarks)}</small>` : ''}`;
+        const nestTitle = (s) => `<strong>${esc(s.title || s.name)}</strong>`;
+        const planningInfoCells = (row, isSubTask = false) => {
+          if (kind !== 'planning') return '';
+          const assignee = row.assignedTo || row.AssignedTo;
+          const start = row.startDate || row.StartDate;
+          const end = row.dueDate || row.DueDate;
+          const dependency = row.dependsOnLabel || row.DependsOnLabel || (wtRowBlocked(row) ? wtRowBlockReason(row) : '—');
+          return `<td><span class="planning-dependency${wtRowBlocked(row) ? ' is-blocked' : ''}" title="${esc(dependency)}">${esc(dependency)}</span></td>
+            <td>${esc(userName(assignee))}</td>
+            <td>${start ? esc(String(start).slice(0, 10)) : '—'}</td>
+            <td>${end ? esc(String(end).slice(0, 10)) : '—'}</td>
+            <td>${openIssueCount}</td>
+            <td>${esc(nameOf(row._projectId || pid))}<small style="display:block;color:var(--text-muted)">${tasks.length} task${tasks.length === 1 ? '' : 's'}</small></td>`;
         };
         const progressCell = (row, pct) => `
           <td>
@@ -2823,15 +2834,16 @@ WTPages.switchProjView = function(view) {
               <td><code>${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t) : (t.displayCode || 'Task-' + t.id))}</code></td>
               <td class="nest-col depth-task is-filled">
                 <strong>${esc(t.title || t.name)}</strong>
-                <small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small>
+                ${kind !== 'planning' ? `<small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small>
                 <small style="display:block;color:var(--text-muted);">Owner: ${esc(owner)}${ownerLabel ? ' · ' + esc(ownerLabel) : ''}</small>
                 <small style="display:block;color:var(--text-muted);">${esc(t.startDate || t.StartDate || 'No start date')} → ${esc(t.dueDate || t.DueDate || 'No due date')}</small>
-                ${(t.remarks || t.Remarks) ? `<small style="display:block;color:var(--text-muted);">Latest remark: ${esc(t.remarks || t.Remarks)}</small>` : ''}
+                ${(t.remarks || t.Remarks) ? `<small style="display:block;color:var(--text-muted);">Latest remark: ${esc(t.remarks || t.Remarks)}</small>` : ''}` : ''}
                 ${(t.completionEvidence || t.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted);">Evidence: ${esc(t.completionEvidence || t.CompletionEvidence)}</small>` : ''}
                 ${(taskFilesById.get(Number(t.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}
-                ${wtDepLineHtml(t)}
+                ${kind === 'planning' ? '' : wtDepLineHtml(t)}
               </td>
               ${nestCells(0, dash)}
+              ${planningInfoCells(t)}
               <td><span class="badge ${wtRowBlocked(t) ? 'amber' : statusBadge(t.status, pct)}">${wtRowBlocked(t) ? 'Waiting' : esc(formatStatus(t.status))}</span></td>
               ${progressCell(t, pct)}
               <td class="table-actions">
@@ -2851,7 +2863,8 @@ WTPages.switchProjView = function(view) {
               <tr class="subtask-row nest-depth-${depth}">
                 <td><code>${code}</code></td>
                 <td class="nest-col depth-task">${dash}</td>
-                ${nestCells(depth, nestTitle(s) + wtDepLineHtml(s))}
+                ${nestCells(depth, nestTitle(s) + (kind === 'planning' ? '' : wtDepLineHtml(s)))}
+                ${planningInfoCells({ ...s, _projectId: t._projectId }, true)}
                 <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
                 ${progressCell(s, spct)}
                 <td class="table-actions">
@@ -2886,7 +2899,7 @@ WTPages.switchProjView = function(view) {
       
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     } catch (e) {
-      $('#tasksBody').innerHTML = errRow(kind === 'milestones' ? 6 : 8, e);
+      $('#tasksBody').innerHTML = errRow(kind === 'milestones' ? 6 : nestCols, e);
       $('#excList').innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`;
       showToast(e.message, 'danger');
     }

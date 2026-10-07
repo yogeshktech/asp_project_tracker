@@ -2141,13 +2141,18 @@ button.btn[disabled] {
 .nest-depth-3 td, .nest-depth-4 td { background: #fffaf5; }
 
 .planning-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
   border: 0;
   border-radius: 12px;
   box-shadow: 0 8px 26px rgba(15, 23, 42, .07);
+  scrollbar-color: #cbd5e1 #f8fafc;
 }
 
 .planning-table {
-  min-width: 1180px;
+  width: max-content !important;
+  min-width: 1900px !important;
   table-layout: fixed;
 }
 
@@ -2161,21 +2166,52 @@ button.btn[disabled] {
   border-bottom: 1px solid #dce5f0;
 }
 
-.planning-table th:nth-child(1) { width: 8%; }
-.planning-table th:nth-child(2) { width: 17%; }
-.planning-table th:nth-child(3) { width: 15%; }
-.planning-table th:nth-child(4) { width: 13%; }
-.planning-table th:nth-child(5) { width: 12%; }
-.planning-table th:nth-child(6) { width: 10%; }
-.planning-table th:nth-child(7) { width: 10%; }
-.planning-table th:nth-child(8) { width: 15%; }
+.planning-table th:nth-child(1) { width: 90px; }
+.planning-table th:nth-child(2) { width: 220px; }
+.planning-table th:nth-child(3),
+.planning-table th:nth-child(4),
+.planning-table th:nth-child(5) { width: 165px; }
+.planning-table th:nth-child(6) { width: 190px; }
+.planning-table th:nth-child(7) { width: 145px; }
+.planning-table th:nth-child(8),
+.planning-table th:nth-child(9) { width: 115px; }
+.planning-table th:nth-child(10) { width: 85px; }
+.planning-table th:nth-child(11) { width: 155px; }
+.planning-table th:nth-child(12) { width: 120px; }
+.planning-table th:nth-child(13) { width: 120px; }
+.planning-table th:nth-child(14) { width: 140px; }
 
 .planning-table td {
-  padding: 13px 12px;
+  padding: 12px 14px;
   color: #334155;
   vertical-align: top;
-  line-height: 1.5;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
+
+.planning-table td:nth-child(1),
+.planning-table td:nth-child(8),
+.planning-table td:nth-child(9),
+.planning-table td:nth-child(10),
+.planning-table td:nth-child(12),
+.planning-table td:nth-child(13) { vertical-align: middle; }
+.planning-table td:nth-child(7),
+.planning-table td:nth-child(8),
+.planning-table td:nth-child(9),
+.planning-table td:nth-child(10),
+.planning-table td:nth-child(11) { overflow-wrap: normal; }
+.planning-table td:nth-child(11) { white-space: nowrap; }
+.planning-table td:nth-child(11) small { white-space: normal; }
+.planning-dependency {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.planning-dependency.is-blocked { color: #b45309; font-weight: 600; }
 
 .planning-table tbody tr { transition: background .16s ease, box-shadow .16s ease; }
 .planning-table tbody tr.task-row > td { background: #fff; }

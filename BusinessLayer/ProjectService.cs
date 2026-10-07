@@ -66,7 +66,7 @@ public class ProjectService : IProjectService
     public async Task<Resort> CreateResortAsync(CreateResortRequest request, long? userId)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "edit");
-        var code = EntityCodes.Next((await _repository.GetResortsAsync()).Select(r => r.Code), EntityCodes.Resort);
+        var code = EntityCodes.NextResort(request.Name, (await _repository.GetResortsAsync()).Select(r => r.Code));
         var resort = await _repository.AddResortAsync(new Resort
         {
             Name = request.Name,
@@ -87,7 +87,7 @@ public class ProjectService : IProjectService
         resort.Name = request.Name;
         resort.Location = request.Location;
         if (string.IsNullOrWhiteSpace(resort.Code))
-            resort.Code = EntityCodes.Next((await _repository.GetResortsAsync()).Select(r => r.Code), EntityCodes.Resort);
+            resort.Code = EntityCodes.NextResort(resort.Name, (await _repository.GetResortsAsync()).Select(r => r.Code));
         resort.IsActive = request.IsActive;
         resort.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateResortAsync(resort);

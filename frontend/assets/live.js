@@ -696,7 +696,7 @@ async function openCreateResortModal() {
           <label>Resort Name *</label>
           <input type="text" id="resortName" required>
         </div>
-        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (RST-001, RST-002…).</p>
+        <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns from the resort name (for example, ORB-RST-001).</p>
         <div class="field">
           <label>Location</label>
           <input type="text" id="resortLocation">
