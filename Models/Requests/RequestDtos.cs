@@ -6,6 +6,23 @@ public class LoginRequestDto
     public string Password { get; set; } = string.Empty;
 }
 
+public class UpdateMyProfileRequest
+{
+    [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.EmailAddress]
+    public string Email { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.Required]
+    public string FullName { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+    public string? ProfileImageUrl { get; set; }
+}
+
+public class ChangeMyPasswordRequest
+{
+    public string CurrentPassword { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.MinLength(8)]
+    public string NewPassword { get; set; } = string.Empty;
+}
+
 public class CreateRoleRequest
 {
     public string Name { get; set; } = string.Empty;

@@ -55,6 +55,7 @@ public class AuthService : IAuthService
             UserId = user.Id,
             Email = user.Email,
             FullName = user.FullName,
+            ProfileImageUrl = user.ProfileImageUrl,
             Roles = isAdmin ? new List<string> { "Admin" } : new List<string> { "User" },
             IsAdmin = isAdmin,
             Permissions = perms

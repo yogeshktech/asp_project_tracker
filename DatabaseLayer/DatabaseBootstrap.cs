@@ -33,6 +33,7 @@ public static class DatabaseBootstrap
         }
 
         await EnsurePermissionColumnsAsync(db, logger);
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url TEXT NULL""");
         var budgetVersionCurrencyExists = await ColumnExistsAsync(db, "budget_versions", "currency");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS approver_id BIGINT NULL REFERENCES users(id) ON DELETE SET NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'INR'""");

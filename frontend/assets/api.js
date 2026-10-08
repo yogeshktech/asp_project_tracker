@@ -85,6 +85,7 @@ const WisetrackAPI = {
     localStorage.setItem('WISETRACK_USER_ID', String(data.userId));
     localStorage.setItem('WISETRACK_USER_NAME', data.fullName || '');
     localStorage.setItem('WISETRACK_USER_EMAIL', data.email || email);
+    localStorage.setItem('WISETRACK_PROFILE_IMAGE', data.profileImageUrl || '');
     localStorage.setItem('WISETRACK_USER_ROLES', JSON.stringify(data.isAdmin ? ['Admin'] : ['User']));
     localStorage.setItem('WISETRACK_IS_ADMIN', data.isAdmin ? 'true' : 'false');
     localStorage.setItem('WISETRACK_PERMISSIONS', JSON.stringify(data.permissions || []));
@@ -96,6 +97,7 @@ const WisetrackAPI = {
     localStorage.removeItem('WISETRACK_USER_ID');
     localStorage.removeItem('WISETRACK_USER_NAME');
     localStorage.removeItem('WISETRACK_USER_EMAIL');
+    localStorage.removeItem('WISETRACK_PROFILE_IMAGE');
     localStorage.removeItem('WISETRACK_USER_ROLES');
     localStorage.removeItem('WISETRACK_IS_ADMIN');
     localStorage.removeItem('WISETRACK_PERMISSIONS');
@@ -125,6 +127,9 @@ const WisetrackAPI = {
   setProjectPermission(data) { return this.post('/users/project-permissions', data); },
   getUserProjectPermissions(userId) { return this.get(`/users/${userId}/project-permissions`); },
   getMyAccess() { return this.get('/users/me/access'); },
+  getMyProfile() { return this.get('/users/me'); },
+  updateMyProfile(data) { return this.put('/users/me', data); },
+  changeMyPassword(data) { return this.put('/users/me/password', data); },
   replaceUserAccess(userId, data) { return this.put(`/users/${userId}/access`, data); },
 
   async uploadFile(file, module, relatedId) {

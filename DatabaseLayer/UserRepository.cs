@@ -8,6 +8,7 @@ public interface IUserRepository
 {
     Task<List<User>> GetAllAsync();
     Task<User?> GetByIdAsync(long id);
+    Task<bool> EmailExistsAsync(string email, long exceptUserId);
     Task<User> AddAsync(User user, IEnumerable<long> roleIds);
     Task UpdateAsync(User user, IEnumerable<long>? roleIds);
     Task<List<Role>> GetRolesAsync();
@@ -29,6 +30,9 @@ public class UserRepository : IUserRepository
 
     public Task<User?> GetByIdAsync(long id) =>
         _db.Users.Include(u => u.UserRoles).ThenInclude(ur => ur.Role).FirstOrDefaultAsync(u => u.Id == id);
+
+    public Task<bool> EmailExistsAsync(string email, long exceptUserId) =>
+        _db.Users.AnyAsync(u => u.Id != exceptUserId && u.Email.ToLower() == email.ToLower());
 
     public async Task<User> AddAsync(User user, IEnumerable<long> roleIds)
     {

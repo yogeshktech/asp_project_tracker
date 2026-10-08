@@ -145,10 +145,13 @@ function wtBuildSidebar() {
   }
   const storedName = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
   const initials = storedName.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
+  const profileImage = localStorage.getItem('WISETRACK_PROFILE_IMAGE') || '';
+  const avatarContent = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(profileImage)
+    ? `<img src="${profileImage}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : initials;
   const roleLabel = wtIsAdmin() ? 'Project Admin' : (localStorage.getItem('WISETRACK_ROLE') || 'User');
   html += `</div>
     <div class="side-user">
-      <div class="avatar">${initials}</div>
+      <div class="avatar">${avatarContent}</div>
       <div class="user-meta">
         <div class="user-name">${storedName.replace(/[<>]/g, '')}</div>
         <div class="user-role-badge current-role-label">${roleLabel}</div>

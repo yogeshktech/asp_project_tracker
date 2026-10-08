@@ -21,6 +21,35 @@ public class UsersController : ControllerBase
     [HttpGet("me/access")]
     public async Task<IActionResult> MyAccess() => Ok(await _userService.GetAccessAsync(UserId));
 
+    [HttpGet("me")]
+    public async Task<IActionResult> GetMe()
+    {
+        var user = await _userService.GetByIdAsync(UserId);
+        return user == null ? NotFound() : Ok(user);
+    }
+
+    [HttpPut("me")]
+    public async Task<IActionResult> UpdateMe([FromBody] UpdateMyProfileRequest request)
+    {
+        try
+        {
+            var user = await _userService.UpdateMyProfileAsync(UserId, request);
+            return user == null ? NotFound() : Ok(user);
+        }
+        catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+    }
+
+    [HttpPut("me/password")]
+    public async Task<IActionResult> ChangeMyPassword([FromBody] ChangeMyPasswordRequest request)
+    {
+        try
+        {
+            return await _userService.ChangeMyPasswordAsync(UserId, request)
+                ? Ok(new { message = "Password updated." }) : NotFound();
+        }
+        catch (UnauthorizedAccessException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
     {

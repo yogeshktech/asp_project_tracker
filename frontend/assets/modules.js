@@ -4372,14 +4372,109 @@ WTPages.switchProjView = function(view) {
 
   // ---------- SETTINGS / WORKFLOW ----------
   async function pageSettings() {
-    root().innerHTML = pageHead('System Settings', 'API connection & session')
-      + `<div class="card">
+    const el = root();
+    el.innerHTML = pageHead('Settings', 'Manage your profile and account security')
+      + `<div class="card" style="margin-bottom:18px">
+          <h3 class="card-title">Profile</h3>
+          <form id="myProfileForm" onsubmit="WTPages.saveMyProfile(event)">
+            <div style="display:flex;align-items:center;gap:18px;margin:18px 0">
+              <div id="profileImagePreview" style="width:88px;height:88px;border-radius:50%;overflow:hidden;background:var(--primary-light);display:grid;place-items:center;font-size:26px;font-weight:800;color:var(--primary);border:2px solid var(--border-color)"></div>
+              <div><label class="btn" for="profileImageInput" style="cursor:pointer">Choose profile image</label><input id="profileImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="WTPages.previewProfileImage(this)"><div style="font-size:12px;color:var(--text-muted);margin-top:6px">PNG, JPEG or WebP; up to 2 MB</div></div>
+            </div>
+            <div class="form-grid">
+              <div class="field"><label>Name</label><input id="profileFullName" required maxlength="160"></div>
+              <div class="field"><label>Email</label><input id="profileEmail" type="email" required maxlength="254"></div>
+              <div class="field"><label>Phone</label><input id="profilePhone" type="tel" maxlength="40"></div>
+            </div>
+            <button class="btn primary" type="submit" style="margin-top:16px">Save profile</button>
+          </form>
+        </div>
+        <div class="card" style="margin-bottom:18px">
+          <h3 class="card-title">Change password</h3>
+          <form onsubmit="WTPages.changeMyPassword(event)" class="form-grid" style="margin-top:14px">
+            <div class="field"><label>Current password</label><input id="profileCurrentPassword" type="password" autocomplete="current-password" required></div>
+            <div class="field"><label>New password</label><input id="profileNewPassword" type="password" minlength="8" autocomplete="new-password" required></div>
+            <div class="field"><label>Confirm new password</label><input id="profileConfirmPassword" type="password" minlength="8" autocomplete="new-password" required></div>
+            <div class="field" style="align-self:end"><button class="btn primary" type="submit">Update password</button></div>
+          </form>
+        </div>
+        <div class="card">
+          <h3 class="card-title">API connection & session</h3>
           <p><strong>API Base:</strong> <code>${esc(API_BASE)}</code></p>
           <p><strong>User:</strong> ${esc(localStorage.getItem('WISETRACK_USER_NAME'))} (${esc(localStorage.getItem('WISETRACK_USER_EMAIL'))})</p>
           <p><strong>Roles:</strong> ${esc(localStorage.getItem('WISETRACK_USER_ROLES'))}</p>
           <button class="btn danger" onclick="WisetrackAPI.logout()">Logout</button>
           <a class="btn" href="/swagger" target="_blank" style="margin-left:8px">Open Swagger</a>
         </div>`;
+    el.dataset.profileImage = '';
+    try {
+      const profile = await WisetrackAPI.getMyProfile();
+      $('#profileFullName').value = profile.fullName || '';
+      $('#profileEmail').value = profile.email || '';
+      $('#profilePhone').value = profile.phone || '';
+      el.dataset.profileImage = profile.profileImageUrl || '';
+      localStorage.setItem('WISETRACK_USER_NAME', profile.fullName || '');
+      localStorage.setItem('WISETRACK_USER_EMAIL', profile.email || '');
+      localStorage.setItem('WISETRACK_PROFILE_IMAGE', profile.profileImageUrl || '');
+      renderProfileImage(profile.profileImageUrl || '');
+    } catch (err) {
+      showToast(`Profile could not be loaded: ${err.message}`, 'danger');
+    }
+  }
+
+  function renderProfileImage(image) {
+    const preview = document.getElementById('profileImagePreview');
+    if (!preview) return;
+    if (image) preview.innerHTML = `<img src="${esc(image)}" alt="Profile image" style="width:100%;height:100%;object-fit:cover">`;
+    else preview.textContent = (localStorage.getItem('WISETRACK_USER_NAME') || 'U').split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
+  }
+
+  function previewProfileImage(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+      input.value = '';
+      showToast('Select a PNG, JPEG or WebP image smaller than 2 MB.', 'danger');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => { document.getElementById('apiPageRoot').dataset.profileImage = reader.result; renderProfileImage(reader.result); };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveMyProfile(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('[type="submit"]');
+    button.disabled = true;
+    try {
+      const profile = await WisetrackAPI.updateMyProfile({
+        fullName: $('#profileFullName').value.trim(), email: $('#profileEmail').value.trim(),
+        phone: $('#profilePhone').value.trim() || null,
+        profileImageUrl: document.getElementById('apiPageRoot').dataset.profileImage || null
+      });
+      localStorage.setItem('WISETRACK_USER_NAME', profile.fullName || '');
+      localStorage.setItem('WISETRACK_USER_EMAIL', profile.email || '');
+      localStorage.setItem('WISETRACK_PROFILE_IMAGE', profile.profileImageUrl || '');
+      await applyLoggedInUser();
+      showToast('Profile updated.', 'success');
+    } catch (err) { showToast(err.message, 'danger'); }
+    finally { button.disabled = false; }
+  }
+
+  async function changeMyPassword(event) {
+    event.preventDefault();
+    const currentPassword = $('#profileCurrentPassword').value;
+    const newPassword = $('#profileNewPassword').value;
+    if (newPassword !== $('#profileConfirmPassword').value) { showToast('New passwords do not match.', 'danger'); return; }
+    const button = event.currentTarget.querySelector('[type="submit"]');
+    button.disabled = true;
+    try {
+      await WisetrackAPI.changeMyPassword({ currentPassword, newPassword });
+      event.currentTarget.reset();
+      showToast('Password updated.', 'success');
+    } catch (err) { showToast(err.message, 'danger'); }
+    finally { button.disabled = false; }
   }
 
   async function pageWorkflow() {
@@ -4773,6 +4868,7 @@ WTPages.switchProjView = function(view) {
   }
 
   window.WTPages = {
+    saveMyProfile, changeMyPassword, previewProfileImage,
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
     openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,

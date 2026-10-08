@@ -25,6 +25,10 @@ async function applyLoggedInUser() {
   const initials = name.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
   document.querySelectorAll('.user-name').forEach(el => { el.textContent = name; });
   document.querySelectorAll('.avatar').forEach(el => { el.textContent = initials; });
+  const profileImage = localStorage.getItem('WISETRACK_PROFILE_IMAGE') || '';
+  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(profileImage)) {
+    document.querySelectorAll('.avatar').forEach(el => { el.innerHTML = `<img src="${profileImage}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`; });
+  }
   const accessLabel = (typeof wtIsAdmin === 'function' && wtIsAdmin()) ? 'Admin' : 'User';
   document.querySelectorAll('.current-role-label').forEach(el => { el.textContent = accessLabel; });
   document.querySelectorAll('a[href="login.html"]').forEach(a => {
@@ -36,6 +40,9 @@ async function applyLoggedInUser() {
     document.querySelectorAll('.current-role-label').forEach(el => { el.textContent = accessLabel; });
     document.querySelectorAll('.user-name').forEach(el => { el.textContent = name; });
     document.querySelectorAll('.avatar').forEach(el => { el.textContent = initials; });
+    if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(profileImage)) {
+      document.querySelectorAll('.avatar').forEach(el => { el.innerHTML = `<img src="${profileImage}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`; });
+    }
   }
 }
 

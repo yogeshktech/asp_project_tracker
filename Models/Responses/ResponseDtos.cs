@@ -61,6 +61,7 @@ public class LoginResponseDto
     public long UserId { get; set; }
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
+    public string? ProfileImageUrl { get; set; }
     public List<string> Roles { get; set; } = new();
     public bool IsAdmin { get; set; }
     public List<UserProjectPermissionDto> Permissions { get; set; } = new();
@@ -89,6 +90,7 @@ public class UserResponseDto
     public string Email { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string? Phone { get; set; }
+    public string? ProfileImageUrl { get; set; }
     public bool IsActive { get; set; }
     public bool IsInternal { get; set; }
     public bool IsAdmin { get; set; }

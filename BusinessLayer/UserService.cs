@@ -10,6 +10,8 @@ public interface IUserService
 {
     Task<List<UserResponseDto>> GetAllAsync();
     Task<UserResponseDto?> GetByIdAsync(long id);
+    Task<UserResponseDto?> UpdateMyProfileAsync(long id, UpdateMyProfileRequest request);
+    Task<bool> ChangeMyPasswordAsync(long id, ChangeMyPasswordRequest request);
     Task<UserResponseDto> CreateAsync(CreateUserRequest request, long actorId);
     Task<UserResponseDto?> UpdateAsync(long id, UpdateUserRequest request, long actorId);
     Task<List<Role>> GetRolesAsync();
@@ -40,6 +42,41 @@ public class UserService : IUserService
     {
         var user = await _repository.GetByIdAsync(id);
         return user == null ? null : Map(user);
+    }
+
+    public async Task<UserResponseDto?> UpdateMyProfileAsync(long id, UpdateMyProfileRequest request)
+    {
+        var user = await _repository.GetByIdAsync(id);
+        if (user == null) return null;
+        var email = request.Email.Trim();
+        if (await _repository.EmailExistsAsync(email, id))
+            throw new InvalidOperationException("That email address is already in use.");
+        var image = request.ProfileImageUrl?.Trim();
+        if (!string.IsNullOrEmpty(image) &&
+            (!(image.StartsWith("data:image/png;base64,", StringComparison.OrdinalIgnoreCase)
+                || image.StartsWith("data:image/jpeg;base64,", StringComparison.OrdinalIgnoreCase)
+                || image.StartsWith("data:image/webp;base64,", StringComparison.OrdinalIgnoreCase))
+              || image.Length > 2_800_000))
+            throw new InvalidOperationException("Choose a profile image smaller than 2 MB (PNG, JPEG, or WebP).");
+        user.Email = email;
+        user.FullName = request.FullName.Trim();
+        user.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
+        user.ProfileImageUrl = string.IsNullOrEmpty(image) ? null : image;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _repository.UpdateAsync(user, null);
+        return Map(await _repository.GetByIdAsync(id) ?? user);
+    }
+
+    public async Task<bool> ChangeMyPasswordAsync(long id, ChangeMyPasswordRequest request)
+    {
+        var user = await _repository.GetByIdAsync(id);
+        if (user == null) return false;
+        if (!PasswordUtility.Verify(request.CurrentPassword, user.PasswordHash))
+            throw new UnauthorizedAccessException("Current password is incorrect.");
+        user.PasswordHash = PasswordUtility.Hash(request.NewPassword);
+        user.UpdatedAt = DateTime.UtcNow;
+        await _repository.UpdateAsync(user, null);
+        return true;
     }
 
     public async Task<UserResponseDto> CreateAsync(CreateUserRequest request, long actorId)
@@ -186,6 +223,7 @@ public class UserService : IUserService
         Email = user.Email,
         FullName = user.FullName,
         Phone = user.Phone,
+        ProfileImageUrl = user.ProfileImageUrl,
         IsActive = user.IsActive,
         IsInternal = user.IsInternal,
         IsAdmin = user.UserRoles.Any(r => r.Role.Name == "Admin"),
