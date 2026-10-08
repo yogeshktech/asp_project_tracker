@@ -11,8 +11,13 @@ using project_tracker_madhu.DatabaseLayer.Context;
 using project_tracker_madhu.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
-var connectionString = builder.Configuration.GetConnectionString("AppDbContextConnection")
-    ?? throw new InvalidOperationException("Connection string 'AppDbContextConnection' not found.");
+var useLiveDatabaseInDevelopment = builder.Environment.IsDevelopment()
+    && builder.Configuration.GetValue<bool>("Database:UseLiveDatabaseInDevelopment");
+var connectionName = useLiveDatabaseInDevelopment
+    ? "AppDbContextConnection_Remote"
+    : "AppDbContextConnection";
+var connectionString = builder.Configuration.GetConnectionString(connectionName)
+    ?? throw new InvalidOperationException($"Connection string '{connectionName}' not found.");
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddWisetrackModules();
