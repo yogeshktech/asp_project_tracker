@@ -26,7 +26,7 @@ public class Project
     public long? PropertyId { get; set; }
     public string? ClientName { get; set; }
     public string? Sponsor { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public bool AllowExternalView { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Code { get; set; }

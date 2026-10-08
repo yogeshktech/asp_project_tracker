@@ -131,7 +131,7 @@ public class CreateProjectDto
     public long? PropertyId { get; set; }
     public string? ClientName { get; set; }
     public string? Sponsor { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public bool AllowExternalView { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Code { get; set; }
@@ -179,7 +179,7 @@ public class CreateBudgetRequest
     public long ProjectId { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal ApprovedAmount { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public decimal RagAmberPercent { get; set; } = 80;
     public decimal RagRedPercent { get; set; } = 100;
 }
@@ -188,7 +188,7 @@ public class UpdateBudgetRequest
 {
     public string Name { get; set; } = string.Empty;
     public decimal ApprovedAmount { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public string? Remarks { get; set; }
 }
 

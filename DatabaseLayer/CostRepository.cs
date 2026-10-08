@@ -93,7 +93,7 @@ public class CostRepository : ICostRepository
         _db.BoqItems.AnyAsync(i => i.Id == boqItemId && i.BoqVersion.Boq.ProjectId == projectId);
 
     public async Task<string> GetProjectCurrencyAsync(long projectId) =>
-        await _db.Projects.Where(p => p.Id == projectId).Select(p => p.Currency).FirstOrDefaultAsync() ?? "INR";
+        await _db.Projects.Where(p => p.Id == projectId).Select(p => p.Currency).FirstOrDefaultAsync() ?? "MVR";
 
     public async Task<(decimal Amber, decimal Red)> GetRagAsync(long projectId)
     {

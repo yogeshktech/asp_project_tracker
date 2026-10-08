@@ -39,7 +39,15 @@
   }
 
   function tableWrap(headers, bodyId) {
+    headers = headers.map(h => String(h).trim().toLowerCase() === 'id' ? 'SR No' : h);
     return `<div class="card"><div class="table-wrap"><table class="table"><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody id="${bodyId}"><tr><td colspan="${headers.length}">Loading...</td></tr></tbody></table></div></div>`;
+  }
+
+  function taskRowActionMenu(actions) {
+    return `<div class="row-action-menu">
+      <button type="button" class="btn sm row-action-trigger" aria-label="More row actions" title="More actions" aria-expanded="false" onclick="wtToggleRowActions(this)"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+      <div class="row-action-popover" hidden>${actions}</div>
+    </div>`;
   }
 
   function errRow(colspan, err) {
@@ -50,16 +58,16 @@
     return `<tr><td colspan="${colspan}">${esc(msg)}</td></tr>`;
   }
 
-  function formatBudgetValue(amount, currency = 'INR') {
+  function formatBudgetValue(amount, currency = 'MVR') {
     if (amount == null || !Number.isFinite(Number(amount))) return 'Not set';
     const value = Number(amount);
-    const code = String(currency || 'INR').toUpperCase();
-    if (code === 'INR' && Math.abs(value) >= 10000000) return `₹${(value / 10000000).toFixed(2)} Cr`;
-    return `${code === 'INR' ? '₹' : `${code} `}${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    const rawCode = String(currency || 'MVR').toUpperCase();
+    const code = rawCode === 'INR' ? 'MVR' : rawCode;
+    return `${code} ${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
   }
 
   function projectBudgetLabel(project) {
-    return formatBudgetValue(project.projectBudgetAmount, project.projectBudgetCurrency || project.currency || 'INR');
+    return formatBudgetValue(project.projectBudgetAmount, project.projectBudgetCurrency || project.currency || 'MVR');
   }
 
   async function loadProjectsList() {
@@ -848,7 +856,7 @@
                     <strong style="color:#991b1b; font-size:13px;">🚨 Electrical Cost Center at 84% Utilization</strong>
                     <span class="badge red">80% Trigger</span>
                   </div>
-                  <p style="font-size:12px; margin:4px 0 8px; color:var(--text-main);">Grand Oasis Goa: ₹1.68 Cr of ₹2.00 Cr utilized. Discretionary orders locked.</p>
+                  <p style="font-size:12px; margin:4px 0 8px; color:var(--text-main);">Grand Oasis Goa: MVR 1.68 Cr of MVR 2.00 Cr utilized. Discretionary orders locked.</p>
                   <a href="budget.html" class="btn sm" style="background:#fff; border-color:#fca5a5; color:#991b1b;">Review Budget ➔</a>
                 </div>
               </div>
@@ -880,19 +888,19 @@
       ]);
 
       const projects = (projectsRaw && projectsRaw.length) ? projectsRaw : [
-        { id: 1, resortName: 'Grand Oasis Resort & Spa', code: 'GR-CIV-001', name: 'Main Resort Building Phase-1 (Civil)', disc: 'Civil Structure', ownerName: 'Amit Verma', budget: '₹16.50 Cr', spent: '₹13.20 Cr', progressPercent: 80, status: 'On Track', issue: '0 Issues', target: '15 Oct 2026' },
-        { id: 2, resortName: 'Grand Oasis Resort & Spa', code: 'GR-MEP-001-ELE', name: 'Electrical Distribution & 11kV Substation', disc: 'MEP Electrical', ownerName: 'Rahul Sharma', budget: '₹5.10 Cr', spent: '₹4.30 Cr', progressPercent: 72, status: '84% Cost Alert', issue: '#ISS-1023 Cable Tray', target: '24 Aug 2026' },
-        { id: 3, resortName: 'Grand Oasis Resort & Spa', code: 'GR-MEP-001-HVAC', name: 'HVAC Central Chiller Plant & VRV', disc: 'HVAC Chillers', ownerName: 'Manoj Joshi', budget: '₹4.80 Cr', spent: '₹3.65 Cr', progressPercent: 55, status: 'At Risk', issue: '#ISS-1024 Port Customs', target: '15 Oct 2026' },
-        { id: 4, resortName: 'Royal Heritage Palace & Villas', code: 'JAI-CIV-002', name: 'Palace Wing Restoration & Automation', disc: 'Heritage MEP', ownerName: 'Priya Mehta', budget: '₹18.40 Cr', spent: '₹11.20 Cr', progressPercent: 58, status: 'On Track', issue: '0 Roadblocks', target: '30 Nov 2026' },
-        { id: 5, resortName: 'Pine Valley Mountain Resort', code: 'MAN-SPA-001', name: 'Geothermal Heated Pool Complex', disc: 'Civil & MEP', ownerName: 'Vikram Rao', budget: '₹9.20 Cr', spent: '₹4.15 Cr', progressPercent: 45, status: 'On Track', issue: '0 Issues', target: '15 Dec 2026' },
-        { id: 6, resortName: 'Azure Sands Beach Retreat', code: 'KOV-SLR-001', name: 'Solar Microgrid & Energy Storage 250kW', disc: 'Renewable Solar', ownerName: 'Ananya Nair', budget: '₹6.50 Cr', spent: '₹2.30 Cr', progressPercent: 35, status: 'On Track', issue: '0 Issues', target: '28 Feb 2027' }
+        { id: 1, resortName: 'Grand Oasis Resort & Spa', code: 'GR-CIV-001', name: 'Main Resort Building Phase-1 (Civil)', disc: 'Civil Structure', ownerName: 'Amit Verma', budget: 'MVR 16.50 Cr', spent: 'MVR 13.20 Cr', progressPercent: 80, status: 'On Track', issue: '0 Issues', target: '15 Oct 2026' },
+        { id: 2, resortName: 'Grand Oasis Resort & Spa', code: 'GR-MEP-001-ELE', name: 'Electrical Distribution & 11kV Substation', disc: 'MEP Electrical', ownerName: 'Rahul Sharma', budget: 'MVR 5.10 Cr', spent: 'MVR 4.30 Cr', progressPercent: 72, status: '84% Cost Alert', issue: '#ISS-1023 Cable Tray', target: '24 Aug 2026' },
+        { id: 3, resortName: 'Grand Oasis Resort & Spa', code: 'GR-MEP-001-HVAC', name: 'HVAC Central Chiller Plant & VRV', disc: 'HVAC Chillers', ownerName: 'Manoj Joshi', budget: 'MVR 4.80 Cr', spent: 'MVR 3.65 Cr', progressPercent: 55, status: 'At Risk', issue: '#ISS-1024 Port Customs', target: '15 Oct 2026' },
+        { id: 4, resortName: 'Royal Heritage Palace & Villas', code: 'JAI-CIV-002', name: 'Palace Wing Restoration & Automation', disc: 'Heritage MEP', ownerName: 'Priya Mehta', budget: 'MVR 18.40 Cr', spent: 'MVR 11.20 Cr', progressPercent: 58, status: 'On Track', issue: '0 Roadblocks', target: '30 Nov 2026' },
+        { id: 5, resortName: 'Pine Valley Mountain Resort', code: 'MAN-SPA-001', name: 'Geothermal Heated Pool Complex', disc: 'Civil & MEP', ownerName: 'Vikram Rao', budget: 'MVR 9.20 Cr', spent: 'MVR 4.15 Cr', progressPercent: 45, status: 'On Track', issue: '0 Issues', target: '15 Dec 2026' },
+        { id: 6, resortName: 'Azure Sands Beach Retreat', code: 'KOV-SLR-001', name: 'Solar Microgrid & Energy Storage 250kW', disc: 'Renewable Solar', ownerName: 'Ananya Nair', budget: 'MVR 6.50 Cr', spent: 'MVR 2.30 Cr', progressPercent: 35, status: 'On Track', issue: '0 Issues', target: '28 Feb 2027' }
       ];
 
       const resorts = (resortsRaw && resortsRaw.length) ? resortsRaw : [
-        { id: 'RES-GOA-01', name: 'Grand Oasis Resort & Spa, Goa', code: 'RES-GOA-01', budget: '₹48.50 Cr', spent: '₹38.80 Cr', progress: 80, status: 'On Track' },
-        { id: 'RES-JAI-02', name: 'Royal Heritage Palace, Jaipur', code: 'RES-JAI-02', budget: '₹38.00 Cr', spent: '₹22.04 Cr', progress: 58, status: 'On Track' },
-        { id: 'RES-MAN-03', name: 'Pine Valley Mountain Resort, Manali', code: 'RES-MAN-03', budget: '₹32.00 Cr', spent: '₹14.40 Cr', progress: 45, status: 'On Track' },
-        { id: 'RES-KOV-04', name: 'Azure Sands Beach Retreat, Kovalam', code: 'RES-KOV-04', budget: '₹30.00 Cr', spent: '₹10.50 Cr', progress: 35, status: 'Delayed' }
+        { id: 'RES-GOA-01', name: 'Grand Oasis Resort & Spa, Goa', code: 'RES-GOA-01', budget: 'MVR 48.50 Cr', spent: 'MVR 38.80 Cr', progress: 80, status: 'On Track' },
+        { id: 'RES-JAI-02', name: 'Royal Heritage Palace, Jaipur', code: 'RES-JAI-02', budget: 'MVR 38.00 Cr', spent: 'MVR 22.04 Cr', progress: 58, status: 'On Track' },
+        { id: 'RES-MAN-03', name: 'Pine Valley Mountain Resort, Manali', code: 'RES-MAN-03', budget: 'MVR 32.00 Cr', spent: 'MVR 14.40 Cr', progress: 45, status: 'On Track' },
+        { id: 'RES-KOV-04', name: 'Azure Sands Beach Retreat, Kovalam', code: 'RES-KOV-04', budget: 'MVR 30.00 Cr', spent: 'MVR 10.50 Cr', progress: 35, status: 'Delayed' }
       ];
 
       // 2. Compute dynamic metrics
@@ -956,8 +964,8 @@
       $('#dOnTrackSub').textContent = `${healthPct}% Portfolio Health`;
       $('#dIssues').textContent = alertCount + ' Alerts';
       $('#dIssuesSub').textContent = `${delayedCount} Delayed · ${alertCount} Cost Center`;
-      $('#dBudget').textContent = '₹' + (totalBudgetNum / 10000000).toFixed(2) + ' Cr';
-      $('#dBudgetSub').textContent = `₹${(totalSpentNum / 10000000).toFixed(2)} Cr Committed (${((totalSpentNum/totalBudgetNum)*100).toFixed(1)}%)`;
+      $('#dBudget').textContent = 'MVR ' + (totalBudgetNum / 10000000).toFixed(2) + ' Cr';
+      $('#dBudgetSub').textContent = `MVR ${(totalSpentNum / 10000000).toFixed(2)} Cr Committed (${((totalSpentNum/totalBudgetNum)*100).toFixed(1)}%)`;
 
       // 3. Dynamic Donut Chart Calculation
       const cPct = totalPackagesCount ? Math.round((completedCount / totalPackagesCount) * 100) : 21;
@@ -1002,7 +1010,7 @@
           <div>
             <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
               <strong>${esc(r.name || r.title)}</strong>
-              <span><b>${prog}%</b> (CapEx: ${r.budget || '₹30 Cr'} · <span style="color:var(--primary);">${r.spent || '₹18 Cr'} Spent</span>)</span>
+              <span><b>${prog}%</b> (CapEx: ${r.budget || 'MVR 30 Cr'} · <span style="color:var(--primary);">${r.spent || 'MVR 18 Cr'} Spent</span>)</span>
             </div>
             <div class="progress ${colorClass}" style="height:10px;"><i style="width:${prog}%"></i></div>
           </div>
@@ -1034,7 +1042,7 @@
             <td><span class="badge blue">${esc(p.disc || p.discipline || 'Engineering')}</span></td>
             <td><b>${esc(p.ownerName || p.pm || 'Project Lead')}</b></td>
             <td>${p.projectBudgetDisplay || projectBudgetLabel(p)}</td>
-            <td>${p.spent || '₹6.50 Cr'}</td>
+            <td>${p.spent || 'MVR 6.50 Cr'}</td>
             <td>
               <div style="display:flex;align-items:center;gap:8px;">
                 <div class="progress ${progColor}" style="width:55px;margin:0;"><i style="width:${prog}%"></i></div>
@@ -1297,6 +1305,8 @@
   // ---------- PROJECTS (N-LEVEL WBS HIERARCHY) ----------
   async function pageProjects() {
     const el = root();
+    const selectedProjectIds = new Set();
+    let currentProjects = [];
     const resorts = await WisetrackAPI.getResorts().catch(() => []);
     const selectedResortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] ? String(resorts[0].id) : '1');
 
@@ -1315,6 +1325,11 @@
           </div>
         </div>
 
+        <div class="card" style="padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:flex-end;gap:10px">
+          <span id="projectSelectionCount" style="font-size:12px;color:var(--text-muted)">0 selected</span>
+          <button class="btn sm danger" id="deleteSelectedProjectsBtn" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
+        </div>
+
         <!-- VIEW 1: Interactive Tree View -->
         <div id="wbsTreeView" class="tree-container">
           <div style="padding:24px; text-align:center; color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Loading N-Level WBS Hierarchy...</div>
@@ -1326,6 +1341,7 @@
             <table class="table" id="wbsMasterTable">
               <thead>
                 <tr>
+                  <th>Select</th>
                   <th>LEVEL</th>
                   <th>PROJECT / PACKAGE TITLE</th>
                   <th>SUB PROJECT</th>
@@ -1380,21 +1396,22 @@ WTPages.switchProjView = function(view) {
 
       const projects = typeof computeProjectLevels === 'function'
         ? computeProjectLevels((allProjectsRaw && allProjectsRaw.length) ? allProjectsRaw : [
-        { id: 'PRJ-01', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: null, level: 1, name: 'Main Resort Building Phase-1 (Civil & Structure)', code: 'GR-CIV-001', discipline: 'Civil Structure', owner: 'Amit Verma', budget: '₹16.50 Cr', spent: '₹13.20 Cr', progress: 80, health: 'On Track', healthBadge: 'green', desc: 'Primary hotel block superstructure, RCC frame, roof waterproofing and core masonry.' },
-        { id: 'PRJ-01-SUB1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01', level: 2, name: 'Block A Guest Wing Superstructure', code: 'GR-CIV-001-A', discipline: 'Civil Structure', owner: 'Amit Verma', budget: '₹9.20 Cr', spent: '₹7.80 Cr', progress: 85, health: 'On Track', healthBadge: 'green', desc: 'G+4 floor RCC slab casting, brickwork partition and waterproofing.' },
-        { id: 'PRJ-01-SUB1-T1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01-SUB1', level: 3, name: 'Floor 1-4 RCC Slab Casting & Columns', code: 'GR-CIV-001-A-WP1', discipline: 'Civil Structure', owner: 'Site Team', budget: '₹5.40 Cr', spent: '₹5.40 Cr', progress: 100, health: 'Completed', healthBadge: 'green', desc: 'Completed casting for all four floors with M30 concrete grade.' },
-        { id: 'PRJ-01-SUB1-T2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01-SUB1', level: 3, name: 'External Masonry & Plastering', code: 'GR-CIV-001-A-WP2', discipline: 'Civil Structure', owner: 'Site Team', budget: '₹3.80 Cr', spent: '₹2.40 Cr', progress: 70, health: 'On Track', healthBadge: 'green', desc: 'AAC block masonry and double coat external sand face plaster.' },
-        { id: 'PRJ-01-SUB2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01', level: 2, name: 'Block B Luxury Pool Villas Civil Shell', code: 'GR-CIV-001-B', discipline: 'Civil Structure', owner: 'Ravi Shankar', budget: '₹7.30 Cr', spent: '₹5.40 Cr', progress: 74, health: 'On Track', healthBadge: 'green', desc: '12 individual duplex villa shells with private plunge pool basins.' },
-        { id: 'PRJ-02', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: null, level: 1, name: 'Grand Resort MEP & Automation Infrastructure', code: 'GR-MEP-001', discipline: 'MEP & Electrical', owner: 'Rahul Sharma', budget: '₹12.40 Cr', spent: '₹8.90 Cr', progress: 72, health: 'On Track', healthBadge: 'green', desc: 'Central electrical distribution, 11kV substation, HVAC chiller plant, plumbing and fire safety network.' },
-        { id: 'PRJ-02-SUB1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02', level: 2, name: 'Electrical Distribution & 11kV Substation', code: 'GR-MEP-001-ELE', discipline: 'Electrical', owner: 'Rahul Sharma', budget: '₹5.10 Cr', spent: '₹4.30 Cr', progress: 84, health: 'At Risk', healthBadge: 'amber', desc: 'HT transformers, DG synchronization panels, busduct risers and floor distribution.' },
-        { id: 'PRJ-02-SUB1-T1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02-SUB1', level: 3, name: '11kV Substation & 2x 1500 kVA Transformer Setup', code: 'GR-MEP-001-ELE-T1', discipline: 'Electrical', owner: 'Rahul Sharma', budget: '₹2.90 Cr', spent: '₹2.80 Cr', progress: 95, health: 'Completed', healthBadge: 'green', desc: 'Substation building ready, transformer energized for dry testing.' },
-        { id: 'PRJ-02-SUB1-T2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02-SUB1', level: 3, name: 'Main Cable Tray Laying & LT Cabling', code: 'GR-MEP-001-ELE-T2', discipline: 'Electrical', owner: 'Rahul Sharma', budget: '₹2.20 Cr', spent: '₹1.50 Cr', progress: 72, health: 'On Track', healthBadge: 'green', desc: '4C x 16 sqmm & 4C x 240 sqmm Polycab XLPE cable laying across main duct shafts.' },
-        { id: 'PRJ-02-SUB2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02', level: 2, name: 'HVAC Central Chiller & VRV Air Conditioning', code: 'GR-MEP-001-HVAC', discipline: 'HVAC', owner: 'Manoj Joshi', budget: '₹4.80 Cr', spent: '₹3.60 Cr', progress: 65, health: 'At Risk', healthBadge: 'amber', desc: 'Water-cooled chillers, cooling towers, primary/secondary pumps and VRV indoor units.' },
-        { id: 'PRJ-03', resortId: 'RES-JAI-02', resortName: 'Royal Heritage Palace & Villas', parentId: null, level: 1, name: 'Palace Wing Restoration & Automation', code: 'JAI-CIV-002', discipline: 'Heritage MEP', owner: 'Priya Mehta', budget: '₹18.40 Cr', spent: '₹11.20 Cr', progress: 58, health: 'On Track', healthBadge: 'green', desc: 'Restoration of royal stone courtyard, heritage chandeliers, and smart guestroom lighting.' },
-        { id: 'PRJ-04', resortId: 'RES-MAN-03', resortName: 'Pine Valley Mountain Resort', parentId: null, level: 1, name: 'Geothermal Heated Pool & Spa Complex', code: 'MAN-SPA-001', discipline: 'Civil & MEP', owner: 'Vikram Rao', budget: '₹9.20 Cr', spent: '₹4.15 Cr', progress: 45, health: 'On Track', healthBadge: 'green', desc: 'Geothermal hot water loop, glass-enclosed infinity pool, and steam thermal suites.' },
-        { id: 'PRJ-05', resortId: 'RES-KOV-04', resortName: 'Azure Sands Beach Retreat', parentId: null, level: 1, name: 'Solar Microgrid & Energy Storage 250kW', code: 'KOV-SLR-001', discipline: 'Renewable Solar', owner: 'Ananya Nair', budget: '₹6.50 Cr', spent: '₹2.30 Cr', progress: 35, health: 'On Track', healthBadge: 'green', desc: 'Rooftop solar photovoltaic plant, 500kWh lithium battery bank, and grid synchronization.' }
+        { id: 'PRJ-01', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: null, level: 1, name: 'Main Resort Building Phase-1 (Civil & Structure)', code: 'GR-CIV-001', discipline: 'Civil Structure', owner: 'Amit Verma', budget: 'MVR 16.50 Cr', spent: 'MVR 13.20 Cr', progress: 80, health: 'On Track', healthBadge: 'green', desc: 'Primary hotel block superstructure, RCC frame, roof waterproofing and core masonry.' },
+        { id: 'PRJ-01-SUB1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01', level: 2, name: 'Block A Guest Wing Superstructure', code: 'GR-CIV-001-A', discipline: 'Civil Structure', owner: 'Amit Verma', budget: 'MVR 9.20 Cr', spent: 'MVR 7.80 Cr', progress: 85, health: 'On Track', healthBadge: 'green', desc: 'G+4 floor RCC slab casting, brickwork partition and waterproofing.' },
+        { id: 'PRJ-01-SUB1-T1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01-SUB1', level: 3, name: 'Floor 1-4 RCC Slab Casting & Columns', code: 'GR-CIV-001-A-WP1', discipline: 'Civil Structure', owner: 'Site Team', budget: 'MVR 5.40 Cr', spent: 'MVR 5.40 Cr', progress: 100, health: 'Completed', healthBadge: 'green', desc: 'Completed casting for all four floors with M30 concrete grade.' },
+        { id: 'PRJ-01-SUB1-T2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01-SUB1', level: 3, name: 'External Masonry & Plastering', code: 'GR-CIV-001-A-WP2', discipline: 'Civil Structure', owner: 'Site Team', budget: 'MVR 3.80 Cr', spent: 'MVR 2.40 Cr', progress: 70, health: 'On Track', healthBadge: 'green', desc: 'AAC block masonry and double coat external sand face plaster.' },
+        { id: 'PRJ-01-SUB2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-01', level: 2, name: 'Block B Luxury Pool Villas Civil Shell', code: 'GR-CIV-001-B', discipline: 'Civil Structure', owner: 'Ravi Shankar', budget: 'MVR 7.30 Cr', spent: 'MVR 5.40 Cr', progress: 74, health: 'On Track', healthBadge: 'green', desc: '12 individual duplex villa shells with private plunge pool basins.' },
+        { id: 'PRJ-02', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: null, level: 1, name: 'Grand Resort MEP & Automation Infrastructure', code: 'GR-MEP-001', discipline: 'MEP & Electrical', owner: 'Rahul Sharma', budget: 'MVR 12.40 Cr', spent: 'MVR 8.90 Cr', progress: 72, health: 'On Track', healthBadge: 'green', desc: 'Central electrical distribution, 11kV substation, HVAC chiller plant, plumbing and fire safety network.' },
+        { id: 'PRJ-02-SUB1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02', level: 2, name: 'Electrical Distribution & 11kV Substation', code: 'GR-MEP-001-ELE', discipline: 'Electrical', owner: 'Rahul Sharma', budget: 'MVR 5.10 Cr', spent: 'MVR 4.30 Cr', progress: 84, health: 'At Risk', healthBadge: 'amber', desc: 'HT transformers, DG synchronization panels, busduct risers and floor distribution.' },
+        { id: 'PRJ-02-SUB1-T1', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02-SUB1', level: 3, name: '11kV Substation & 2x 1500 kVA Transformer Setup', code: 'GR-MEP-001-ELE-T1', discipline: 'Electrical', owner: 'Rahul Sharma', budget: 'MVR 2.90 Cr', spent: 'MVR 2.80 Cr', progress: 95, health: 'Completed', healthBadge: 'green', desc: 'Substation building ready, transformer energized for dry testing.' },
+        { id: 'PRJ-02-SUB1-T2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02-SUB1', level: 3, name: 'Main Cable Tray Laying & LT Cabling', code: 'GR-MEP-001-ELE-T2', discipline: 'Electrical', owner: 'Rahul Sharma', budget: 'MVR 2.20 Cr', spent: 'MVR 1.50 Cr', progress: 72, health: 'On Track', healthBadge: 'green', desc: '4C x 16 sqmm & 4C x 240 sqmm Polycab XLPE cable laying across main duct shafts.' },
+        { id: 'PRJ-02-SUB2', resortId: 'RES-GOA-01', resortName: 'Grand Oasis Resort & Spa', parentId: 'PRJ-02', level: 2, name: 'HVAC Central Chiller & VRV Air Conditioning', code: 'GR-MEP-001-HVAC', discipline: 'HVAC', owner: 'Manoj Joshi', budget: 'MVR 4.80 Cr', spent: 'MVR 3.60 Cr', progress: 65, health: 'At Risk', healthBadge: 'amber', desc: 'Water-cooled chillers, cooling towers, primary/secondary pumps and VRV indoor units.' },
+        { id: 'PRJ-03', resortId: 'RES-JAI-02', resortName: 'Royal Heritage Palace & Villas', parentId: null, level: 1, name: 'Palace Wing Restoration & Automation', code: 'JAI-CIV-002', discipline: 'Heritage MEP', owner: 'Priya Mehta', budget: 'MVR 18.40 Cr', spent: 'MVR 11.20 Cr', progress: 58, health: 'On Track', healthBadge: 'green', desc: 'Restoration of royal stone courtyard, heritage chandeliers, and smart guestroom lighting.' },
+        { id: 'PRJ-04', resortId: 'RES-MAN-03', resortName: 'Pine Valley Mountain Resort', parentId: null, level: 1, name: 'Geothermal Heated Pool & Spa Complex', code: 'MAN-SPA-001', discipline: 'Civil & MEP', owner: 'Vikram Rao', budget: 'MVR 9.20 Cr', spent: 'MVR 4.15 Cr', progress: 45, health: 'On Track', healthBadge: 'green', desc: 'Geothermal hot water loop, glass-enclosed infinity pool, and steam thermal suites.' },
+        { id: 'PRJ-05', resortId: 'RES-KOV-04', resortName: 'Azure Sands Beach Retreat', parentId: null, level: 1, name: 'Solar Microgrid & Energy Storage 250kW', code: 'KOV-SLR-001', discipline: 'Renewable Solar', owner: 'Ananya Nair', budget: 'MVR 6.50 Cr', spent: 'MVR 2.30 Cr', progress: 35, health: 'On Track', healthBadge: 'green', desc: 'Rooftop solar photovoltaic plant, 500kWh lithium battery bank, and grid synchronization.' }
       ])
         : ((allProjectsRaw && allProjectsRaw.length) ? allProjectsRaw : []);
+      currentProjects = projects;
 
       // Filter by resort
       const filteredProjects = filterVal === 'all' ? projects : projects.filter(p => String(p.resortId) === String(filterVal) || String(p.resortId) === `RES-${filterVal}`);
@@ -1404,7 +1421,7 @@ WTPages.switchProjView = function(view) {
       const rootBudgetTotals = new Map();
       for (const p of rootBudgetRows) {
         if (p.projectBudgetAmount == null) continue;
-        const currency = String(p.projectBudgetCurrency || p.currency || 'INR').toUpperCase();
+        const currency = String(p.projectBudgetCurrency || p.currency || 'MVR').toUpperCase();
         rootBudgetTotals.set(currency, (rootBudgetTotals.get(currency) || 0) + Number(p.projectBudgetAmount));
       }
       const portfolioBudgetLabel = rootBudgetTotals.size
@@ -1467,6 +1484,7 @@ WTPages.switchProjView = function(view) {
           return `
             <div class="tree-node">
               <div class="tree-header ${levelClass}" onclick="WTPages.toggleTreeNode(this)">
+                <input type="checkbox" aria-label="Select ${esc(node.name || node.title)}" ${selectedProjectIds.has(String(node.id)) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="WTPages.toggleProjectSelection('${node.id}', this.checked)">
                 <span class="tree-toggle">${hasChildren ? '▼' : '•'}</span>
                 <span style="font-size:15px;">${icon}</span>
                 <div class="tree-title">
@@ -1507,6 +1525,7 @@ WTPages.switchProjView = function(view) {
         const parentObj = p.parentId ? projects.find(x => String(x.id) === String(p.parentId)) : null;
         return `
           <tr>
+            <td><input type="checkbox" aria-label="Select ${esc(p.name || p.title)}" ${selectedProjectIds.has(String(p.id)) ? 'checked' : ''} onchange="WTPages.toggleProjectSelection('${p.id}', this.checked)"></td>
             <td>
               <span class="tree-level-pill lvl-${Math.min(4, lvl)}">
                 ${lvl == 1 ? '🔵 Level 1 · Root' : (lvl == 2 ? '🟣 Level 2 · Sub' : (lvl == 3 ? '🟢 Level 3 · Package' : `🟠 Level ${lvl} · Task`))}
@@ -1540,7 +1559,7 @@ WTPages.switchProjView = function(view) {
             </td>
           </tr>
         `;
-      }).join('') || emptyRow(10, 'No projects found');
+      }).join('') || emptyRow(11, 'No projects found');
 
       // 3. Render Cards View
       $('#wbsCardsView').innerHTML = filteredProjects.map(p => {
@@ -1551,6 +1570,7 @@ WTPages.switchProjView = function(view) {
         return `
           <div class="card" style="margin-bottom:0; border-top: 4px solid ${lvl == 1 ? '#2563eb' : (lvl == 2 ? '#7c3aed' : (lvl == 3 ? '#059669' : '#d97706'))};">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <input type="checkbox" aria-label="Select ${esc(p.name || p.title)}" ${selectedProjectIds.has(String(p.id)) ? 'checked' : ''} onchange="WTPages.toggleProjectSelection('${p.id}', this.checked)">
               <span class="badge ${p.healthBadge || 'green'}">${esc(p.health || p.status || 'On Track')}</span>
               <span class="tree-level-pill lvl-${Math.min(4, lvl)}">
                 ${lvl == 1 ? '🔵 Level 1 Parent' : (lvl == 2 ? '🟣 Level 2 Sub' : (lvl == 3 ? '🟢 Level 3 Package' : `🟠 Level ${lvl} Task`))}
@@ -1578,6 +1598,72 @@ WTPages.switchProjView = function(view) {
 
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
     }
+
+    function updateProjectSelectionUI() {
+      const count = document.getElementById('projectSelectionCount');
+      const button = document.getElementById('deleteSelectedProjectsBtn');
+      if (count) count.textContent = `${selectedProjectIds.size} selected`;
+      if (button) button.disabled = selectedProjectIds.size === 0;
+    }
+
+    WTPages.toggleProjectSelection = (id, checked) => {
+      if (checked) selectedProjectIds.add(String(id));
+      else selectedProjectIds.delete(String(id));
+      updateProjectSelectionUI();
+    };
+
+    WTPages.deleteSelectedProjects = async () => {
+      const ids = [...selectedProjectIds];
+      if (!ids.length) return;
+      const selected = new Set(ids);
+      const children = new Map();
+      currentProjects.forEach(p => {
+        const parentId = String(p.parentProjectId || p.parentId || '');
+        if (!parentId) return;
+        if (!children.has(parentId)) children.set(parentId, []);
+        children.get(parentId).push(String(p.id));
+      });
+      const hasUnselectedDescendant = (id, seen = new Set()) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return (children.get(id) || []).some(child => !selected.has(child) || hasUnselectedDescendant(child, seen));
+      };
+      if (ids.some(hasUnselectedDescendant)) {
+        showToast('Select all child projects under a selected parent before deleting.', 'danger');
+        return;
+      }
+      if (!confirm(`Delete ${ids.length} selected project${ids.length === 1 ? '' : 's'}? Their linked reports will also be deleted.`)) return;
+      const depth = id => {
+        let project = currentProjects.find(p => String(p.id) === id);
+        let level = 0;
+        const seen = new Set();
+        while (project && (project.parentProjectId || project.parentId) && !seen.has(String(project.id))) {
+          seen.add(String(project.id));
+          level++;
+          project = currentProjects.find(p => String(p.id) === String(p.parentProjectId || p.parentId));
+        }
+        return level;
+      };
+      const ordered = ids.sort((a, b) => depth(b) - depth(a));
+      const activeProject = localStorage.getItem('WISETRACK_SELECTED_PROJECT');
+      let deleted = 0;
+      const errors = [];
+      for (const id of ordered) {
+        try { await WisetrackAPI.deleteProject(id); deleted++; }
+        catch (err) { errors.push(err.message); }
+      }
+      if (deleted && ids.includes(String(activeProject))) localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
+      selectedProjectIds.clear();
+      await renderWBSProjects();
+      updateProjectSelectionUI();
+      if (deleted && ids.includes(String(activeProject)) && typeof fillProjectSelector === 'function') await fillProjectSelector();
+      if (errors.length) showToast(`${deleted} deleted; ${errors.length} failed: ${errors[0]}`, 'warning');
+      else showToast(`${deleted} project${deleted === 1 ? '' : 's'} deleted with linked reports.`, 'success');
+    };
+
+    WTPages.onResortCreated = async () => {
+      await renderWBSProjects();
+    };
 
     await renderWBSProjects();
   }
@@ -1666,9 +1752,9 @@ WTPages.switchProjView = function(view) {
       profileVariance = variance;
     } catch (_) { /* optional profile resources */ }
     p.budget = p.projectBudgetAmount != null ? projectBudgetLabel(p)
-      : profileBudget?.approvedAmount != null ? formatBudgetValue(profileBudget.approvedAmount, profileBudget.currency || p.currency || 'INR') : 'N/A';
+      : profileBudget?.approvedAmount != null ? formatBudgetValue(profileBudget.approvedAmount, profileBudget.currency || p.currency || 'MVR') : 'N/A';
     p.spent = profileVariance && (profileVariance.currentCommitment != null || profileVariance.purchaseTotal != null)
-      ? formatBudgetValue(profileVariance.currentCommitment ?? profileVariance.purchaseTotal, profileVariance.currency || p.currency || 'INR') : 'N/A';
+      ? formatBudgetValue(profileVariance.currentCommitment ?? profileVariance.purchaseTotal, profileVariance.currency || p.currency || 'MVR') : 'N/A';
     p.startDate = p.startDate || 'N/A';
     p.endDate = p.endDate || 'N/A';
     const prog = p.progress !== undefined ? p.progress : (p.progressPercent || 0);
@@ -1746,9 +1832,9 @@ WTPages.switchProjView = function(view) {
         extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
           <strong>Budget RAG</strong>
           <div class="grid g4" style="margin-top:8px;font-size:12.5px;">
-            <div>Approved<br><b>₹${Number(variance.approvedBudget || 0).toLocaleString('en-IN')}</b></div>
-            <div>Purchase<br><b>₹${Number(variance.purchaseTotal || 0).toLocaleString('en-IN')}</b></div>
-            <div>Actual<br><b>₹${Number(variance.actualTotal || 0).toLocaleString('en-IN')}</b></div>
+            <div>Approved<br><b>MVR ${Number(variance.approvedBudget || 0).toLocaleString('en-US')}</b></div>
+            <div>Purchase<br><b>MVR ${Number(variance.purchaseTotal || 0).toLocaleString('en-US')}</b></div>
+            <div>Actual<br><b>MVR ${Number(variance.actualTotal || 0).toLocaleString('en-US')}</b></div>
             <div>RAG<br><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus || 'Green')}</span></div>
           </div>
         </div>`);
@@ -1793,7 +1879,7 @@ WTPages.switchProjView = function(view) {
     const ms = rows(milestones), ts = rows(tasks), riskItems = rows(exceptions), issueRows = rows(issues), boqRows = rows(boq);
     const completed = item => /complete|closed|done/i.test(String(item.status || item.Status || '')) || Number(item.completionPercent ?? item.CompletionPercent ?? 0) >= 100;
     const date = value => value ? new Date(value).toLocaleDateString() : '—';
-    const money = value => `${esc(variance?.currency || 'INR')} ${Number(value || 0).toLocaleString('en-IN')}`;
+    const money = value => `${esc(variance?.currency || 'MVR')} ${Number(value || 0).toLocaleString('en-US')}`;
     const openIssues = issueRows.filter(i => !/closed|resolved/i.test(String(i.status || i.Status || '')));
     const taskActions = ts.flatMap(t => [t, ...rows(t.subTasks || t.SubTasks)]);
     const pendingTasks = taskActions.filter(t => !completed(t));
@@ -1874,9 +1960,9 @@ WTPages.switchProjView = function(view) {
       $('#itemsBody').innerHTML = items.length ? items.map(it => `
         <tr>
           <td>${it.id}</td><td><code>${esc(it.itemCode || it.code || '')}</code></td>
-          <td>${esc(it.name)}</td><td>₹${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-IN')}</td>
+          <td>${esc(it.name)}</td><td>MVR ${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-US')}</td>
           <td>${esc(it.brand?.name || it.brandName || '—')}</td><td>${esc(it.unit?.name || it.unitName || it.unit?.code || '—')}</td>
-          <td>${it.standardPrice == null ? '—' : `₹${Number(it.standardPrice).toLocaleString('en-IN')}`}</td>
+          <td>${it.standardPrice == null ? '—' : `MVR ${Number(it.standardPrice).toLocaleString('en-US')}`}</td>
           <td>${esc(it.effectiveDate || '—')}</td><td>${esc(it.source || '—')}</td>
           <td>${it.imageUrl ? `<a href="${esc(it.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
           <td class="table-actions">
@@ -1974,9 +2060,9 @@ WTPages.switchProjView = function(view) {
         const canUpdate = !wtCan || wtCan('Budgets', 'update', Number(pid));
         const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
         return `<tr><td>${b.id}</td><td>${esc(b.name)}</td>
-          <td>${esc(b.currency || 'INR')} ${Number(b.approvedAmount || 0).toLocaleString('en-IN')}</td>
-          <td>${esc(b.currency || 'INR')} ${allocated.toLocaleString('en-IN')}</td><td>${esc(b.currency || 'INR')} ${remaining.toLocaleString('en-IN')}</td>
-          <td>${esc(b.currency || 'INR')}</td><td>${latestVersion ? `v${latestVersion.versionNo}` : '—'}</td>
+          <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
+          <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
+          <td>${esc(b.currency || 'MVR')}</td><td>${latestVersion ? `v${latestVersion.versionNo}` : '—'}</td>
           <td class="table-actions"><button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> <button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') || emptyRow(8, 'No budgets');
       const allocationMap = new Map();
@@ -1989,11 +2075,11 @@ WTPages.switchProjView = function(view) {
         const canEditCenter = !wtCan || wtCan('Budgets', 'update', ccProjectId);
         const canDeleteCenter = !wtCan || wtCan('Budgets', 'delete', ccProjectId);
         return `<tr><td>${esc(c.name)}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
-          <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.budget ?? allocated).toLocaleString('en-IN')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-IN')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.actualSpend || 0).toLocaleString('en-IN')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.forecast ?? rollup.spent ?? 0).toLocaleString('en-IN')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'INR')} ${Number(rollup.variance ?? allocated).toLocaleString('en-IN')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.budget ?? allocated).toLocaleString('en-US')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-US')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.actualSpend || 0).toLocaleString('en-US')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.forecast ?? rollup.spent ?? 0).toLocaleString('en-US')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.variance ?? allocated).toLocaleString('en-US')}</td>
           <td><span class="badge ${rollup.budgetStatus === 'Over Budget' ? 'red' : rollup.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(rollup.budgetStatus || 'On Budget')}</span></td>
           <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td>
           <td class="table-actions">${canEditCenter ? `<button class="btn sm" title="Edit cost center" aria-label="Edit cost center" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDeleteCenter ? `<button class="btn sm danger" title="Delete cost center" aria-label="Delete cost center" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
@@ -2016,7 +2102,7 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="bName" value="${esc(budget?.name || '')}" required></div>
           <div class="field"><label>Approved Amount *</label><input id="bAmt" type="number" step="0.01" value="${budget?.approvedAmount ?? ''}" required></div>
-          <div class="field"><label>Currency</label><input id="bCur" value="${esc(budget?.currency || 'INR')}"></div>
+          <div class="field"><label>Currency</label><input id="bCur" value="${esc(budget?.currency || 'MVR')}"></div>
           ${budget ? '<div class="field full"><label>Reason for baseline change (required if amount/currency changes)</label><input id="bReason" maxlength="2000"></div>' : ''}
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -2031,7 +2117,7 @@ WTPages.switchProjView = function(view) {
         projectId: Number($('#bProj').value),
         name: $('#bName').value.trim(),
         approvedAmount: Number($('#bAmt').value),
-        currency: $('#bCur').value.trim() || 'INR',
+        currency: $('#bCur').value.trim() || 'MVR',
         remarks: $('#bReason')?.value.trim() || null
       };
       if (id) await WisetrackAPI.updateBudget(id, payload);
@@ -2058,7 +2144,7 @@ WTPages.switchProjView = function(view) {
       if (!budget) throw new Error('Budget not found');
       openModal('Revise Approved Budget', `<form onsubmit="WTPages.saveBudgetRevision(event)">
         <input type="hidden" id="revisionBudgetId" value="${id}">
-        <p class="card-subtitle">Current approved amount: ${esc(budget.currency || 'INR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-IN')}</p>
+        <p class="card-subtitle">Current approved amount: ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</p>
         <div class="field"><label>Revised Budget *</label><input id="revisionAmount" type="number" min="0.01" step="0.01" value="${Number(budget.approvedAmount || 0)}" required></div>
         <div class="field"><label>Revision Reason *</label><textarea id="revisionReason" rows="3" maxlength="2000" required></textarea></div>
         <p class="card-subtitle">Approver will be recorded as the signed-in user authorized to revise this budget.</p>
@@ -2085,14 +2171,14 @@ WTPages.switchProjView = function(view) {
       const versions = [...(budget.versions || [])].sort((a, z) => Number(a.versionNo) - Number(z.versionNo));
       const latestNo = versions.reduce((n, v) => Math.max(n, Number(v.versionNo || 0)), 0);
       const rows = versions.map((v, index) => {
-        const previous = index > 0 ? `${esc(versions[index - 1].currency || budget.currency || 'INR')} ${Number(versions[index - 1].totalAmount || 0).toLocaleString('en-IN')}` : '—';
+        const previous = index > 0 ? `${esc(versions[index - 1].currency || budget.currency || 'MVR')} ${Number(versions[index - 1].totalAmount || 0).toLocaleString('en-US')}` : '—';
         const isCurrent = Number(v.versionNo) === latestNo;
         return `<tr><td>v${v.versionNo}${isCurrent ? ' <span class="badge green">Current approved</span>' : ''}</td>
-          <td>${previous}</td><td>${esc(v.currency || budget.currency || 'INR')} ${Number(v.totalAmount || 0).toLocaleString('en-IN')}</td>
+          <td>${previous}</td><td>${esc(v.currency || budget.currency || 'MVR')} ${Number(v.totalAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(v.remarks || '—')}</td><td>${esc(v.createdAt ? new Date(v.createdAt).toLocaleString() : '—')}</td>
           <td>${esc(v.approverName || (v.approverId ? `User #${v.approverId}` : '—'))}</td></tr>`;
       }).join('');
-      openModal(`Budget History · ${esc(budget.name)}`, `<div class="card-subtitle" style="margin-bottom:12px">Current approved version: v${latestNo || '—'} · ${esc(budget.currency || 'INR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-IN')}</div>
+      openModal(`Budget History · ${esc(budget.name)}`, `<div class="card-subtitle" style="margin-bottom:12px">Current approved version: v${latestNo || '—'} · ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</div>
         <div class="table-wrap"><table><thead><tr><th>Version</th><th>Previous Budget</th><th>Revised Budget</th><th>Revision Reason</th><th>Revision Date</th><th>Approver</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="6">No version history found.</td></tr>'}</tbody></table></div>`);
     } catch (e) { showToast(e.message, 'danger'); }
@@ -2108,7 +2194,7 @@ WTPages.switchProjView = function(view) {
       const options = (centers || []).map(c => `<option value="${c.id}">${esc(c.name)}${c.projectId !== Number(pid) ? ' (Sub-project cost center)' : ''}</option>`).join('');
       openModal('Allocate Budget to Cost Center', `<form onsubmit="WTPages.saveAllocation(event)">
         <input type="hidden" id="allocBudgetId" value="${budgetId}">
-        <p class="card-subtitle">${esc(budget.name)} · Approved ${esc(budget.currency || 'INR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-IN')} · Remaining ${esc(budget.currency || 'INR')} ${(Number(budget.approvedAmount || 0) - allocated).toLocaleString('en-IN')}</p>
+        <p class="card-subtitle">${esc(budget.name)} · Approved ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')} · Remaining ${esc(budget.currency || 'MVR')} ${(Number(budget.approvedAmount || 0) - allocated).toLocaleString('en-US')}</p>
         <div class="field"><label>Cost Center *</label><select id="allocCenter" required>${options}</select></div>
         <div class="field"><label>Amount *</label><input id="allocAmount" type="number" min="0.01" step="0.01" max="${Math.max(0, Number(budget.approvedAmount || 0) - allocated)}" required></div>
         <div class="field"><label>Remarks</label><input id="allocRemarks"></div>
@@ -2185,7 +2271,7 @@ WTPages.switchProjView = function(view) {
         const dateText = wtPick(r, ['CostDate', 'PurchaseDate', 'Date']);
         const centerText = wtPick(r, ['CostCenterId', 'Cost Center ID']);
         const boqText = wtPick(r, ['BoqItemId', 'BOQ Item ID', 'BOQ Line ID']);
-        const amount = Number(String(amountText).replace(/[,₹$ ]/g, ''));
+        const amount = Number(String(amountText).replace(/[,MVR $ ]/g, ''));
         const costCenterId = centerText ? Number(centerText) : null;
         const boqItemId = boqText ? Number(boqText) : null;
         const parsedDate = dateText ? new Date(`${dateText}T00:00:00Z`) : null;
@@ -2252,8 +2338,8 @@ WTPages.switchProjView = function(view) {
         WisetrackAPI.getPurchases(pid), WisetrackAPI.getActuals(pid), WisetrackAPI.getVariance(pid)
       ]);
       const explanations = await WisetrackAPI.getVarianceExplanations(pid).catch(() => []);
-      const currency = esc(variance.currency || 'INR');
-      const money = amount => `${currency} ${Number(amount || 0).toLocaleString('en-IN')}`;
+      const currency = esc(variance.currency || 'MVR');
+      const money = amount => `${currency} ${Number(amount || 0).toLocaleString('en-US')}`;
       $('#varianceBox').innerHTML = `
         <div class="grid g4">
           <div><div class="kpi-label">Budget</div><strong>${money(variance.budget ?? variance.approvedBudget)}</strong></div>
@@ -2460,7 +2546,7 @@ WTPages.switchProjView = function(view) {
             <div class="form-grid boq-master-fields" style="display:none;grid-template-columns:repeat(auto-fit,minmax(135px,1fr))">
               <div class="field"><label>Quantity (${esc(i.unit?.name || 'Unit')})</label><input class="boq-master-qty" type="number" min="0.0001" step="0.0001" value="1" oninput="WTPages.calcBoqMasterTotal(this)"></div>
               <div class="field"><label>Purchase Price</label><input class="boq-master-price" type="number" min="0" step="0.01" value="${Number(i.unitPrice ?? 0)}" oninput="WTPages.calcBoqMasterTotal(this)"></div>
-              <div class="field"><label>Total</label><output class="boq-master-total">₹${Number(i.unitPrice ?? 0).toLocaleString('en-IN')}</output></div>
+              <div class="field"><label>Total</label><output class="boq-master-total">MVR ${Number(i.unitPrice ?? 0).toLocaleString('en-US')}</output></div>
               <div class="field"><label>Description</label><input class="boq-master-description" value="${esc(i.description || i.name)}"></div>
               <div class="field"><label>Remark</label><input class="boq-master-remark" placeholder="Project-specific remark"></div>
               <div class="field"><label>Attachment (any file)</label><input class="boq-master-attachment" type="file" onchange="this.dataset.uploadedPath='';this.dataset.uploadedName=''"></div>
@@ -2489,7 +2575,7 @@ WTPages.switchProjView = function(view) {
     if (!row) return;
     const quantity = Number(row.querySelector('.boq-master-qty')?.value || 0);
     const price = Number(row.querySelector('.boq-master-price')?.value || 0);
-    row.querySelector('.boq-master-total').textContent = `₹${(quantity * price).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    row.querySelector('.boq-master-total').textContent = `MVR ${(quantity * price).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
   }
 
   async function saveBoqFromMaster(e) {
@@ -2656,11 +2742,11 @@ WTPages.switchProjView = function(view) {
                 <td>${it.lineNo ?? it.LineNo ?? it.id ?? '—'}</td>
                 <td>${esc(it.itemName || it.ItemName || it.itemCode || it.ItemCode || it.item?.name || it.Item?.name || '—')}</td>
                 <td>${esc(it.unit || it.Unit || it.item?.unit?.name || it.Item?.unit?.name || '—')}</td>
-                <td>${latestIsBaseline ? `₹${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-IN')}` : `<input id="boqPrice-${it.id || it.Id}" type="number" min="0" step="0.01" value="${it.unitPrice ?? it.UnitPrice ?? 0}" style="width:110px">`}</td>
+                <td>${latestIsBaseline ? `MVR ${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-US')}` : `<input id="boqPrice-${it.id || it.Id}" type="number" min="0" step="0.01" value="${it.unitPrice ?? it.UnitPrice ?? 0}" style="width:110px">`}</td>
                 <td>${latestIsBaseline ? (it.quantity ?? it.Quantity ?? 0) : `<input id="boqQty-${it.id || it.Id}" type="number" min="0.0001" step="0.0001" value="${it.quantity ?? it.Quantity ?? 0}" style="width:92px">`}</td>
                 <td>${latestIsBaseline ? esc(it.description || it.Description || it.itemName || '—') : `<input id="boqDesc-${it.id || it.Id}" value="${esc(it.description || it.Description || '')}" style="min-width:150px">`}</td>
                 <td>${(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl) ? `<a href="${esc(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
-                <td><strong>₹${Number(it.amount ?? it.Amount ?? 0).toLocaleString('en-IN')}</strong></td>
+                <td><strong>MVR ${Number(it.amount ?? it.Amount ?? 0).toLocaleString('en-US')}</strong></td>
                 <td>${esc(it.brand || it.Brand || it.item?.brand?.name || it.Item?.brand?.name || '—')}</td>
                 <td>${latestIsBaseline ? esc(it.remarks || it.Remarks || '—') : `<input id="boqRemark-${it.id || it.Id}" value="${esc(it.remarks || it.Remarks || '')}" style="min-width:120px">`}</td>
                 <td>${(it.attachmentPath || it.AttachmentPath) ? `<button class="btn sm" onclick="WTPages.downloadBoqAttachment('${encodeURIComponent(it.attachmentPath || it.AttachmentPath)}','${encodeURIComponent(it.attachmentName || it.AttachmentName || 'boq-attachment')}')">${esc(it.attachmentName || it.AttachmentName || 'Download')}</button>` : '—'}</td>
@@ -2778,10 +2864,10 @@ WTPages.switchProjView = function(view) {
             <td><strong>${esc(m.name || m.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(nameOf(m._projectId || pid))} · Owner: ${esc(milestoneOwner(m.ownerId || m.OwnerId))}</small><small style="display:block;color:var(--text-muted)">${esc(m.description || '')}</small>${dependency ? `<small style="display:block;color:var(--text-muted)">Depends on: ${esc(dependency.name)}</small>` : ''}${(m.completionEvidence || m.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted)">Evidence: ${esc(m.completionEvidence || m.CompletionEvidence)}</small>` : ''}${(milestoneFilesById.get(Number(m.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}</td>
             <td>${esc(m.startDate || '—')} → ${esc(m.dueDate || '—')}</td>
             <td>${esc(m.status || '—')}</td>
-          <td>${pct}%</td><td class="table-actions">
+          <td>${pct}%</td><td class="table-actions">${taskRowActionMenu(`
             ${(!wtCan || wtCan('Tasks', 'edit', Number(pid))) ? `<button class="btn sm" title="Edit milestone" aria-label="Edit milestone" onclick="WTPages.openMilestoneModal(${m.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
             ${wtCan && wtCan('Tasks', 'delete', Number(pid)) ? `<button class="btn sm danger" title="Delete milestone" aria-label="Delete milestone" onclick="WTPages.deleteMilestone(${m.id}, '${esc(m.name || m.title)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
-          </td>
+          `)}</td>
           </tr>`;
         }).join('') : emptyRow(6, `No milestones for ${selectedLabel}. Other projects are hidden.`);
       } else {
@@ -2881,14 +2967,14 @@ WTPages.switchProjView = function(view) {
               ${planningInfoCells(t)}
               <td><span class="badge ${wtRowBlocked(t) ? 'amber' : statusBadge(t.status, pct)}">${wtRowBlocked(t) ? 'Waiting' : esc(formatStatus(t.status))}</span></td>
               ${progressCell(t, pct)}
-              <td class="table-actions">
+              <td class="table-actions">${taskRowActionMenu(`
                 ${wtUpdateBtnHtml(t.id, null, t)}
                 ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>` : ''}
                 ${kind === 'planning' && (t.canEdit || t.CanEdit) ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
                 ${kind === 'planning' ? `<button class="btn sm primary icon-action" data-tooltip="Add sub-task" aria-label="Add sub-task" title="Add sub-task" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-layer-group"></i></button>` : ''}
                 ${kind === 'planning' ? wtDepBtnHtml('task', t.id, t) : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
-              </td>
+              `)}</td>
             </tr>`;
           const nestedRows = (kind === 'planning' || kind === 'daily') ? walked.map(({ node: s, depth, index }) => {
             const spct = progressOf(s);
@@ -2902,13 +2988,13 @@ WTPages.switchProjView = function(view) {
                 ${planningInfoCells({ ...s, _projectId: t._projectId }, true)}
                 <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
                 ${progressCell(s, spct)}
-                <td class="table-actions">
+                <td class="table-actions">${taskRowActionMenu(`
                   ${wtUpdateBtnHtml(t.id, s.id, s)}
                   <button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>
                   ${kind === 'planning' ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel.toLowerCase()} task" aria-label="Add ${addLabel.toLowerCase()} task" title="Add ${addLabel.toLowerCase()} task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}
                   ${kind === 'planning' ? wtDepBtnHtml('sub', s.id, s) : ''}
                   ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
-                </td>
+                `)}</td>
               </tr>`;
           }).join('') : '';
           return [parentRow, nestedRows];
@@ -4063,8 +4149,8 @@ WTPages.switchProjView = function(view) {
       const averageProgress = ts.length ? Math.round(ts.reduce((n,t) => n + Number(t.completionPercent ?? t.CompletionPercent ?? 0), 0) / ts.length) : 0;
       const pending = ts.flatMap(t => [t, ...(t.subTasks || t.SubTasks || [])]).filter(t => !done(t)).sort((a,b) => new Date(a.dueDate || a.DueDate || '9999-12-31') - new Date(b.dueDate || b.DueDate || '9999-12-31'));
       const openIssues = issueRows.filter(i => !/closed|resolved/i.test(String(i.status || i.Status || '')));
-      const currency = esc(project.currency || project.Currency || 'INR');
-      const cash = value => `${currency} ${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+      const currency = esc(project.currency || project.Currency || 'MVR');
+      const cash = value => `${currency} ${Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
       const fmtDate = value => value ? new Date(value).toLocaleDateString() : '—';
       const list = (items, empty) => items.length ? `<ul>${items.join('')}</ul>` : `<p style="color:var(--text-muted)">${empty}</p>`;
       const finance = can('Budgets') || can('Costs') ? `<p>${can('Budgets') ? `Approved budget: <b>${cash(approvedBudget)}</b>` : 'Approved budget hidden.'}</p>
@@ -4184,8 +4270,8 @@ WTPages.switchProjView = function(view) {
           <td title="${esc(r.scope || r.Scope || '')}">${esc(r.scope || r.Scope || '-')}</td>
           <td>${(r.varianceExplanations || r.VarianceExplanations || []).map(v => `<div><b>${esc(v.varianceType || v.VarianceType)}:</b> ${esc(v.explanation || v.Explanation)}</div>`).join('') || '-'}</td>
           <td>${esc(r.startDate || r.StartDate || '-')} to ${esc(r.endDate || r.EndDate || '-')}</td>
-          ${showBudget ? `<td>${esc(r.currency || 'INR')} ${Number(r.approvedBudget || r.ApprovedBudget || 0).toLocaleString('en-IN')}</td>` : ''}
-          ${showCost ? `<td>${esc(r.currency || 'INR')} ${Number(r.purchaseCost || r.PurchaseCost || 0).toLocaleString('en-IN')}</td><td>${esc(r.currency || 'INR')} ${Number(r.actualCost || r.ActualCost || 0).toLocaleString('en-IN')}</td><td>${esc(r.currency || 'INR')} ${Number(r.totalCost || r.TotalCost || 0).toLocaleString('en-IN')}</td>` : ''}
+          ${showBudget ? `<td>${esc(r.currency || 'MVR')} ${Number(r.approvedBudget || r.ApprovedBudget || 0).toLocaleString('en-US')}</td>` : ''}
+          ${showCost ? `<td>${esc(r.currency || 'MVR')} ${Number(r.purchaseCost || r.PurchaseCost || 0).toLocaleString('en-US')}</td><td>${esc(r.currency || 'MVR')} ${Number(r.actualCost || r.ActualCost || 0).toLocaleString('en-US')}</td><td>${esc(r.currency || 'MVR')} ${Number(r.totalCost || r.TotalCost || 0).toLocaleString('en-US')}</td>` : ''}
           <td>${r.durationDays ?? r.DurationDays ?? '-'} days</td></tr>`).join('')}</tbody>
         </table></div>` : '<p>No completed projects match these filters.</p>';
     } catch (err) { $('#comparableResults').innerHTML = `<p style="color:#dc2626">${esc(err.message)}</p>`; }

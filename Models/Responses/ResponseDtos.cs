@@ -120,7 +120,7 @@ public class ProjectResponseDto
     public string? PropertyName { get; set; }
     public string? ClientName { get; set; }
     public string? Sponsor { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public bool AllowExternalView { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Code { get; set; }
@@ -138,7 +138,7 @@ public class ProjectResponseDto
 public class CostVarianceDto
 {
     public long ProjectId { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public decimal Budget { get; set; }
     public decimal CurrentCommitment { get; set; }
     public decimal ActualSpend { get; set; }
@@ -287,7 +287,7 @@ public class ComparableProjectDto
     public string? Client { get; set; }
     public string? Scope { get; set; }
     public bool IsReferenceProject { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public decimal ApprovedBudget { get; set; }

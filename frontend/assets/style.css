@@ -1379,6 +1379,27 @@ button.btn[disabled] {
   align-items: center;
 }
 
+.row-action-menu { position: relative; display: inline-flex; }
+.row-action-trigger { width: 36px; height: 34px; justify-content: center; }
+.row-action-popover {
+  position: fixed;
+  z-index: 1200;
+  min-width: 170px;
+  max-height: min(70vh, 420px);
+  overflow: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+.row-action-popover[hidden] { display: none; }
+.row-action-popover .btn { width: 100%; justify-content: flex-start; white-space: nowrap; }
+.row-action-popover .btn[aria-label]::after { content: attr(aria-label); margin-left: 8px; }
+
 /* Table Toolbar */
 .table-toolbar {
   display: flex;
@@ -2236,10 +2257,7 @@ button.btn[disabled] {
 .planning-table tbody tr:hover > td { background-color: #f5f8ff; }
 .planning-table .nest-col { min-width: 0; max-width: none; }
 .planning-table .table-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 34px);
-  gap: 6px;
-  align-content: start;
+  display: block;
 }
 
 .planning-table .icon-action {

@@ -22,7 +22,7 @@ public class Budget
     public long ProjectId { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal ApprovedAmount { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public decimal RagAmberPercent { get; set; } = 80;
     public decimal RagRedPercent { get; set; } = 100;
     public string Status { get; set; } = "Draft";
@@ -40,7 +40,7 @@ public class BudgetVersion
     public long BudgetId { get; set; }
     public int VersionNo { get; set; }
     public decimal TotalAmount { get; set; }
-    public string Currency { get; set; } = "INR";
+    public string Currency { get; set; } = "MVR";
     public string? Remarks { get; set; }
     public long? CreatedBy { get; set; }
     public long? ApproverId { get; set; }

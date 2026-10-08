@@ -32,7 +32,7 @@
             <strong style="color:#991b1b; font-size:13px;"><i class="fa-solid fa-circle" style="color:#dc2626;font-size:8px;"></i> Budget Alert — Electrical reached 84%</strong>
             <small style="color:#64748b;">10 mins ago</small>
           </div>
-          <p style="font-size:12px; color:#334155; margin:4px 0 8px;">Cost center utilization exceeded 80% safety limit (₹1.68 Cr of ₹2.00 Cr used). Escalated to Finance & PM.</p>
+          <p style="font-size:12px; color:#334155; margin:4px 0 8px;">Cost center utilization exceeded 80% safety limit (MVR 1.68 Cr of MVR 2.00 Cr used). Escalated to Finance & PM.</p>
           <a href="index.php?page=budget" class="btn sm" style="background:#fff; border-color:#fca5a5; color:#991b1b;">View Cost Center ➔</a>
         </div>
 

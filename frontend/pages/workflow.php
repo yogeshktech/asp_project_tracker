@@ -48,7 +48,7 @@
       </p>
       <div style="background:var(--bg-app); border:1px solid var(--border-color); border-radius:6px; padding:10px 12px; font-size:11.5px; margin-bottom:12px;">
         <div><b>🔹 User Actions:</b> Click <code>+ New Resort</code> in topbar or Resorts page.</div>
-        <div><b>🔹 Key Data:</b> Resort Code (<code>RES-GOA-01</code>), CapEx Budget (₹48.50 Cr), Location, GM signoff authority.</div>
+        <div><b>🔹 Key Data:</b> Resort Code (<code>RES-GOA-01</code>), CapEx Budget (MVR 48.50 Cr), Location, GM signoff authority.</div>
         <div><b>🔹 Security:</b> Users only see resorts they are explicitly authorized to access (PM-02).</div>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:10px;">

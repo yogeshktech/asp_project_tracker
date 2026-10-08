@@ -329,7 +329,7 @@ async function loadDashboardPage() {
     if (kpiOverdue) kpiOverdue.textContent = String(dash.overdueTaskCount ?? 0);
     if (kpiBudget) {
       const b = Number(dash.totalApprovedBudget || 0);
-      kpiBudget.textContent = '₹' + b.toLocaleString('en-IN');
+      kpiBudget.textContent = 'MVR ' + b.toLocaleString('en-US');
     }
     if (recentBody) {
       const rows = dash.recentProjects || [];
@@ -403,7 +403,7 @@ async function loadItemsPage() {
         <td>${esc(it.unitName || it.uom || '-')}</td>
         <td>${esc(it.brandName || '-')}</td>
         <td>${esc(it.categoryName || '-')}</td>
-        <td>${it.unitRate != null ? '₹' + Number(it.unitRate).toLocaleString('en-IN') : '—'}</td>
+        <td>${it.unitRate != null ? 'MVR ' + Number(it.unitRate).toLocaleString('en-US') : '—'}</td>
         <td><button class="btn sm" onclick="showToast('Item ID '+${it.id})">View</button></td>
       </tr>
     `).join('') : '<tr><td colspan="7">No items in master.</td></tr>';
@@ -463,10 +463,21 @@ async function handleCreateResort(e) {
   const location = document.getElementById('resortLocation').value;
   try {
     const saved = await WisetrackAPI.createResort({ name, location });
+    const createdId = saved.id ?? saved.Id;
+    if (createdId != null) {
+      localStorage.setItem('WISETRACK_SELECTED_RESORT', String(createdId));
+      localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
+    }
     closeModal();
-    await fillResortSelector();
+    await Promise.all([
+      fillResortSelector(),
+      typeof fillProjectSelector === 'function' ? fillProjectSelector() : Promise.resolve()
+    ]);
     if (typeof WTPages !== 'undefined' && typeof WTPages.refreshResorts === 'function') {
       await WTPages.refreshResorts();
+    }
+    if (typeof WTPages !== 'undefined' && typeof WTPages.onResortCreated === 'function') {
+      await WTPages.onResortCreated(createdId);
     }
     showToast(`Resort "${name}" created successfully · ${saved.code || saved.Code || 'RST'}`, 'success');
   } catch (err) {
@@ -515,11 +526,11 @@ async function handleCreateProject(e) {
   const teamUserIds = [...(document.getElementById('projectTeamIds')?.selectedOptions || [])]
     .map(option => Number(option.value)).filter(id => id > 0);
   const initialBudget = Number(document.getElementById('projectInitialBudget')?.value || 0);
-  const budgetCurrency = document.getElementById('projectBudgetCurrency')?.value || 'INR';
+  const budgetCurrency = document.getElementById('projectBudgetCurrency')?.value || 'MVR';
   const code = document.getElementById('projectCode')?.value.trim() || null;
   const clientName = document.getElementById('projectClient')?.value.trim() || null;
   const sponsor = document.getElementById('projectSponsor')?.value.trim() || null;
-  const currency = document.getElementById('projectCurrency')?.value || 'INR';
+  const currency = document.getElementById('projectCurrency')?.value || 'MVR';
   const status = document.getElementById('projectStatus')?.value || 'Draft';
   const profileNotes = document.getElementById('projectNotes')?.value.trim() || null;
   const attachments = [...(document.getElementById('projectAttachments')?.files || [])];
@@ -661,7 +672,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
         </div>
         <div class="field">
           <label>Budget Currency</label>
-          <select id="projectBudgetCurrency"><option value="INR">INR — Indian Rupee</option><option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option></select>
+          <select id="projectBudgetCurrency"><option value="MVR">MVR — Maldivian Rufiyaa</option><option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option></select>
         </div>
         <div class="field">
           <label>Project Team</label>
@@ -684,7 +695,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
         </div>
         <div class="field"><label>Client</label><input id="projectClient" type="text"></div>
         <div class="field"><label>Sponsor</label><input id="projectSponsor" type="text"></div>
-        <div class="field"><label>Project Currency</label><select id="projectCurrency"><option value="INR">INR</option><option value="USD">USD</option><option value="EUR">EUR</option></select></div>
+        <div class="field"><label>Project Currency</label><select id="projectCurrency"><option value="MVR">MVR</option><option value="USD">USD</option><option value="EUR">EUR</option></select></div>
         <div class="field"><label>Relevant Notes</label><textarea id="projectNotes"></textarea></div>
         <div class="field full"><label>Attachments</label><input type="file" id="projectAttachments" multiple></div>
         <p class="card-subtitle" style="grid-column:1/-1;margin:0">Schedule dates, team, budget, tasks, issues, BOQ, costs and other records remain linked to this project.</p>

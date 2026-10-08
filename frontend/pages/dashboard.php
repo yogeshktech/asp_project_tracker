@@ -61,8 +61,8 @@ $avgResortProgress = count($resorts) > 0 ? round($resortProgressSum / count($res
     </div>
     <div class="kpi success">
       <span class="kpi-label">Total Master CapEx</span>
-      <span class="kpi-value">₹148.50 Cr</span>
-      <span class="kpi-sub">₹106.80 Cr Committed (71.9%)</span>
+      <span class="kpi-value">MVR 148.50 Cr</span>
+      <span class="kpi-sub">MVR 106.80 Cr Committed (71.9%)</span>
     </div>
   </div>
 
@@ -190,8 +190,8 @@ $avgResortProgress = count($resorts) > 0 ? round($resortProgressSum / count($res
               </td>
               <td><span class="badge blue"><?php echo htmlspecialchars($p['discipline'] ?? 'Engineering'); ?></span></td>
               <td><b><?php echo htmlspecialchars($p['owner'] ?? 'Lead PM'); ?></b></td>
-              <td><?php echo $p['budget'] ?? '₹10.00 Cr'; ?></td>
-              <td><?php echo $p['spent'] ?? '₹6.50 Cr'; ?></td>
+              <td><?php echo $p['budget'] ?? 'MVR 10.00 Cr'; ?></td>
+              <td><?php echo $p['spent'] ?? 'MVR 6.50 Cr'; ?></td>
               <td>
                 <div style="display:flex; align-items:center; gap:8px;">
                   <div class="progress <?php echo $progColor; ?>" style="width:55px; margin:0;"><i style="width:<?php echo $prog; ?>%"></i></div>
@@ -286,7 +286,7 @@ $avgResortProgress = count($resorts) > 0 ? round($resortProgressSum / count($res
             <strong style="color:#991b1b; font-size:13px;">🚨 Electrical Cost Center at 84% Utilization</strong>
             <span class="badge red">80% Trigger</span>
           </div>
-          <p style="font-size:12px; margin:4px 0 8px; color:var(--text-main);">Grand Oasis Goa: ₹1.68 Cr of ₹2.00 Cr utilized. Discretionary orders locked.</p>
+          <p style="font-size:12px; margin:4px 0 8px; color:var(--text-main);">Grand Oasis Goa: MVR 1.68 Cr of MVR 2.00 Cr utilized. Discretionary orders locked.</p>
           <a href="index.php?page=budget" class="btn sm" style="background:#fff; border-color:#fca5a5; color:#991b1b;">Review Budget ➔</a>
         </div>
 

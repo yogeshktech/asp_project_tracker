@@ -27,17 +27,17 @@
     </div>
     <div class="kpi">
       <span class="kpi-label">Baseline v1.0 Value</span>
-      <span class="kpi-value">₹8.42 Cr</span>
+      <span class="kpi-value">MVR 8.42 Cr</span>
       <span class="kpi-sub">Approved 28 Feb 2026</span>
     </div>
     <div class="kpi warning">
       <span class="kpi-label">Revised v2.1 Value</span>
-      <span class="kpi-value">₹8.68 Cr</span>
-      <span class="kpi-sub">+₹26.0L Variance (3.08%)</span>
+      <span class="kpi-value">MVR 8.68 Cr</span>
+      <span class="kpi-sub">+MVR 26.0L Variance (3.08%)</span>
     </div>
     <div class="kpi success">
       <span class="kpi-label">Committed Value</span>
-      <span class="kpi-value">₹6.71 Cr</span>
+      <span class="kpi-value">MVR 6.71 Cr</span>
       <span class="kpi-sub">Purchase orders released</span>
     </div>
   </div>
@@ -64,7 +64,7 @@
             <th>DESCRIPTION & SPECIFICATIONS</th>
             <th>UOM</th>
             <th>QTY</th>
-            <th>PURCHASE RATE (₹)</th>
+            <th>PURCHASE RATE (MVR )</th>
             <th>TOTAL AMOUNT</th>
             <th>APPROVED BRAND</th>
             <th>REMARK COLUMN</th>
@@ -85,8 +85,8 @@
             </td>
             <td>Meter</td>
             <td>5,200</td>
-            <td>₹420</td>
-            <td><b>₹21,84,000</b></td>
+            <td>MVR 420</td>
+            <td><b>MVR 21,84,000</b></td>
             <td>Polycab / Havells</td>
             <td><small>Underground duct routing shaft 2</small></td>
             <td>
@@ -106,8 +106,8 @@
             </td>
             <td>Meter</td>
             <td>850</td>
-            <td>₹3,450</td>
-            <td><b>₹29,32,500</b></td>
+            <td>MVR 3,450</td>
+            <td><b>MVR 29,32,500</b></td>
             <td>Havells / Finolex</td>
             <td><small>Main feeder from 11kV substation to block A</small></td>
             <td>
@@ -127,8 +127,8 @@
             </td>
             <td>Nos</td>
             <td>650</td>
-            <td>₹485</td>
-            <td><b>₹3,15,250</b></td>
+            <td>MVR 485</td>
+            <td><b>MVR 3,15,250</b></td>
             <td>Schneider Electric</td>
             <td><small>Guest room wing fitout specification</small></td>
             <td>

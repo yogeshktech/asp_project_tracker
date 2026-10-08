@@ -230,7 +230,7 @@ public static class DbSeeder
             Status = "Active",
             ClientName = "Grand Palm Hospitality Ltd.",
             Sponsor = "Board of Directors",
-            Currency = "INR",
+            Currency = "MVR",
             OwnerId = pm.Id,
             AllowExternalView = true,
             StartDate = new DateOnly(2025, 1, 1),
@@ -252,7 +252,7 @@ public static class DbSeeder
             Code = "PRJ-GPLR-01-MEP",
             Description = "Chilled water, VRV, ducting, electrical panels.",
             Status = "Active",
-            Currency = "INR",
+            Currency = "MVR",
             OwnerId = pm.Id,
             ClientName = parentA.ClientName,
             StartDate = new DateOnly(2025, 3, 1),
@@ -269,7 +269,7 @@ public static class DbSeeder
             Code = "PRJ-GPLR-01-CIV",
             Description = "Demolition, RCC repairs, waterproofing.",
             Status = "Active",
-            Currency = "INR",
+            Currency = "MVR",
             OwnerId = pm.Id,
             StartDate = new DateOnly(2025, 1, 15),
             EndDate = new DateOnly(2025, 8, 30),
@@ -285,7 +285,7 @@ public static class DbSeeder
             Code = "PRJ-GPLR-01-INT",
             Description = "Flooring, paneling, bathroom fittings, FF&E.",
             Status = "Active",
-            Currency = "INR",
+            Currency = "MVR",
             OwnerId = pm.Id,
             StartDate = new DateOnly(2025, 6, 1),
             EndDate = new DateOnly(2025, 12, 15),
@@ -306,7 +306,7 @@ public static class DbSeeder
             Status = "Active",
             ClientName = "Grand Palm Hospitality Ltd.",
             Sponsor = "Resort GM",
-            Currency = "INR",
+            Currency = "MVR",
             OwnerId = pm.Id,
             StartDate = new DateOnly(2025, 4, 1),
             EndDate = new DateOnly(2026, 3, 31),
@@ -324,7 +324,7 @@ public static class DbSeeder
             Name = "Spa Building Shell",
             Code = "PRJ-GPLR-02-SHELL",
             Status = "Active",
-            Currency = "INR",
+            Currency = "MVR",
             OwnerId = pm.Id,
             StartDate = new DateOnly(2025, 4, 1),
             EndDate = new DateOnly(2025, 11, 30),
@@ -343,7 +343,7 @@ public static class DbSeeder
             Code = "PRJ-GPLR-00-CLOSED",
             Description = "Prior completed MEP package for comparable analysis.",
             Status = "Closed",
-            Currency = "INR",
+            Currency = "MVR",
             OwnerId = pm.Id,
             ClientName = "Grand Palm Hospitality Ltd.",
             StartDate = new DateOnly(2023, 2, 1),
@@ -405,7 +405,7 @@ public static class DbSeeder
             ProjectId = parentA.Id,
             Name = "Master Approved Budget FY2025-26",
             ApprovedAmount = 50000000m,
-            Currency = "INR",
+            Currency = "MVR",
             RagAmberPercent = 80, // flag when 80% of CC spent (requirement)
             RagRedPercent = 100,
             Status = "Approved",
@@ -415,8 +415,8 @@ public static class DbSeeder
         await db.SaveChangesAsync();
 
         db.BudgetVersions.AddRange(
-            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 1, TotalAmount = 48000000m, Currency = "INR", Remarks = "Original baseline", CreatedBy = finance.Id, ApproverId = finance.Id, CreatedAt = now.AddMonths(-6) },
-            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 2, TotalAmount = 50000000m, Currency = "INR", Remarks = "Board-approved revision (+4%) — steel escalation", CreatedBy = finance.Id, ApproverId = finance.Id, CreatedAt = now.AddMonths(-2) }
+            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 1, TotalAmount = 48000000m, Currency = "MVR", Remarks = "Original baseline", CreatedBy = finance.Id, ApproverId = finance.Id, CreatedAt = now.AddMonths(-6) },
+            new BudgetVersion { BudgetId = budgetA.Id, VersionNo = 2, TotalAmount = 50000000m, Currency = "MVR", Remarks = "Board-approved revision (+4%) — steel escalation", CreatedBy = finance.Id, ApproverId = finance.Id, CreatedAt = now.AddMonths(-2) }
         );
 
         db.BudgetAllocations.AddRange(
@@ -431,7 +431,7 @@ public static class DbSeeder
             ProjectId = parentB.Id,
             Name = "Spa Annex Budget",
             ApprovedAmount = 22000000m,
-            Currency = "INR",
+            Currency = "MVR",
             RagAmberPercent = 80,
             RagRedPercent = 100,
             Status = "Approved",
@@ -646,7 +646,7 @@ public static class DbSeeder
             Location = "Level 3 — Corridor East",
             OccurredAt = now.AddDays(-5),
             ReportedBy = site.Id,
-            Impact = "2-week delay risk on installation milestone; rework cost ~₹9L",
+            Impact = "2-week delay risk on installation milestone; rework cost ~MVR 9L",
             PriorityId = prioHigh.Id,
             Status = "Open",
             IsEscalated = true,
@@ -715,7 +715,7 @@ public static class DbSeeder
         var n1 = new Notification
         {
             Title = "RAG Amber — MEP Cost Center ≥80%",
-            Body = "CC-MEP has consumed ~85% of ₹1.8 Cr allocation. Escalation mail queued to Finance & PM.",
+            Body = "CC-MEP has consumed ~85% of MVR 1.8 Cr allocation. Escalation mail queued to Finance & PM.",
             Type = "BudgetRag",
             RelatedType = "CostCenter",
             RelatedId = ccMep.Id,

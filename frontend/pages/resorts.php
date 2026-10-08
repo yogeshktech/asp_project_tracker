@@ -25,12 +25,12 @@
     </div>
     <div class="kpi success">
       <span class="kpi-label">Cumulative CapEx</span>
-      <span class="kpi-value">₹148.50 Cr</span>
+      <span class="kpi-value">MVR 148.50 Cr</span>
       <span class="kpi-sub">Total Master Allocation</span>
     </div>
     <div class="kpi">
       <span class="kpi-label">Total Committed</span>
-      <span class="kpi-value">₹106.80 Cr</span>
+      <span class="kpi-value">MVR 106.80 Cr</span>
       <span class="kpi-sub">71.9% Financial Progress</span>
     </div>
     <div class="kpi">

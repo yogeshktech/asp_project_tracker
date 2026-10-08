@@ -13,7 +13,7 @@
     </div>
     <div class="head-actions">
       <button class="btn" onclick="showToast('Syncing live market rates from RFQ App...', 'info')"><i class="fa-solid fa-arrows-rotate"></i> Sync RFQ App</button>
-      <button class="btn primary" onclick="openModal('Add Master Item', '<form onsubmit=\'event.preventDefault();closeModal();showToast(\x22Item with Image & Brand saved to master catalog!\x22)\'><div class=\x22form-grid\x22><div class=\x22field\x22><label>Item Code *</label><input required placeholder=\x22e.g. EL-CBL-020\x22></div><div class=\x22field\x22><label>Category *</label><select><option>Electrical Cabling</option><option>Switchgear & Panels</option><option>HVAC & Chillers</option><option>Civil Raw Materials</option><option>Plumbing & Sanitary</option></select></div><div class=\x22field full\x22><label>Item Description / Specification *</label><input required placeholder=\x22e.g. 4C x 70 sqmm Armoured Copper Cable IS:7098\x22></div><div class=\x22field\x22><label>Unit of Measure (UOM) *</label><select><option>Meter (Mtr)</option><option>Numbers (Nos)</option><option>Sets</option><option>Cu.m</option><option>Sq.m</option><option>Kg</option></select></div><div class=\x22field\x22><label>Purchase Price / Unit Rate (₹) *</label><input type=\x22number\x22 placeholder=\x221200\x22 required></div><div class=\x22field full\x22><label>Approved Brand Makes *</label><input placeholder=\x22e.g. Polycab / Havells / Finolex\x22 required></div><div class=\x22field full\x22><label>Item Image / CAD Drawing</label><input type=\x22file\x22 accept=\x22image/*,.dwg,.pdf\x22></div></div><div class=\x22modalfoot\x22 style=\x22padding:0;margin-top:14px;\x22><button type=\x22button\x22 class=\x22btn\x22 onclick=\x22closeModal()\x22>Cancel</button><button type=\x22submit\x22 class=\x22btn primary\x22><i class=\x22fa-solid fa-plus\x22></i> Save to Item Master</button></div></form>')"><i class="fa-solid fa-plus"></i> Add Master Item</button>
+      <button class="btn primary" onclick="openModal('Add Master Item', '<form onsubmit=\'event.preventDefault();closeModal();showToast(\x22Item with Image & Brand saved to master catalog!\x22)\'><div class=\x22form-grid\x22><div class=\x22field\x22><label>Item Code *</label><input required placeholder=\x22e.g. EL-CBL-020\x22></div><div class=\x22field\x22><label>Category *</label><select><option>Electrical Cabling</option><option>Switchgear & Panels</option><option>HVAC & Chillers</option><option>Civil Raw Materials</option><option>Plumbing & Sanitary</option></select></div><div class=\x22field full\x22><label>Item Description / Specification *</label><input required placeholder=\x22e.g. 4C x 70 sqmm Armoured Copper Cable IS:7098\x22></div><div class=\x22field\x22><label>Unit of Measure (UOM) *</label><select><option>Meter (Mtr)</option><option>Numbers (Nos)</option><option>Sets</option><option>Cu.m</option><option>Sq.m</option><option>Kg</option></select></div><div class=\x22field\x22><label>Purchase Price / Unit Rate (MVR ) *</label><input type=\x22number\x22 placeholder=\x221200\x22 required></div><div class=\x22field full\x22><label>Approved Brand Makes *</label><input placeholder=\x22e.g. Polycab / Havells / Finolex\x22 required></div><div class=\x22field full\x22><label>Item Image / CAD Drawing</label><input type=\x22file\x22 accept=\x22image/*,.dwg,.pdf\x22></div></div><div class=\x22modalfoot\x22 style=\x22padding:0;margin-top:14px;\x22><button type=\x22button\x22 class=\x22btn\x22 onclick=\x22closeModal()\x22>Cancel</button><button type=\x22submit\x22 class=\x22btn primary\x22><i class=\x22fa-solid fa-plus\x22></i> Save to Item Master</button></div></form>')"><i class="fa-solid fa-plus"></i> Add Master Item</button>
     </div>
   </div>
 
@@ -49,7 +49,7 @@
             <th>ITEM CODE</th>
             <th>DESCRIPTION & SPECIFICATIONS</th>
             <th>UOM</th>
-            <th>PURCHASE PRICE (₹)</th>
+            <th>PURCHASE PRICE (MVR )</th>
             <th>APPROVED BRANDS</th>
             <th>CATEGORY</th>
             <th>RFQ INTEGRATION</th>
@@ -67,7 +67,7 @@
               <small>IS:7098 (Part 1) armoured copper conductor</small>
             </td>
             <td>Meter</td>
-            <td><b>₹420</b></td>
+            <td><b>MVR 420</b></td>
             <td>Polycab / Havells</td>
             <td><span class="badge blue">Electrical</span></td>
             <td><span class="badge green">Synced from RFQ</span></td>
@@ -83,7 +83,7 @@
               <small>Antibacterial polycarbonate face plate with indicator</small>
             </td>
             <td>Nos</td>
-            <td><b>₹485</b></td>
+            <td><b>MVR 485</b></td>
             <td>Schneider / Legrand</td>
             <td><span class="badge blue">Switchgear</span></td>
             <td><span class="badge green">Synced from RFQ</span></td>
@@ -99,7 +99,7 @@
               <small>VFD compressor, R-134a eco refrigerant, AHRI certified</small>
             </td>
             <td>Set</td>
-            <td><b>₹38,00,000</b></td>
+            <td><b>MVR 38,00,000</b></td>
             <td>Daikin / Carrier</td>
             <td><span class="badge amber">HVAC</span></td>
             <td><span class="badge blue">Direct OEM RFP</span></td>

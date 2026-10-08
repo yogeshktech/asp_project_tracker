@@ -81,8 +81,8 @@
             <th>PROJECT / PACKAGE TITLE</th>
             <th>DISCIPLINE</th>
             <th>PROJECT LEAD</th>
-            <th>BUDGET (₹)</th>
-            <th>COMMITTED (₹)</th>
+            <th>BUDGET (MVR )</th>
+            <th>COMMITTED (MVR )</th>
             <th>DAILY %</th>
             <th>UNTIL-DATE %</th>
             <th>80% RAG STATUS</th>
@@ -102,8 +102,8 @@
             </td>
             <td>Civil Structure</td>
             <td>Amit Verma</td>
-            <td>₹16.50 Cr</td>
-            <td>₹13.20 Cr</td>
+            <td>MVR 16.50 Cr</td>
+            <td>MVR 13.20 Cr</td>
             <td><span class="badge blue">+2% Today</span></td>
             <td>
               <div style="display:flex; align-items:center; gap:6px;">
@@ -126,8 +126,8 @@
             </td>
             <td>MEP & Electrical</td>
             <td>Rahul Sharma</td>
-            <td>₹5.10 Cr</td>
-            <td>₹4.30 Cr</td>
+            <td>MVR 5.10 Cr</td>
+            <td>MVR 4.30 Cr</td>
             <td><span class="badge blue">+8% Today</span></td>
             <td>
               <div style="display:flex; align-items:center; gap:6px;">
@@ -150,8 +150,8 @@
             </td>
             <td>HVAC</td>
             <td>Manoj Joshi</td>
-            <td>₹4.80 Cr</td>
-            <td>₹3.65 Cr</td>
+            <td>MVR 4.80 Cr</td>
+            <td>MVR 3.65 Cr</td>
             <td><span class="badge gray">0% Today</span></td>
             <td>
               <div style="display:flex; align-items:center; gap:6px;">
@@ -174,8 +174,8 @@
             </td>
             <td>Heritage MEP</td>
             <td>Priya Mehta</td>
-            <td>₹18.40 Cr</td>
-            <td>₹11.20 Cr</td>
+            <td>MVR 18.40 Cr</td>
+            <td>MVR 11.20 Cr</td>
             <td><span class="badge blue">+1.5% Today</span></td>
             <td>
               <div style="display:flex; align-items:center; gap:6px;">

@@ -30,5 +30,6 @@
 
 <!-- Application Script -->
 <script src="assets/app.js"></script>
+<script src="assets/layout.js?v=20261008b"></script>
 </body>
 </html>

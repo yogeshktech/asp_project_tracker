@@ -20,7 +20,7 @@
     <div class="card-header"><h3 class="card-title">General PMO Parameters</h3></div>
     <div class="form-grid">
       <div class="field"><label>Organization / Holding Entity</label><input type="text" value="Wisetrack Engineering & Hospitality PMO"></div>
-      <div class="field"><label>System Base Currency</label><select><option selected>INR — Indian Rupee (₹)</option><option>USD — US Dollar ($)</option></select></div>
+      <div class="field"><label>System Base Currency</label><select><option selected>MVR — Maldivian Rufiyaa (MVR )</option><option>USD — US Dollar ($)</option></select></div>
       <div class="field"><label>Cost Center Warning Trigger (RAG Threshold)</label><input type="text" value="80%"></div>
       <div class="field"><label>Inactive Task Warning Threshold</label><input type="text" value="7 Days"></div>
       <div class="field"><label>Email / SMS Escalation Notifications</label><select><option selected>Enabled (Instant Dispatch)</option><option>Disabled</option></select></div>

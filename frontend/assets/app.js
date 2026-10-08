@@ -210,8 +210,8 @@ function openCreateResortModal() {
           <input type="text" id="resortGM" placeholder="e.g. Rajesh Nair" required>
         </div>
         <div class="field">
-          <label>Total Allocated Budget (₹ Cr) *</label>
-          <input type="text" id="resortBudget" placeholder="e.g. ₹28.50 Cr" required>
+          <label>Total Allocated Budget (MVR  Cr) *</label>
+          <input type="text" id="resortBudget" placeholder="e.g. MVR 28.50 Cr" required>
         </div>
         <div class="field">
           <label>Target Completion Date</label>
@@ -255,7 +255,7 @@ async function handleCreateResort(e) {
   const newResort = {
     id: `RES-${Date.now().toString().slice(-4)}`,
     name, code, location, gm, budget,
-    spent: "₹0.00 Cr", progress: 0, status: "On Track", statusBadge: "green",
+    spent: "MVR 0.00 Cr", progress: 0, status: "On Track", statusBadge: "green",
     totalProjects: 0, targetDate, desc
   };
   resorts.unshift(newResort);
@@ -440,7 +440,7 @@ function openCreateProjectModal(preselectedParentId = null) {
         </div>
         <div class="field">
           <label>Allocated Budget *</label>
-          <input type="text" id="projectBudget" placeholder="e.g. ₹4.50 Cr" required>
+          <input type="text" id="projectBudget" placeholder="e.g. MVR 4.50 Cr" required>
         </div>
         <div class="field">
           <label>Start Date</label>
@@ -539,7 +539,7 @@ async function handleCreateProject(e) {
     discipline,
     owner,
     budget,
-    spent: "₹0.00 Cr",
+    spent: "MVR 0.00 Cr",
     progress: 0,
     health: "On Track",
     healthBadge: "green",
@@ -667,12 +667,12 @@ function openAddBOQItemModal() {
           <input type="number" id="boqItemQty" placeholder="e.g. 1500" oninput="calcBoqTotal()" required>
         </div>
         <div class="field">
-          <label>Unit Rate / Purchase Price (₹) *</label>
+          <label>Unit Rate / Purchase Price (MVR ) *</label>
           <input type="number" id="boqItemRate" placeholder="e.g. 850" oninput="calcBoqTotal()" required>
         </div>
         <div class="field">
-          <label>Calculated Total Amount (₹)</label>
-          <input type="text" id="boqItemTotal" placeholder="₹0.00" readonly style="background:#f8fafc; font-weight:700; color:#1d4ed8;">
+          <label>Calculated Total Amount (MVR )</label>
+          <input type="text" id="boqItemTotal" placeholder="MVR 0.00" readonly style="background:#f8fafc; font-weight:700; color:#1d4ed8;">
         </div>
         <div class="field">
           <label>Approved Brand Make *</label>
@@ -712,7 +712,7 @@ function calcBoqTotal() {
   const total = qty * rate;
   const totalEl = document.getElementById('boqItemTotal');
   if (totalEl) {
-    totalEl.value = '₹' + total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    totalEl.value = 'MVR ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 }
 
@@ -1517,7 +1517,7 @@ function openHandoverModal() {
         </div>
         <div class="field">
           <label>Inventory Reconciliation Status</label>
-          <input type="text" value="3 Items Reconciled (₹1.86L Value Transferred)" readonly style="background:#f1f5f9;font-weight:600;">
+          <input type="text" value="3 Items Reconciled (MVR 1.86L Value Transferred)" readonly style="background:#f1f5f9;font-weight:600;">
         </div>
         <div class="field full">
           <label>Mandatory Upload: Signed Handover / Completion Certificate *</label>
@@ -1569,7 +1569,7 @@ function openEditResortModal(resortId) {
           <input type="text" id="editResortGM" value="${escapeHtmlAttr(r.gm || '')}" required>
         </div>
         <div class="field">
-          <label>Total Allocated Budget (₹ Cr) *</label>
+          <label>Total Allocated Budget (MVR  Cr) *</label>
           <input type="text" id="editResortBudget" value="${escapeHtmlAttr(r.budget || '')}" required>
         </div>
         <div class="field">
@@ -1948,13 +1948,13 @@ async function openEditProjectModal(projectId) {
         </div>
         <div class="field"><label>Client</label><input type="text" id="editProjectClient" value="${escapeHtmlAttr(p.clientName || '')}"></div>
         <div class="field"><label>Sponsor</label><input type="text" id="editProjectSponsor" value="${escapeHtmlAttr(p.sponsor || '')}"></div>
-        <div class="field"><label>Currency</label><select id="editProjectCurrency"><option value="INR" ${(p.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${p.currency === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
+        <div class="field"><label>Currency</label><select id="editProjectCurrency"><option value="MVR" ${(p.currency || 'MVR') === 'MVR' ? 'selected' : ''}>MVR</option><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${p.currency === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
         <div class="field">
           <label>Allocated Budget *</label>
           <input type="number" min="0" step="0.01" id="editProjectBudget" value="${escapeHtmlAttr(p.budget || '0')}" required>
         </div>
         <div class="field"><label>Budget Name</label><input type="text" id="editProjectBudgetName" value="${escapeHtmlAttr(selectedBudget?.name || 'Initial Project Budget')}"></div>
-        <div class="field"><label>Budget Currency</label><select id="editProjectBudgetCurrency"><option value="INR" ${(selectedBudget?.currency || p.currency || 'INR') === 'INR' ? 'selected' : ''}>INR</option><option value="USD" ${(selectedBudget?.currency || p.currency) === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${(selectedBudget?.currency || p.currency) === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
+        <div class="field"><label>Budget Currency</label><select id="editProjectBudgetCurrency"><option value="MVR" ${(selectedBudget?.currency || p.currency || 'MVR') === 'MVR' ? 'selected' : ''}>MVR</option><option value="USD" ${(selectedBudget?.currency || p.currency) === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${(selectedBudget?.currency || p.currency) === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
         <div class="field">
           <label>Project Health / Status *</label>
           <select id="editProjectHealth">
@@ -2059,7 +2059,7 @@ async function handleEditProject(e, projectId) {
         const budgetCurrency = document.getElementById('editProjectBudgetCurrency').value;
         if (existingBudget) {
           const amountChanged = Number(existingBudget.approvedAmount) !== Number(budgetAmount);
-          const currencyChanged = String(existingBudget.currency || 'INR').toUpperCase() !== String(budgetCurrency || 'INR').toUpperCase();
+          const currencyChanged = String(existingBudget.currency || 'MVR').toUpperCase() !== String(budgetCurrency || 'MVR').toUpperCase();
           const baselineChanged = amountChanged || currencyChanged;
           const revisionReason = baselineChanged ? prompt('Enter the reason for this approved budget/currency revision:') : null;
           if (baselineChanged && !revisionReason?.trim()) throw new Error('A revision reason is required to change the approved budget or currency.');
@@ -2083,7 +2083,7 @@ async function handleEditProject(e, projectId) {
     parentId: parentId ? String(parentId) : null,
     level,
     owner: window.__editingProject?.ownerName || '',
-    spent: idx !== -1 ? (projects[idx].spent || "₹0.00 Cr") : "₹0.00 Cr",
+    spent: idx !== -1 ? (projects[idx].spent || "MVR 0.00 Cr") : "MVR 0.00 Cr",
     health,
     healthBadge: health === 'On Track' || health === 'Completed' ? 'green' : health === 'At Risk' ? 'amber' : 'red',
     progress,
@@ -2333,7 +2333,7 @@ class UniversalTableEngine {
       const aNum = parseFloat(aCell.replace(/[^0-9.-]/g, ''));
       const bNum = parseFloat(bCell.replace(/[^0-9.-]/g, ''));
 
-      if (!isNaN(aNum) && !isNaN(bNum) && (aCell.includes('₹') || aCell.includes('%') || !isNaN(Number(aCell)))) {
+      if (!isNaN(aNum) && !isNaN(bNum) && (aCell.includes('MVR ') || aCell.includes('%') || !isNaN(Number(aCell)))) {
         return this.sortDir === 'asc' ? aNum - bNum : bNum - aNum;
       }
       return this.sortDir === 'asc' ? aCell.localeCompare(bCell) : bCell.localeCompare(aCell);

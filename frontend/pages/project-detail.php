@@ -32,8 +32,8 @@
     </div>
     <div class="kpi warning">
       <span class="kpi-label">Allocated Budget</span>
-      <span class="kpi-value">₹12.40 Cr</span>
-      <span class="kpi-sub">₹8.90 Cr Committed (71.7%)</span>
+      <span class="kpi-value">MVR 12.40 Cr</span>
+      <span class="kpi-sub">MVR 8.90 Cr Committed (71.7%)</span>
     </div>
     <div class="kpi">
       <span class="kpi-label">BOQ Items</span>
@@ -124,7 +124,7 @@
                     <small>GR-MEP-001-ELE · Level 2</small>
                   </td>
                   <td>Rahul Sharma</td>
-                  <td>₹5.10 Cr</td>
+                  <td>MVR 5.10 Cr</td>
                   <td><b>84%</b></td>
                   <td><span class="badge amber">84% Cost Alert</span></td>
                   <td>
@@ -137,7 +137,7 @@
                     <small>GR-MEP-001-HVAC · Level 2</small>
                   </td>
                   <td>Manoj Joshi</td>
-                  <td>₹4.80 Cr</td>
+                  <td>MVR 4.80 Cr</td>
                   <td><b>65%</b></td>
                   <td><span class="badge amber">At Risk (#ISS-1024)</span></td>
                   <td>
@@ -200,8 +200,8 @@
               <td><strong>Electrical Distribution & Substation</strong></td>
               <td><span class="badge blue">Level 2</span></td>
               <td>Rahul Sharma</td>
-              <td>₹5.10 Cr</td>
-              <td>₹4.30 Cr</td>
+              <td>MVR 5.10 Cr</td>
+              <td>MVR 4.30 Cr</td>
               <td>84%</td>
               <td><span class="badge amber">84% Cost Alert</span></td>
               <td><button class="btn sm" onclick="openEditProjectModal('PRJ-02-SUB1')"><i class="fa-solid fa-pen"></i> Edit</button></td>
@@ -245,8 +245,8 @@
               <td>XLPE Copper Cable 4C x 16 sqmm 1.1kV</td>
               <td>Meter</td>
               <td>5,000</td>
-              <td>₹420</td>
-              <td>₹21,00,000</td>
+              <td>MVR 420</td>
+              <td>MVR 21,00,000</td>
               <td>Polycab</td>
               <td><span class="badge green">Approved</span></td>
             </tr>

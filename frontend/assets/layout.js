@@ -236,6 +236,14 @@ function wtToggleSidebarCollapsed() {
 }
 
 document.addEventListener('click', (e) => {
+  const projectPicker = document.getElementById('globalProjectSelector');
+  if (projectPicker && !projectPicker.contains(e.target)) {
+    const projectMenu = document.getElementById('globalProjectMenu');
+    const projectButton = document.getElementById('globalProjectButton');
+    if (projectMenu) projectMenu.hidden = true;
+    if (projectButton) projectButton.setAttribute('aria-expanded', 'false');
+  }
+  if (!e.target.closest('.row-action-menu')) wtCloseRowActionMenus();
   if (e.target.closest('[data-wt-sidebar-toggle]')) {
     e.preventDefault();
     wtToggleSidebarCollapsed();
@@ -255,8 +263,100 @@ document.addEventListener('click', (e) => {
   }
 });
 
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.row-action-popover button')) wtCloseRowActionMenus();
+}, true);
+
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') wtCloseRowActionMenus();
   if (e.key === 'Escape') wtCloseNav();
+});
+
+function wtCloseRowActionMenus(except = null) {
+  document.querySelectorAll('.row-action-menu').forEach(wrap => {
+    if (wrap === except) return;
+    const button = wrap.querySelector('.row-action-trigger');
+    const menu = wrap.querySelector('.row-action-popover');
+    if (menu) menu.hidden = true;
+    if (button) button.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function wtToggleRowActions(button) {
+  const wrap = button.closest('.row-action-menu');
+  const menu = wrap?.querySelector('.row-action-popover');
+  if (!menu) return;
+  const open = menu.hidden;
+  wtCloseRowActionMenus(wrap);
+  menu.hidden = !open;
+  if (open) {
+    const rect = button.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const left = Math.max(8, Math.min(rect.right - menuRect.width, window.innerWidth - menuRect.width - 8));
+    const top = rect.bottom + menuRect.height + 8 <= window.innerHeight
+      ? rect.bottom + 4
+      : Math.max(8, rect.top - menuRect.height - 4);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+  button.setAttribute('aria-expanded', String(open));
+}
+
+function wtNormalizeTableSerialNumbers(table) {
+  if (!table) return;
+  const headers = [...(table.tHead?.rows[0]?.cells || [])];
+  const idIndex = headers.findIndex(cell => /^(id|sr no)$/i.test(cell.textContent.trim()));
+  if (idIndex < 0) return;
+  headers[idIndex].textContent = 'SR No';
+  [...(table.tBodies[0]?.rows || [])].forEach((row, index) => {
+    const cell = row.cells[idIndex];
+    if (!cell || cell.colSpan > 1 || row.querySelector('.dataTables_empty')) return;
+    if (!cell.dataset.recordId) cell.dataset.recordId = cell.textContent.trim();
+    cell.textContent = String(index + 1);
+  });
+}
+
+function wtNormalizeCurrencyContent(rootNode) {
+  if (!rootNode) return;
+  const replace = value => String(value).replace(/MVR /g, 'MVR ').replace(/MVR/g, 'MVR').replace(/Maldivian Rufiyaa/gi, 'Maldivian Rufiyaa');
+  const owner = rootNode.nodeType === Node.TEXT_NODE ? rootNode.parentElement : rootNode;
+  if (!owner) return;
+  const walker = document.createTreeWalker(owner, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach(node => { const next = replace(node.nodeValue); if (next !== node.nodeValue) node.nodeValue = next; });
+  const controls = owner.matches?.('input,option') ? [owner] : [];
+  owner.querySelectorAll?.('input,option').forEach(node => controls.push(node));
+  controls.forEach(node => {
+    if (node.tagName === 'OPTION' && node.value === 'MVR') node.value = 'MVR';
+    if (node.tagName === 'INPUT' && node.value === 'MVR') node.value = 'MVR';
+    for (const attr of ['placeholder', 'title', 'value']) {
+      if (node.hasAttribute(attr)) node.setAttribute(attr, replace(node.getAttribute(attr)));
+    }
+  });
+}
+
+function wtNormalizeRenderedApp(rootNode = document.body) {
+  if (!rootNode) return;
+  wtNormalizeCurrencyContent(rootNode);
+  const tables = rootNode.matches?.('table') ? [rootNode] : [];
+  rootNode.querySelectorAll?.('table').forEach(table => tables.push(table));
+  tables.forEach(wtNormalizeTableSerialNumbers);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  wtNormalizeRenderedApp();
+  const observer = new MutationObserver(records => {
+    const roots = new Set();
+    records.forEach(record => {
+      const table = record.target.nodeType === Node.ELEMENT_NODE ? record.target.closest('table') : record.target.parentElement?.closest('table');
+      if (table) wtNormalizeTableSerialNumbers(table);
+      record.addedNodes.forEach(node => { if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) roots.add(node); });
+      if (record.type === 'characterData') roots.add(record.target);
+    });
+    roots.forEach(wtNormalizeCurrencyContent);
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 });
 
 window.addEventListener('resize', () => {

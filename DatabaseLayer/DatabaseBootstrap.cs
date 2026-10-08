@@ -34,9 +34,16 @@ public static class DatabaseBootstrap
 
         await EnsurePermissionColumnsAsync(db, logger);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url TEXT NULL""");
+        await EnsureReportProjectCascadeAsync(db, logger);
         var budgetVersionCurrencyExists = await ColumnExistsAsync(db, "budget_versions", "currency");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS approver_id BIGINT NULL REFERENCES users(id) ON DELETE SET NULL""");
-        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'INR'""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'MVR'""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE projects ALTER COLUMN currency SET DEFAULT 'MVR'""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ALTER COLUMN currency SET DEFAULT 'MVR'""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ALTER COLUMN currency SET DEFAULT 'MVR'""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE projects SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE budgets SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET approver_id = created_by WHERE approver_id IS NULL AND created_by IS NOT NULL""");
         if (!budgetVersionCurrencyExists)
             await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions v SET currency = b.currency FROM budgets b WHERE v.budget_id = b.id""");
@@ -52,6 +59,28 @@ public static class DatabaseBootstrap
         await DbSeeder.SeedAsync(db);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
         logger.LogInformation("Database seed completed.");
+    }
+
+    private static async Task EnsureReportProjectCascadeAsync(AppDbContext db, ILogger logger)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'reports_project_id_fkey'
+                      AND pg_get_constraintdef(oid) NOT LIKE '%ON DELETE CASCADE%'
+                ) THEN
+                    ALTER TABLE reports DROP CONSTRAINT reports_project_id_fkey;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'reports_project_id_fkey') THEN
+                    ALTER TABLE reports ADD CONSTRAINT reports_project_id_fkey
+                        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+                END IF;
+            END $$;
+            """);
+        logger.LogInformation("Ensured project deletion cascades to its reports.");
     }
 
     private static async Task EnsureItemMasterColumnsAsync(AppDbContext db)

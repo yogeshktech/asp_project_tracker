@@ -63,7 +63,7 @@
             <td><span class="badge amber">Finance Controller</span></td>
             <td><span class="badge green">APPROVE</span></td>
             <td>BOQ Baseline</td>
-            <td>Approved BOQ Version v2.1 for Grand Oasis Resort MEP (₹8.68 Cr)</td>
+            <td>Approved BOQ Version v2.1 for Grand Oasis Resort MEP (MVR 8.68 Cr)</td>
             <td>192.168.1.92</td>
           </tr>
         </tbody>
