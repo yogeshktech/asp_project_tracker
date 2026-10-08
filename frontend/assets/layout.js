@@ -199,7 +199,6 @@ function wtBuildTopbar() {
           <option value="light" ${currentTheme === 'light' ? 'selected' : ''}>🟣 Amethyst</option>
         </select>
       </div>
-      <span class="badge green" style="font-size:11px; padding:4px 10px;"><i class="fa-solid fa-circle-dot" style="font-size:9px;"></i> Live API</span>
       <a href="notifications.html" class="header-action-btn" title="Notifications & Escalations"><i class="fa-solid fa-bell"></i></a>
       <a href="login.html" class="header-action-btn" title="Sign Out" style="color:#ef4444;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>`;

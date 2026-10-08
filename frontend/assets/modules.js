@@ -32,7 +32,7 @@
       <div style="min-width:0;flex:1">
         
         <h1>${esc(title)}</h1>
-        <p>${esc(sub)}</p>
+        ${sub ? `<p>${esc(sub)}</p>` : ''}
       </div>
       <div class="head-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${actionsHtml}</div>
     </div>`;
@@ -1322,13 +1322,12 @@
               <button class="btn sm" id="btnViewTable" onclick="WTPages.switchProjView('table')">▤ Table List View</button>
               <button class="btn sm" id="btnViewCards" onclick="WTPages.switchProjView('cards')">▦ Card Grid View</button>
             </div>
+              <span id="projectSelectionCount" style="font-size:12px;color:var(--text-muted)">0 selected</span>
+              <button class="btn sm danger" id="deleteSelectedProjectsBtn" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
           </div>
         </div>
 
-        <div class="card" style="padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:flex-end;gap:10px">
-          <span id="projectSelectionCount" style="font-size:12px;color:var(--text-muted)">0 selected</span>
-          <button class="btn sm danger" id="deleteSelectedProjectsBtn" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
-        </div>
+        
 
         <!-- VIEW 1: Interactive Tree View -->
         <div id="wbsTreeView" class="tree-container">
@@ -1453,7 +1452,7 @@ WTPages.switchProjView = function(view) {
           }
         });
 
-        function buildTreeNodeHtml(node, depth = 1, parentName = '') {
+        function buildTreeNodeHtml(node, depth = 1) {
           const hasChildren = node.children && node.children.length > 0;
           const prog = node.progress || (node.progressPercent || 0);
           const progColor = prog >= 80 ? 'green' : (prog >= 50 ? 'blue' : 'amber');
@@ -1461,23 +1460,18 @@ WTPages.switchProjView = function(view) {
           const icon = depth === 1 ? '🏗️' : (depth === 2 ? '↳ 🏢' : (depth === 3 ? '↳ ↳ 🔨' : '↳ ↳ ↳ ⚡'));
 
           let levelPill = '';
-          let relationTxt = '';
           let addBtnTxt = '';
           if (depth === 1) {
             levelPill = '<span class="tree-level-pill lvl-1">🔵 Level 1 · Root Parent</span>';
-            relationTxt = 'Root Major Project';
             addBtnTxt = '+ Sub-Project (L2)';
           } else if (depth === 2) {
             levelPill = '<span class="tree-level-pill lvl-2">🟣 Level 2 · Sub-Project</span>';
-            relationTxt = `↳ Child of Level 1: <strong>${esc(parentName)}</strong>`;
             addBtnTxt = '+ Work Package (L3)';
           } else if (depth === 3) {
             levelPill = '<span class="tree-level-pill lvl-3">🟢 Level 3 · Child Package</span>';
-            relationTxt = `↳ ↳ Child of Level 2: <strong>${esc(parentName)}</strong>`;
             addBtnTxt = '+ Sub-Task (L4)';
           } else {
             levelPill = `<span class="tree-level-pill lvl-4">🟠 Level ${depth} · N-th Term Task</span>`;
-            relationTxt = `↳ ↳ ↳ Child of Level ${depth - 1}: <strong>${esc(parentName)}</strong>`;
             addBtnTxt = '+ Child Task';
           }
 
@@ -1492,7 +1486,6 @@ WTPages.switchProjView = function(view) {
                     ${levelPill}
                     <strong style="font-size:14px;">${esc(node.name || node.title)}</strong>
                   </div>
-                  <small style="color:var(--text-muted); font-size:11.5px;">${relationTxt} · WBS: <code>${esc(node.code || '')}</code> · Discipline: <b>${esc(node.discipline || node.disc || 'General')}</b> · Lead: <b>${esc(node.owner || node.ownerName || 'Lead PM')}</b> · Budget: <b>${esc(node.projectBudgetDisplay)}</b></small>
                 </div>
                 <div class="tree-meta">
                   <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>
@@ -1504,7 +1497,7 @@ WTPages.switchProjView = function(view) {
                   <a href="project-detail.html" class="btn sm" title="Open project details" onclick="event.stopPropagation(); localStorage.setItem('WISETRACK_SELECTED_PROJECT','${node.id}');">Details</a>
                 </div>
               </div>
-              ${hasChildren ? `<div class="tree-children">${node.children.map(c => buildTreeNodeHtml(c, depth + 1, node.name || node.title)).join('')}</div>` : ''}
+              ${hasChildren ? `<div class="tree-children">${node.children.map(c => buildTreeNodeHtml(c, depth + 1)).join('')}</div>` : ''}
             </div>
           `;
         }
@@ -1513,7 +1506,7 @@ WTPages.switchProjView = function(view) {
           <div class="tree-node">
             
           </div>
-          ${rootProjects.map(rp => buildTreeNodeHtml(rp, 1, matchedResort.name || 'Root')).join('')}
+          ${rootProjects.map(rp => buildTreeNodeHtml(rp)).join('')}
         `;
       }
 
@@ -1673,7 +1666,7 @@ WTPages.switchProjView = function(view) {
     const el = root();
     let pid = await selectedProjectId();
 
-    el.innerHTML = pageHead('Project Dashboard', 'Project dates, delivery progress, cost position, activity, risks and actions')
+    el.innerHTML = pageHead('Project Dashboard', '')
       + `<div class="grid g2">
           <div class="card" id="projDetailBox">Loading project workspace...</div>
           <div class="card">
@@ -2815,7 +2808,7 @@ WTPages.switchProjView = function(view) {
       ? `${selectedMeta.name || selectedMeta.title || 'Project'} (${selectedMeta.code || '#' + pid})`
       : (pid ? `Project #${pid}` : 'No project');
 
-    el.innerHTML = pageHead(title, `Showing ${selectedLabel} only — other projects stay hidden`,
+    el.innerHTML = pageHead(title, `Showing ${selectedLabel} `,
       (kind === 'milestones'
         ? ` <button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>
             <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>
@@ -3689,7 +3682,7 @@ WTPages.switchProjView = function(view) {
   async function pageIssues() {
     const el = root();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Issues & Escalation', 'Selected project only — other projects’ issues stay hidden',
+    el.innerHTML = pageHead('Issues & Escalation', '',
       ` <button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>`)
       + tableWrap(['ID', 'What', 'Where', 'When', 'Impact', 'Reported By', 'Priority', 'Status', 'Actions'], 'issuesBody');
     if (!pid) {
@@ -3712,12 +3705,12 @@ WTPages.switchProjView = function(view) {
           <td>${esc(i.reporter?.fullName || i.reporterName || '—')}</td>
           <td>${esc(i.priority?.name || i.priorityName || i.priority || '—')}</td>
           <td>${esc(i.status || '—')}</td>
-          <td class="table-actions">
-            <button class="btn sm" onclick="WTPages.commentIssue(${i.id})">Comment</button>
-            <button class="btn sm danger" onclick="WTPages.escalateIssue(${i.id})">Escalate</button>
-            ${canUpdateIssues ? `<button class="btn sm" title="Edit issue" aria-label="Edit issue" onclick="WTPages.openIssueModal(${i.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
-            ${canDeleteIssues ? `<button class="btn sm danger" title="Delete issue" aria-label="Delete issue" onclick="WTPages.deleteIssue(${i.id}, '${esc(i.title || i.what)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
-          </td>
+          <td class="table-actions">${taskRowActionMenu(`
+            <button class="btn sm" onclick="WTPages.commentIssue(${i.id})"><i class="fa-regular fa-comment"></i> Comment</button>
+            <button class="btn sm danger" onclick="WTPages.escalateIssue(${i.id})"><i class="fa-solid fa-arrow-up"></i> Escalate</button>
+            ${canUpdateIssues ? `<button class="btn sm" title="Edit issue" onclick="WTPages.openIssueModal(${i.id})"><i class="fa-solid fa-pen"></i> Edit</button>` : ''}
+            ${canDeleteIssues ? `<button class="btn sm danger" title="Delete issue" onclick="WTPages.deleteIssue(${i.id}, '${esc(i.title || i.what)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+          `)}</td>
         </tr>`).join('') : emptyRow(9, 'No issues');
     } catch (e) { $('#issuesBody').innerHTML = errRow(9, e); }
   }

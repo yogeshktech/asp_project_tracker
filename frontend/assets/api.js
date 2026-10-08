@@ -4,9 +4,11 @@ const API_BASE = (function () {
   const customBase = localStorage.getItem('WISETRACK_API_BASE');
   const isAppPath = location.pathname === '/app' || location.pathname.startsWith('/app/');
 
-  // Keep localhost development requests on the running ASP.NET app, even if an
-  // older browser session stored the production API as a custom base.
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return `${origin}/api`;
+  // Local frontend previews should use the deployed API, so developers can
+  // verify against live data without connecting their local server to PostgreSQL.
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'https://demo-project-tracker.workarya.com/api';
+  }
 
   // The deployed app and API share an origin. Prefer it over a stale browser
   // override so page data requests go to the API serving this frontend.
