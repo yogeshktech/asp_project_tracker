@@ -158,7 +158,19 @@ function setSelectedProjectId(projectId) {
 function onGlobalProjectChange(projectId) {
   setSelectedProjectId(projectId);
   if (typeof showToast === 'function') showToast('Showing this project only', 'info');
-  setTimeout(() => location.reload(), 150);
+
+  // Project pages can be opened with an explicit projectId/id query string.
+  // modules.js applies that value on every boot, so update it along with
+  // localStorage or a reload would silently restore the old project.
+  const url = new URL(window.location.href);
+  let queryChanged = false;
+  for (const key of ['projectId', 'id']) {
+    if (url.searchParams.has(key)) {
+      url.searchParams.set(key, String(projectId));
+      queryChanged = true;
+    }
+  }
+  window.location.assign(queryChanged ? url.toString() : window.location.href);
 }
 
 // Role Switcher Handler
