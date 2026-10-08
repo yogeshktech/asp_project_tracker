@@ -3,14 +3,13 @@ const API_BASE = (function () {
   const { hostname, origin, protocol } = window.location;
   const customBase = localStorage.getItem('WISETRACK_API_BASE');
 
-  // Keep the UI local during development while sending API requests to the live backend.
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'https://demo-project-tracker.workarya.com/api';
-  }
+  // Keep localhost development requests on the running ASP.NET app, even if an
+  // older browser session stored the production API as a custom base.
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return `${origin}/api`;
 
   if (customBase) return customBase.replace(/\/+$/, '');
 
-  // Prefer same-origin API when app is served by the ASP.NET host (/app/...)
+  // The ASP.NET app and API share the local origin during development.
   if (protocol === 'http:' || protocol === 'https:') {
     if (
       hostname === 'localhost' ||
@@ -38,33 +37,52 @@ const WisetrackAPI = {
 
   async _fetch(url, options = {}) {
     const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
-    const res = await fetch(`${API_BASE}${url}`, {
-      ...options,
-      headers: { ...this._headers(!isForm), ...(options.headers || {}) }
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    if (options.signal) options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${url}`, {
+        ...options,
+        signal: controller.signal,
+        headers: { ...this._headers(!isForm), ...(options.headers || {}) }
+      });
 
-    if (res.status === 401) {
-      localStorage.removeItem('WISETRACK_TOKEN');
-      if (!location.pathname.endsWith('login.html')) {
-        location.href = 'login.html';
+      if (res.status === 401) {
+        localStorage.removeItem('WISETRACK_TOKEN');
+        if (!location.pathname.endsWith('login.html')) {
+          location.href = 'login.html';
+        }
+        throw new Error('Unauthorized — please login again');
       }
-      throw new Error('Unauthorized — please login again');
-    }
 
-    if (res.status === 204) return null;
+      if (res.status === 204) return null;
 
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      let msg = data?.message;
-      if (!msg && data?.errors && typeof data.errors === 'object') {
-        msg = Object.entries(data.errors)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
-          .join(' | ');
+      let data;
+      try { data = await res.json(); }
+      catch (error) {
+        if (error.name === 'AbortError') throw error;
+        data = null;
       }
-      if (!msg) msg = data?.title || `API error ${res.status}`;
-      throw new Error(msg);
+      if (!res.ok) {
+        let msg = data?.message;
+        if (!msg && data?.errors && typeof data.errors === 'object') {
+          msg = Object.entries(data.errors)
+            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+            .join(' | ');
+        }
+        if (!msg) msg = data?.title || `API error ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    } catch (error) {
+      if (controller.signal.aborted && !options.signal?.aborted) {
+        throw new Error('API request timed out after 20 seconds. Please retry.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-    return data;
   },
 
   get(url) { return this._fetch(url); },

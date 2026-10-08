@@ -102,8 +102,8 @@
       || projects[0];
   }
 
-  async function selectedProjectId() {
-    const projects = await loadProjectsList();
+  async function selectedProjectId(projects = null) {
+    projects = projects || await loadProjectsList();
     if (!projects.length) {
       localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
       return null;
@@ -2790,11 +2790,27 @@ WTPages.switchProjView = function(view) {
   }
 
   // ---------- TASKS / MILESTONES / PLANNING / DSR ----------
+  async function loadTaskEvidenceInBackground(tasks) {
+    const pending = [...tasks];
+    const worker = async () => {
+      while (pending.length) {
+        const task = pending.shift();
+        try {
+          const files = await WisetrackAPI.getTaskFiles(task.id);
+          const slot = document.getElementById(`taskFiles-${Number(task.id)}`);
+          if (slot && Array.isArray(files)) slot.innerHTML = files.map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ');
+        } catch (_) { /* File links must not block task rows. */ }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker));
+  }
+
   async function pageTasks(kind) {
     const el = root();
-    const pid = await selectedProjectId();
+    const projects = await loadProjectsList();
+    const pid = await selectedProjectId(projects);
     const title = kind === 'milestones' ? 'Milestones' : kind === 'daily' ? 'Daily Site Progress Report (DSR)' : 'Tasks & Planning';
-    const selectedMeta = (await loadProjectsList()).find(p => String(p.id) === String(pid));
+    const selectedMeta = projects.find(p => String(p.id) === String(pid));
     const selectedLabel = selectedMeta
       ? `${selectedMeta.name || selectedMeta.title || 'Project'} (${selectedMeta.code || '#' + pid})`
       : (pid ? `Project #${pid}` : 'No project');
@@ -2835,7 +2851,6 @@ WTPages.switchProjView = function(view) {
     }
     try {
       const scopeIds = [Number(pid)];
-      const projects = await loadProjectsList();
       const nameOf = (id) => {
         const p = projects.find(x => Number(x.id) === Number(id));
         return p ? (p.code || p.name || `#${id}`) : `#${id}`;
@@ -2871,18 +2886,17 @@ WTPages.switchProjView = function(view) {
           </tr>`;
         }).join('') : emptyRow(6, `No milestones for ${selectedLabel}. Other projects are hidden.`);
       } else {
-        const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id).catch(() => [])));
+        const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id)));
         const tasks = filterRowsForProject(
           batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] }))),
           pid
         );
-        const projectIssues = kind === 'planning' ? await WisetrackAPI.getIssues(Number(pid)).catch(() => []) : [];
+        const [projectIssues, users] = await Promise.all([
+          kind === 'planning' ? WisetrackAPI.getIssues(Number(pid)).catch(() => []) : Promise.resolve([]),
+          WisetrackAPI.getUsers().catch(() => [])
+        ]);
         const openIssueCount = (projectIssues || []).filter(issue => !/closed|resolved/i.test(String(issue.status || issue.Status || ''))).length;
-        const taskFilesById = new Map(await Promise.all(tasks.map(async task => [
-          Number(task.id), await WisetrackAPI.getTaskFiles(task.id).catch(() => [])
-        ])));
         if (typeof wtApplyTaskDisplayCodes === 'function') wtApplyTaskDisplayCodes(tasks);
-        const users = await WisetrackAPI.getUsers().catch(() => []);
         const userName = (id) => {
           if (!id) return 'Unassigned';
           const u = (users || []).find(x => Number(x.id) === Number(id));
@@ -2960,7 +2974,7 @@ WTPages.switchProjView = function(view) {
                 <small style="display:block;color:var(--text-muted);">${esc(t.startDate || t.StartDate || 'No start date')} → ${esc(t.dueDate || t.DueDate || 'No due date')}</small>
                 ${(t.remarks || t.Remarks) ? `<small style="display:block;color:var(--text-muted);">Latest remark: ${esc(t.remarks || t.Remarks)}</small>` : ''}` : ''}
                 ${(t.completionEvidence || t.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted);">Evidence: ${esc(t.completionEvidence || t.CompletionEvidence)}</small>` : ''}
-                ${(taskFilesById.get(Number(t.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}
+                <span id="taskFiles-${Number(t.id)}"></span>
                 ${kind === 'planning' ? '' : wtDepLineHtml(t)}
               </td>
               ${nestCells(0, dash)}
@@ -2999,6 +3013,8 @@ WTPages.switchProjView = function(view) {
           }).join('') : '';
           return [parentRow, nestedRows];
         }).join('') : emptyRow(nestCols, `No tasks for ${selectedLabel}. Other projects are hidden.`);
+
+        if (kind === 'planning' && tasks.length) void loadTaskEvidenceInBackground(tasks);
 
         if (kind === 'daily') {
           if (typeof renderDailyReportCharts === 'function') {
