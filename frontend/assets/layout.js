@@ -307,12 +307,16 @@ function wtNormalizeTableSerialNumbers(table) {
   const headers = [...(table.tHead?.rows[0]?.cells || [])];
   const idIndex = headers.findIndex(cell => /^(id|sr no)$/i.test(cell.textContent.trim()));
   if (idIndex < 0) return;
-  headers[idIndex].textContent = 'SR No';
+  const header = headers[idIndex];
+  if (header.textContent.trim() !== 'SR No') header.textContent = 'SR No';
   [...(table.tBodies[0]?.rows || [])].forEach((row, index) => {
     const cell = row.cells[idIndex];
     if (!cell || cell.colSpan > 1 || row.querySelector('.dataTables_empty')) return;
-    if (!cell.dataset.recordId) cell.dataset.recordId = cell.textContent.trim();
-    cell.textContent = String(index + 1);
+    const serial = String(index + 1);
+    const current = cell.textContent.trim();
+    if (/^loading/i.test(current)) return;
+    if (!cell.dataset.recordId) cell.dataset.recordId = current;
+    if (current !== serial) cell.textContent = serial;
   });
 }
 
@@ -346,15 +350,25 @@ function wtNormalizeRenderedApp(rootNode = document.body) {
 
 document.addEventListener('DOMContentLoaded', () => {
   wtNormalizeRenderedApp();
+  let normalizing = false;
   const observer = new MutationObserver(records => {
+    if (normalizing) return;
+    const tables = new Set();
     const roots = new Set();
     records.forEach(record => {
-      const table = record.target.nodeType === Node.ELEMENT_NODE ? record.target.closest('table') : record.target.parentElement?.closest('table');
-      if (table) wtNormalizeTableSerialNumbers(table);
+      const element = record.target.nodeType === Node.ELEMENT_NODE ? record.target : record.target.parentElement;
+      const table = element?.closest?.('table');
+      if (table) tables.add(table);
       record.addedNodes.forEach(node => { if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) roots.add(node); });
       if (record.type === 'characterData') roots.add(record.target);
     });
-    roots.forEach(wtNormalizeCurrencyContent);
+    normalizing = true;
+    try {
+      tables.forEach(wtNormalizeTableSerialNumbers);
+      roots.forEach(wtNormalizeCurrencyContent);
+    } finally {
+      normalizing = false;
+    }
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 });
