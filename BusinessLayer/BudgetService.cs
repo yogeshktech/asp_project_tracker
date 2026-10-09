@@ -49,6 +49,8 @@ public class BudgetService : IBudgetService
     public async Task<Budget> CreateAsync(CreateBudgetRequest request, long? userId)
     {
         if (request.ApprovedAmount <= 0) throw new InvalidOperationException("Approved budget must be greater than zero.");
+        var projectCurrency = await _db.Projects.Where(p => p.Id == request.ProjectId).Select(p => p.Currency).SingleOrDefaultAsync()
+            ?? throw new InvalidOperationException("Project not found.");
         if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Budgets"))
             throw new UnauthorizedAccessException("No permission.");
 
@@ -58,7 +60,7 @@ public class BudgetService : IBudgetService
             ProjectId = request.ProjectId,
             Name = request.Name,
             ApprovedAmount = request.ApprovedAmount,
-            Currency = request.Currency,
+            Currency = projectCurrency,
             RagAmberPercent = request.RagAmberPercent,
             RagRedPercent = request.RagRedPercent,
             Status = "Approved",
@@ -69,7 +71,7 @@ public class BudgetService : IBudgetService
             BudgetId = budget.Id,
             VersionNo = 1,
             TotalAmount = request.ApprovedAmount,
-            Currency = request.Currency,
+            Currency = projectCurrency,
             Remarks = "Initial approved baseline",
             CreatedBy = userId,
             ApproverId = userId,
@@ -83,25 +85,26 @@ public class BudgetService : IBudgetService
     public async Task<Budget> UpdateAsync(long budgetId, UpdateBudgetRequest request, long? userId)
     {
         var budget = await _repository.GetAsync(budgetId) ?? throw new InvalidOperationException("Budget not found");
+        var projectCurrency = await _db.Projects.Where(p => p.Id == budget.ProjectId).Select(p => p.Currency).SingleAsync();
         if (request.ApprovedAmount <= 0) throw new InvalidOperationException("Approved budget must be greater than zero.");
         if (userId.HasValue && !await _permissions.CanUpdateModuleAsync(userId.Value, budget.ProjectId, "Budgets"))
             throw new UnauthorizedAccessException("No update permission on budget.");
         var allocated = await _db.BudgetAllocations.Where(a => a.BudgetId == budgetId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
         if (request.ApprovedAmount < allocated) throw new InvalidOperationException("Approved budget cannot be lower than the amount already allocated.");
         var amountChanged = request.ApprovedAmount != budget.ApprovedAmount;
-        var baselineChanged = amountChanged || !string.Equals(request.Currency, budget.Currency, StringComparison.OrdinalIgnoreCase);
+        var baselineChanged = amountChanged || !string.Equals(projectCurrency, budget.Currency, StringComparison.OrdinalIgnoreCase);
         if (baselineChanged && string.IsNullOrWhiteSpace(request.Remarks))
             throw new InvalidOperationException("A reason is required when changing the approved budget or its currency.");
         var next = (budget.Versions.Count == 0 ? 0 : budget.Versions.Max(v => v.VersionNo)) + 1;
         budget.Name = request.Name;
         budget.ApprovedAmount = request.ApprovedAmount;
-        budget.Currency = request.Currency;
+        budget.Currency = projectCurrency;
         budget.UpdatedAt = DateTime.UtcNow;
         await using var transaction = await _db.Database.BeginTransactionAsync();
         await _repository.UpdateAsync(budget);
         if (baselineChanged) await _repository.AddVersionAsync(new BudgetVersion
         {
-            BudgetId = budget.Id, VersionNo = next, TotalAmount = request.ApprovedAmount, Currency = request.Currency,
+            BudgetId = budget.Id, VersionNo = next, TotalAmount = request.ApprovedAmount, Currency = projectCurrency,
             Remarks = request.Remarks!.Trim(), CreatedBy = userId, ApproverId = userId, CreatedAt = DateTime.UtcNow
         });
         await transaction.CommitAsync();

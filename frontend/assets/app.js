@@ -355,6 +355,7 @@ async function updateParentDropdown(resortId) {
   if (parentSel) {
     parentSel.innerHTML = parentOptions;
     updateLevelPreview(parentSel.value);
+    if (typeof syncCreateProjectCurrency === 'function') syncCreateProjectCurrency(parentSel.value);
   }
 }
 
@@ -1948,13 +1949,7 @@ async function openEditProjectModal(projectId) {
         </div>
         <div class="field"><label>Client</label><input type="text" id="editProjectClient" value="${escapeHtmlAttr(p.clientName || '')}"></div>
         <div class="field"><label>Sponsor</label><input type="text" id="editProjectSponsor" value="${escapeHtmlAttr(p.sponsor || '')}"></div>
-        <div class="field"><label>Currency</label><select id="editProjectCurrency"><option value="MVR" ${(p.currency || 'MVR') === 'MVR' ? 'selected' : ''}>MVR</option><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${p.currency === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
-        <div class="field">
-          <label>Allocated Budget *</label>
-          <input type="number" min="0" step="0.01" id="editProjectBudget" value="${escapeHtmlAttr(p.budget || '0')}" required>
-        </div>
-        <div class="field"><label>Budget Name</label><input type="text" id="editProjectBudgetName" value="${escapeHtmlAttr(selectedBudget?.name || 'Initial Project Budget')}"></div>
-        <div class="field"><label>Budget Currency</label><select id="editProjectBudgetCurrency"><option value="MVR" ${(selectedBudget?.currency || p.currency || 'MVR') === 'MVR' ? 'selected' : ''}>MVR</option><option value="USD" ${(selectedBudget?.currency || p.currency) === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${(selectedBudget?.currency || p.currency) === 'EUR' ? 'selected' : ''}>EUR</option></select></div>
+        <div class="field"><label>Project Currency</label><select id="editProjectCurrency" ${p.parentProjectId ? 'disabled' : ''}><option value="MVR" ${(p.currency || 'MVR') === 'MVR' ? 'selected' : ''}>MVR</option><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${p.currency === 'EUR' ? 'selected' : ''}>EUR</option></select>${p.parentProjectId ? '<small class="card-subtitle">Inherited from parent project.</small>' : ''}</div>
         <div class="field">
           <label>Project Health / Status *</label>
           <select id="editProjectHealth">
@@ -2006,7 +2001,6 @@ async function handleEditProject(e, projectId) {
   const resortId = document.getElementById('editProjectResortId').value;
   const parentId = document.getElementById('editProjectParentId').value || null;
   const ownerId = Number(document.getElementById('editProjectOwnerId')?.value || 0) || null;
-  const budgetAmount = Number(document.getElementById('editProjectBudget')?.value || 0);
   const health = document.getElementById('editProjectHealth').value;
   const progress = parseInt(document.getElementById('editProjectProgress').value) || 0;
   const startDate = document.getElementById('editProjectStartDate').value || "2026-09-01";
@@ -2054,18 +2048,6 @@ async function handleEditProject(e, projectId) {
         for (const member of originalTeam) if (!desiredTeam.has(Number(member.userId))) await WisetrackAPI.removeTeamMember(numId, member.userId);
         for (const memberId of desiredTeam)
           await WisetrackAPI.assignTeamMember(numId, { userId: memberId, teamRole: memberId === ownerId ? 'Owner' : 'Member' });
-        const existingBudget = window.__editingBudget;
-        const budgetName = document.getElementById('editProjectBudgetName').value.trim() || 'Initial Project Budget';
-        const budgetCurrency = document.getElementById('editProjectBudgetCurrency').value;
-        if (existingBudget) {
-          const amountChanged = Number(existingBudget.approvedAmount) !== Number(budgetAmount);
-          const currencyChanged = String(existingBudget.currency || 'MVR').toUpperCase() !== String(budgetCurrency || 'MVR').toUpperCase();
-          const baselineChanged = amountChanged || currencyChanged;
-          const revisionReason = baselineChanged ? prompt('Enter the reason for this approved budget/currency revision:') : null;
-          if (baselineChanged && !revisionReason?.trim()) throw new Error('A revision reason is required to change the approved budget or currency.');
-          await WisetrackAPI.updateBudget(existingBudget.id, { name: budgetName, approvedAmount: budgetAmount, currency: budgetCurrency, remarks: revisionReason?.trim() || null });
-        }
-        else if (budgetAmount > 0) await WisetrackAPI.createBudget({ projectId: numId, name: budgetName, approvedAmount: budgetAmount, currency: budgetCurrency });
         for (const file of [...(document.getElementById('editProjectAttachments')?.files || [])]) await WisetrackAPI.uploadFile(file, 'Project', numId);
       }
     }

@@ -232,6 +232,12 @@ public class ProjectService : IProjectService
 
     public async Task<ProjectResponseDto> CreateAsync(long userId, CreateProjectDto dto)
     {
+        if (dto.ParentProjectId.HasValue)
+        {
+            var parentProject = await _repository.GetProjectAsync(dto.ParentProjectId.Value)
+                ?? throw new InvalidOperationException("Parent project not found.");
+            dto.Currency = parentProject.Currency;
+        }
         if (!await _permissions.IsAdminAsync(userId) && dto.ParentProjectId.HasValue &&
             !await _permissions.CanEditModuleAsync(userId, dto.ParentProjectId.Value, "Projects"))
             throw new UnauthorizedAccessException("No edit permission on parent project.");
@@ -272,6 +278,17 @@ public class ProjectService : IProjectService
     {
         var project = await _repository.GetProjectAsync(id);
         if (project == null) return null;
+        if (dto.ParentProjectId.HasValue)
+        {
+            var parentProject = await _repository.GetProjectAsync(dto.ParentProjectId.Value)
+                ?? throw new InvalidOperationException("Parent project not found.");
+            dto.Currency = parentProject.Currency;
+        }
+        else if (!string.Equals(project.Currency, dto.Currency, StringComparison.OrdinalIgnoreCase) &&
+                 (await _db.Projects.AnyAsync(p => p.ParentProjectId == id) || await _db.Budgets.AnyAsync(b => b.ProjectId == id)))
+        {
+            throw new InvalidOperationException("Project currency cannot be changed after child projects or budgets have been added. Create a separate root project for another currency.");
+        }
         var fieldRights = await _permissions.GetProjectFieldPermissionsAsync(userId, id);
         var moduleUpdate = await _permissions.CanUpdateModuleAsync(userId, id, "Projects");
         var changedFields = ProjectFieldsChanged(project, dto);

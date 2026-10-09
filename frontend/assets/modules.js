@@ -1491,7 +1491,6 @@ WTPages.switchProjView = function(view) {
                   <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>
                   <span>${prog}%</span>
                   <span class="badge ${node.healthBadge || (prog>=80?'green':prog>=50?'blue':'amber')}">${esc(node.health || node.status || 'Active')}</span>
-                  ${(!wtCan || wtCan('Budgets', 'edit', Number(node.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget to child projects and view history" onclick="event.stopPropagation(); WTPages.openProjectBudgetAllocation(${Number(node.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate Budget</button>` : ''}
                   <button class="btn sm primary" title="Add Child Sub-Package" onclick="event.stopPropagation(); openCreateProjectModal('${node.id}');"><i class="fa-solid fa-plus"></i> ${addBtnTxt}</button>
                   <button class="btn sm" title="Edit Package" onclick="event.stopPropagation(); openEditProjectModal('${node.id}');"><i class="fa-solid fa-pen"></i></button>
                   <button class="btn sm danger" title="Delete Package" onclick="event.stopPropagation(); confirmDeleteProject('${node.id}');"><i class="fa-solid fa-trash"></i></button>
@@ -1545,7 +1544,6 @@ WTPages.switchProjView = function(view) {
             <td><span class="badge ${p.healthBadge || 'green'}">${esc(p.health || p.status || 'On Track')}</span></td>
             <td>
               <div class="btn-group">
-                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget and view history" aria-label="Allocate budget and view history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate</button>` : ''}
                 <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
                 <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
                 <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>
@@ -1581,7 +1579,6 @@ WTPages.switchProjView = function(view) {
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:10px;">
               <div class="btn-group">
-                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget and view history" aria-label="Allocate budget and view history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate</button>` : ''}
                 <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
                 <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
                 <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>
@@ -1631,7 +1628,6 @@ WTPages.switchProjView = function(view) {
             <div class="form-grid">
               <div class="field full"><label>Child project *</label><select id="projectBudgetTarget" required>${childOptions}</select></div>
               <div class="field"><label>Amount (${esc(currency)}) *</label><input id="projectBudgetAmount" type="number" min="0.01" max="${Number(available)}" step="0.01" required></div>
-              <div class="field"><label>Allocation date</label><input type="text" value="${esc(new Date().toLocaleString())}" readonly></div>
               <div class="field full"><label>Remarks</label><textarea id="projectBudgetRemarks" rows="2" placeholder="Reason or note for this allocation"></textarea></div>
             </div>
             <div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Close</button><button type="submit" class="btn primary" ${Number(available) <= 0 ? 'disabled' : ''}>Allocate budget</button></div>
@@ -2091,8 +2087,34 @@ WTPages.switchProjView = function(view) {
   async function pageBudget() {
     const el = root();
     const pid = await selectedProjectId();
+    if (!WTPages.openProjectBudgetAllocation) {
+      WTPages.openProjectBudgetAllocation = async (projectId) => {
+        try {
+          const summary = await WisetrackAPI.getProjectBudgetAllocationSummary(projectId);
+          const children = summary.children || summary.Children || [];
+          const history = summary.history || summary.History || [];
+          const currency = summary.currency || summary.Currency || 'MVR';
+          const total = summary.totalFunding ?? summary.TotalFunding ?? 0;
+          const allocated = summary.allocatedToChildren ?? summary.AllocatedToChildren ?? 0;
+          const available = summary.available ?? summary.Available ?? 0;
+          const rows = history.map(item => `<tr><td>${esc(item.fromProjectName || item.FromProjectName || 'Project')} → ${esc(item.toProjectName || item.ToProjectName || 'Project')}</td><td>${esc(formatBudgetValue(item.amount ?? item.Amount ?? 0, currency))}</td><td>${esc(item.remarks || item.Remarks || '—')}</td><td>${esc(item.createdByName || item.CreatedByName || 'User')}</td><td>${item.createdAt || item.CreatedAt ? esc(new Date(item.createdAt || item.CreatedAt).toLocaleString()) : '—'}</td></tr>`).join('');
+          const options = children.map(child => `<option value="${Number(child.id)}">${esc(child.name || child.title)}${child.code ? ` (${esc(child.code)})` : ''}</option>`).join('');
+          openModal('Project Budget Distribution', `<div class="project-budget-summary"><div><small>Total funding</small><strong>${esc(formatBudgetValue(total, currency))}</strong></div><div><small>Allocated to children</small><strong>${esc(formatBudgetValue(allocated, currency))}</strong></div><div class="available"><small>Available balance</small><strong>${esc(formatBudgetValue(available, currency))}</strong></div></div>
+            ${children.length ? `<form onsubmit="WTPages.saveProjectBudgetAllocation(event, ${Number(projectId)})"><div class="form-grid"><div class="field full"><label>Child project *</label><select id="projectBudgetTarget" required>${options}</select></div><div class="field"><label>Amount (${esc(currency)}) *</label><input id="projectBudgetAmount" type="number" min="0.01" max="${Number(available)}" step="0.01" required></div><div class="field full"><label>Remarks</label><textarea id="projectBudgetRemarks" rows="2"></textarea></div></div><div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Close</button><button type="submit" class="btn primary" ${Number(available) <= 0 ? 'disabled' : ''}>Allocate budget</button></div></form>` : '<p>Create a child project first to allocate budget to it.</p>'}
+            <h3 style="margin:18px 0 8px">Allocation history</h3><div class="table-wrap"><table class="table"><thead><tr><th>From → To</th><th>Amount</th><th>Remarks</th><th>By</th><th>Date & time</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No allocation history yet.</td></tr>'}</tbody></table></div>`);
+        } catch (error) { showToast(error.message || 'Could not load budget allocation history.', 'danger'); }
+      };
+      WTPages.saveProjectBudgetAllocation = async (event, projectId) => {
+        event.preventDefault();
+        try {
+          await WisetrackAPI.allocateProjectBudget(projectId, { toProjectId: Number($('#projectBudgetTarget').value), amount: Number($('#projectBudgetAmount').value), remarks: $('#projectBudgetRemarks').value.trim() || null });
+          closeModal(); showToast('Budget allocated and recorded in history.'); await pageBudget();
+        } catch (error) { showToast(error.message || 'Budget allocation failed.', 'danger'); }
+      };
+    }
     el.innerHTML = pageHead('Budgets & Cost Centers', '/api/budgets',
-      ` <button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
+      ` ${pid ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
+        <button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
         <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>`)
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Actions'], 'budgetBody')
       + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Actions'], 'ccBody');
@@ -2147,6 +2169,8 @@ WTPages.switchProjView = function(view) {
     const pid = await selectedProjectId();
     const budget = id ? (await WisetrackAPI.getBudgets(pid)).find(b => Number(b.id) === Number(id)) : null;
     if (id && !budget) { showToast('Budget not found', 'danger'); return; }
+    const project = await WisetrackAPI.getProject(pid);
+    const currency = String(project.currency || project.Currency || budget?.currency || 'MVR').toUpperCase();
     openModal(budget ? 'Edit Budget' : 'Create Budget', `
       <form onsubmit="WTPages.saveBudget(event)">
         <input type="hidden" id="bProj" value="${pid}">
@@ -2154,7 +2178,7 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="bName" value="${esc(budget?.name || '')}" required></div>
           <div class="field"><label>Approved Amount *</label><input id="bAmt" type="number" step="0.01" value="${budget?.approvedAmount ?? ''}" required></div>
-          <div class="field"><label>Currency</label><input id="bCur" value="${esc(budget?.currency || 'MVR')}"></div>
+          <div class="field"><label>Currency</label><input id="bCur" value="${esc(currency)}" readonly><small class="card-subtitle">Budget currency follows the project currency.</small></div>
           ${budget ? '<div class="field full"><label>Reason for baseline change (required if amount/currency changes)</label><input id="bReason" maxlength="2000"></div>' : ''}
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>

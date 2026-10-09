@@ -526,11 +526,9 @@ async function handleCreateProject(e) {
   const teamUserIds = [...(document.getElementById('projectTeamIds')?.selectedOptions || [])]
     .map(option => Number(option.value)).filter(id => id > 0);
   const initialBudget = Number(document.getElementById('projectInitialBudget')?.value || 0);
-  const budgetCurrency = document.getElementById('projectBudgetCurrency')?.value || 'MVR';
   const code = document.getElementById('projectCode')?.value.trim() || null;
   const clientName = document.getElementById('projectClient')?.value.trim() || null;
   const sponsor = document.getElementById('projectSponsor')?.value.trim() || null;
-  const currency = document.getElementById('projectCurrency')?.value || 'MVR';
   const status = document.getElementById('projectStatus')?.value || 'Draft';
   const profileNotes = document.getElementById('projectNotes')?.value.trim() || null;
   const attachments = [...(document.getElementById('projectAttachments')?.files || [])];
@@ -540,7 +538,9 @@ async function handleCreateProject(e) {
   if (parentProjectId) {
     const parent = projects.find(p => String(p.id) === String(parentProjectId));
     level = (Number(parent?.level) || 1) + 1;
+    if (parent?.currency) document.getElementById('projectCurrency').value = parent.currency;
   }
+  const currency = document.getElementById('projectCurrency')?.value || 'MVR';
 
   try {
     const saved = await WisetrackAPI.createProject({
@@ -568,7 +568,7 @@ async function handleCreateProject(e) {
     let budgetWarning = '';
     if (initialBudget > 0) {
       try {
-        await WisetrackAPI.createBudget({ projectId, name: 'Initial Project Budget', approvedAmount: initialBudget, currency: budgetCurrency });
+        await WisetrackAPI.createBudget({ projectId, name: 'Initial Project Budget', approvedAmount: initialBudget, currency });
       } catch (budgetErr) {
         budgetWarning = ` Project saved, but initial budget could not be added: ${budgetErr.message}`;
       }
@@ -580,6 +580,20 @@ async function handleCreateProject(e) {
     setTimeout(() => location.reload(), 400);
   } catch (err) {
     showToast(err.message, 'danger');
+  }
+}
+
+function syncCreateProjectCurrency(parentId) {
+  const currencyInput = document.getElementById('projectCurrency');
+  if (!currencyInput) return;
+  const projects = (typeof getModalProjects === 'function' ? getModalProjects() : []) || [];
+  const parent = projects.find(p => String(p.id) === String(parentId));
+  currencyInput.disabled = !!parent;
+  if (parent?.currency) currencyInput.value = String(parent.currency).toUpperCase();
+  const initialBudgetField = document.getElementById('projectInitialBudget')?.closest('.field');
+  if (initialBudgetField) {
+    initialBudgetField.style.display = parent ? 'none' : '';
+    if (parent) document.getElementById('projectInitialBudget').value = '';
   }
 }
 
@@ -655,7 +669,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
         </div>
         <div class="field">
           <label>N-Level Parent (any project can have a child)</label>
-          <select id="projectParentId" onchange="updateLevelPreview(this.value)">${parentOptions}</select>
+          <select id="projectParentId" onchange="updateLevelPreview(this.value);syncCreateProjectCurrency(this.value)">${parentOptions}</select>
         </div>
         <div class="field full">
           <label>Project / Sub-Project Title *</label>
@@ -666,13 +680,9 @@ async function openCreateProjectModal(preselectedParentId = null) {
           <label>Project Owner</label>
           <select id="projectOwnerId">${ownerOptions}</select>
         </div>
-        <div class="field">
+        <div class="field" id="initialProjectBudgetField">
           <label>Initial Approved Budget</label>
           <input type="number" id="projectInitialBudget" min="0" step="0.01" placeholder="Leave blank to add later">
-        </div>
-        <div class="field">
-          <label>Budget Currency</label>
-          <select id="projectBudgetCurrency"><option value="MVR">MVR — Maldivian Rufiyaa</option><option value="USD">USD — US Dollar</option><option value="EUR">EUR — Euro</option></select>
         </div>
         <div class="field">
           <label>Project Team</label>
@@ -695,7 +705,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
         </div>
         <div class="field"><label>Client</label><input id="projectClient" type="text"></div>
         <div class="field"><label>Sponsor</label><input id="projectSponsor" type="text"></div>
-        <div class="field"><label>Project Currency</label><select id="projectCurrency"><option value="MVR">MVR</option><option value="USD">USD</option><option value="EUR">EUR</option></select></div>
+        <div class="field"><label>Project Currency</label><select id="projectCurrency"><option value="MVR">MVR</option><option value="USD">USD</option><option value="EUR">EUR</option></select><small class="card-subtitle">Initial budget uses this currency; child projects inherit their parent currency.</small></div>
         <div class="field"><label>Relevant Notes</label><textarea id="projectNotes"></textarea></div>
         <div class="field full"><label>Attachments</label><input type="file" id="projectAttachments" multiple></div>
         <p class="card-subtitle" style="grid-column:1/-1;margin:0">Schedule dates, team, budget, tasks, issues, BOQ, costs and other records remain linked to this project.</p>
@@ -708,6 +718,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
   openModal('Create Project / Sub-Project', html);
   setTimeout(() => {
     if (typeof updateLevelPreview === 'function') updateLevelPreview(preselectedParentId || '');
+    syncCreateProjectCurrency(preselectedParentId || '');
   }, 50);
 }
 
