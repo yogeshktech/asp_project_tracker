@@ -144,6 +144,13 @@ public class CreateProjectDto
 
 public class UpdateProjectDto : CreateProjectDto { }
 
+public class CreateProjectBudgetAllocationRequest
+{
+    public long ToProjectId { get; set; }
+    public decimal Amount { get; set; }
+    public string? Remarks { get; set; }
+}
+
 public class AssignProjectUserRequest
 {
     public long UserId { get; set; }

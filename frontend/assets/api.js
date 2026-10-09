@@ -4,9 +4,10 @@ const API_BASE = (function () {
   const customBase = localStorage.getItem('WISETRACK_API_BASE');
   const isAppPath = location.pathname === '/app' || location.pathname.startsWith('/app/');
 
-  // Local frontend previews should use the deployed API, so developers can
-  // verify against live data without connecting their local server to PostgreSQL.
+  // A locally hosted /app is the ASP.NET application and has its own API.
+  // Standalone frontend previews continue to use the shared demo API.
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    if (isAppPath) return `${origin}/api`;
     return 'https://demo-project-tracker.workarya.com/api';
   }
 
@@ -210,6 +211,8 @@ const WisetrackAPI = {
   getProjectHierarchy(resortId) { return this.get(`/projects/hierarchy/${resortId}`); },
   getProject(id) { return this.get(`/projects/${id}`); },
   getProjectTeam(projectId) { return this.get(`/projects/${projectId}/team`); },
+  getProjectBudgetAllocationSummary(projectId) { return this.get(`/budgets/project-allocations/${projectId}`); },
+  allocateProjectBudget(fromProjectId, data) { return this.post(`/budgets/project-allocations/${fromProjectId}`, data); },
   createProject(data) { return this.post('/projects', data); },
   updateProject(id, data) { return this.put(`/projects/${id}`, data); },
   deleteProject(id) { return this.del(`/projects/${id}`); },

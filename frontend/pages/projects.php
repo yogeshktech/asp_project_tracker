@@ -115,7 +115,7 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
     </div>
     <div class="head-actions">
       <button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
-      <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create N-Level Project</button>
+      <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>
     </div>
   </div>
 
@@ -150,7 +150,7 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
     <!-- Recursive Project Tree Rendering -->
     <?php if (empty($projectTree)): ?>
       <div style="padding:32px; text-align:center; color:var(--text-muted);">
-        No projects found for this resort property. Click <b>+ Create N-Level Project</b> above to add one.
+        No projects found for this resort property. Click <b>+ Create Project</b> above to add one.
       </div>
     <?php else: ?>
       <?php foreach ($projectTree as $rootProject): ?>

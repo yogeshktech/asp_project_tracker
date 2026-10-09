@@ -80,6 +80,22 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Keep the project-to-project allocation ledger available even when development
+// startup intentionally skips the broader schema bootstrap and seed process.
+using (var scope = app.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await DatabaseBootstrap.EnsureProjectBudgetAllocationSchemaAsync(db);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Project budget allocation schema setup was deferred.");
+    }
+}
+
 if (builder.Configuration.GetValue<bool?>("Database:BootstrapOnStartup") ?? true)
 {
     using (var scope = app.Services.CreateScope())

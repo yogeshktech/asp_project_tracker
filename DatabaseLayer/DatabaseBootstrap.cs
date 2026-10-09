@@ -5,6 +5,26 @@ namespace project_tracker_madhu.DatabaseLayer;
 
 public static class DatabaseBootstrap
 {
+    public static async Task EnsureProjectBudgetAllocationSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS project_budget_allocations (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                from_project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                to_project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                amount NUMERIC(18,2) NOT NULL CHECK (amount > 0),
+                currency VARCHAR(10) NOT NULL DEFAULT 'MVR',
+                remarks TEXT NULL,
+                created_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CHECK (from_project_id <> to_project_id)
+            )
+            """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_project_budget_allocations_from ON project_budget_allocations(from_project_id, created_at)""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_project_budget_allocations_to ON project_budget_allocations(to_project_id)""");
+    }
+
     public static async Task EnsureSchemaAndSeedAsync(AppDbContext db, IHostEnvironment env, ILogger logger)
     {
         if (!await UsersTableExistsAsync(db))
@@ -45,6 +65,7 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""UPDATE budgets SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET approver_id = created_by WHERE approver_id IS NULL AND created_by IS NOT NULL""");
+        await EnsureProjectBudgetAllocationSchemaAsync(db);
         if (!budgetVersionCurrencyExists)
             await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions v SET currency = b.currency FROM budgets b WHERE v.budget_id = b.id""");
         await EnsureItemMasterColumnsAsync(db);

@@ -38,7 +38,7 @@ $avgResortProgress = count($resorts) > 0 ? round($resortProgressSum / count($res
     </div>
     <div class="head-actions">
       <button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
-      <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create N-Level Project</button>
+      <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>
     </div>
   </div>
 
@@ -292,7 +292,7 @@ $avgResortProgress = count($resorts) > 0 ? round($resortProgressSum / count($res
 
         <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
           <button class="btn primary" onclick="openCreateProjectModal()" style="justify-content:flex-start; text-align:left;">
-            <span>🗂️</span> <span>Create N-Level Project Package</span>
+            <span>🗂️</span> <span>Create Project Package</span>
           </button>
           <button class="btn" onclick="openAddDailyReportModal()" style="justify-content:flex-start; text-align:left;">
             <span>📝</span> <span>Log Daily Site Progress (DSR)</span>

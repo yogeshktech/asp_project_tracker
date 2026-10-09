@@ -719,7 +719,7 @@
     const el = root();
     el.innerHTML = pageHead('Resort Portfolio & All-Projects Progress Control', 'Live cross-resort progress tracking, package status counts, 80% CapEx threshold alerts, and real-time field telemetry',
       `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
-       <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create N-Level Project</button>`)
+       <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>`)
       + `
         <!-- Global Project Counts & Financial Metrics -->
         <div class="kpis">
@@ -863,7 +863,7 @@
 
               <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
                 <button class="btn primary" onclick="openCreateProjectModal()" style="justify-content:flex-start; text-align:left;">
-                  <span>🗂️</span> <span>Create N-Level Project Package</span>
+                  <span>🗂️</span> <span>Create Project Package</span>
                 </button>
                 <button class="btn" onclick="openAddDailyReportModal()" style="justify-content:flex-start; text-align:left;">
                   <span>📝</span> <span>Log Daily Site Progress (DSR)</span>
@@ -1312,7 +1312,7 @@
 
     el.innerHTML = pageHead('', '',
       `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
-       <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create N-Level Project</button>`)
+       <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>`)
       + `
         <!-- View Selector -->
         <div class="card" style="padding:14px 20px; margin-bottom:16px;">
@@ -1430,7 +1430,7 @@ WTPages.switchProjView = function(view) {
       // 1. Render Recursive N-Level Tree View
       const treeRoot = $('#wbsTreeView');
       if (!filteredProjects.length) {
-        treeRoot.innerHTML = `<div style="padding:32px; text-align:center; color:var(--text-muted);">No projects found for this resort. Click <b>+ Create N-Level Project</b> above to add one.</div>`;
+        treeRoot.innerHTML = `<div style="padding:32px; text-align:center; color:var(--text-muted);">No projects found for this resort. Click <b>+ Create Project</b> above to add one.</div>`;
       } else {
         // Group by parent ID using normalized String IDs
         const normalized = filteredProjects.map(p => ({
@@ -1490,7 +1490,9 @@ WTPages.switchProjView = function(view) {
                 <div class="tree-meta">
                   <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>
                   <span>${prog}%</span>
+                  ${node.projectBudgetAmount != null ? `<span class="project-budget-chip" title="Total funded: ${esc(formatBudgetValue(node.projectBudgetAmount, node.projectBudgetCurrency || node.currency))}">Available: ${esc(formatBudgetValue(node.projectBudgetAvailable ?? node.projectBudgetAmount, node.projectBudgetCurrency || node.currency))}</span>` : ''}
                   <span class="badge ${node.healthBadge || (prog>=80?'green':prog>=50?'blue':'amber')}">${esc(node.health || node.status || 'Active')}</span>
+                  ${(!wtCan || wtCan('Budgets', 'edit', Number(node.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget to child projects and view history" onclick="event.stopPropagation(); WTPages.openProjectBudgetAllocation(${Number(node.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Budget</button>` : ''}
                   <button class="btn sm primary" title="Add Child Sub-Package" onclick="event.stopPropagation(); openCreateProjectModal('${node.id}');"><i class="fa-solid fa-plus"></i> ${addBtnTxt}</button>
                   <button class="btn sm" title="Edit Package" onclick="event.stopPropagation(); openEditProjectModal('${node.id}');"><i class="fa-solid fa-pen"></i></button>
                   <button class="btn sm danger" title="Delete Package" onclick="event.stopPropagation(); confirmDeleteProject('${node.id}');"><i class="fa-solid fa-trash"></i></button>
@@ -1534,7 +1536,7 @@ WTPages.switchProjView = function(view) {
             <td><code>${esc(p.code || 'PRJ-01')}</code></td>
             <td><span class="badge blue">${esc(p.discipline || p.disc || 'Civil Structure')}</span></td>
             <td><b>${esc(p.owner || p.ownerName || 'Lead PM')}</b></td>
-            <td>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</td>
+            <td>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}${p.projectBudgetAmount != null ? `<small>Available: ${esc(formatBudgetValue(p.projectBudgetAvailable ?? p.projectBudgetAmount, p.projectBudgetCurrency || p.currency))}</small>` : ''}</td>
             <td>
               <div style="display:flex; align-items:center; gap:6px;">
                 <div class="progress ${progColor}" style="width:50px; margin:0;"><i style="width:${prog}%"></i></div>
@@ -1544,6 +1546,7 @@ WTPages.switchProjView = function(view) {
             <td><span class="badge ${p.healthBadge || 'green'}">${esc(p.health || p.status || 'On Track')}</span></td>
             <td>
               <div class="btn-group">
+                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm" title="Budget allocation history" aria-label="Budget allocation history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i></button>` : ''}
                 <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
                 <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
                 <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>
@@ -1575,10 +1578,11 @@ WTPages.switchProjView = function(view) {
             <div class="progress ${progColor}"><i style="width:${prog}%"></i></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
               <span><b>${prog}%</b> complete</span>
-              <span>Budget: <b>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</b></span>
+              <span>Budget: <b>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</b>${p.projectBudgetAmount != null ? `<small style="display:block">Available: ${esc(formatBudgetValue(p.projectBudgetAvailable ?? p.projectBudgetAmount, p.projectBudgetCurrency || p.currency))}</small>` : ''}</span>
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:10px;">
               <div class="btn-group">
+                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm" title="Budget allocation history" aria-label="Budget allocation history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i></button>` : ''}
                 <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
                 <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
                 <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>
@@ -1598,6 +1602,62 @@ WTPages.switchProjView = function(view) {
       if (count) count.textContent = `${selectedProjectIds.size} selected`;
       if (button) button.disabled = selectedProjectIds.size === 0;
     }
+
+    WTPages.openProjectBudgetAllocation = async (projectId) => {
+      try {
+        const summary = await WisetrackAPI.getProjectBudgetAllocationSummary(projectId);
+        const childProjects = summary.children || summary.Children || currentProjects.filter(p => Number(p.parentProjectId || p.parentId) === Number(projectId));
+        const history = summary.history || summary.History || [];
+        const total = summary.totalFunding ?? summary.TotalFunding ?? 0;
+        const allocated = summary.allocatedToChildren ?? summary.AllocatedToChildren ?? 0;
+        const available = summary.available ?? summary.Available ?? 0;
+        const currency = summary.currency || summary.Currency || 'MVR';
+        const projectName = summary.projectName || summary.ProjectName || `Project #${projectId}`;
+        const rows = history.map(item => {
+          const from = item.fromProjectName || item.FromProjectName || 'Project';
+          const to = item.toProjectName || item.ToProjectName || 'Project';
+          const amount = item.amount ?? item.Amount ?? 0;
+          const at = item.createdAt || item.CreatedAt;
+          const actor = item.createdByName || item.CreatedByName || 'User';
+          return `<tr><td>${esc(from)} â†’ ${esc(to)}</td><td>${esc(formatBudgetValue(amount, item.currency || item.Currency || currency))}</td><td>${esc(item.remarks || item.Remarks || '—')}</td><td>${esc(actor)}</td><td>${at ? esc(new Date(at).toLocaleString()) : '—'}</td></tr>`;
+        }).join('');
+        const childOptions = childProjects.map(child => `<option value="${Number(child.id)}">${esc(child.name || child.title)}${child.code ? ` (${esc(child.code)})` : ''}</option>`).join('');
+        openModal(`Budget Allocation · ${projectName}`, `
+          <div class="project-budget-summary">
+            <div><small>Total funding</small><strong>${esc(formatBudgetValue(total, currency))}</strong></div>
+            <div><small>Allocated to children</small><strong>${esc(formatBudgetValue(allocated, currency))}</strong></div>
+            <div class="available"><small>Available balance</small><strong>${esc(formatBudgetValue(available, currency))}</strong></div>
+          </div>
+          ${childProjects.length ? `<form onsubmit="WTPages.saveProjectBudgetAllocation(event, ${Number(projectId)})">
+            <div class="form-grid">
+              <div class="field full"><label>Child project *</label><select id="projectBudgetTarget" required>${childOptions}</select></div>
+              <div class="field"><label>Amount (${esc(currency)}) *</label><input id="projectBudgetAmount" type="number" min="0.01" max="${Number(available)}" step="0.01" required></div>
+              <div class="field"><label>Allocation date</label><input type="text" value="${esc(new Date().toLocaleString())}" readonly></div>
+              <div class="field full"><label>Remarks</label><textarea id="projectBudgetRemarks" rows="2" placeholder="Reason or note for this allocation"></textarea></div>
+            </div>
+            <div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Close</button><button type="submit" class="btn primary" ${Number(available) <= 0 ? 'disabled' : ''}>Allocate budget</button></div>
+          </form>` : '<p class="project-budget-no-children">Create a child project first to allocate budget to it.</p>'}
+          <h3 style="margin:18px 0 8px">Allocation history</h3>
+          <div class="table-wrap project-budget-history"><table class="table"><thead><tr><th>Transfer</th><th>Amount</th><th>Remarks</th><th>By</th><th>Date & time</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No allocation history yet.</td></tr>'}</tbody></table></div>`);
+      } catch (err) { showToast(err.message || 'Could not load allocation history.', 'danger'); }
+    };
+
+    WTPages.saveProjectBudgetAllocation = async (event, projectId) => {
+      event.preventDefault();
+      const amount = Number(document.getElementById('projectBudgetAmount')?.value);
+      const toProjectId = Number(document.getElementById('projectBudgetTarget')?.value);
+      if (!amount || amount <= 0 || !toProjectId) return;
+      try {
+        await WisetrackAPI.allocateProjectBudget(projectId, {
+          toProjectId,
+          amount,
+          remarks: document.getElementById('projectBudgetRemarks')?.value.trim() || null
+        });
+        closeModal();
+        showToast('Budget allocated and recorded in history.');
+        await renderWBSProjects();
+      } catch (err) { showToast(err.message || 'Budget allocation failed.', 'danger'); }
+    };
 
     WTPages.toggleProjectSelection = (id, checked) => {
       if (checked) selectedProjectIds.add(String(id));
@@ -2828,11 +2888,11 @@ WTPages.switchProjView = function(view) {
       + tableWrap(kind === 'milestones'
         ? ['ID', 'Milestone & Project', 'Schedule', 'Status', 'Progress', 'Actions']
         : kind === 'planning'
-        ? ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Dependency', 'Owner', 'Start Date', 'End Date', 'Issues', 'Project', 'Status', 'Progress', 'Actions']
+        ? ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Owner', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
         : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
     
-    const nestCols = kind === 'planning' ? 14 : 8;
+    const nestCols = kind === 'planning' ? 13 : 8;
     if (kind === 'planning') {
       el.querySelector('#tasksBody')?.closest('.table-wrap')?.classList.add('planning-table-wrap');
       el.querySelector('#tasksBody')?.closest('table')?.classList.add('planning-table');
@@ -2899,6 +2959,20 @@ WTPages.switchProjView = function(view) {
           const u = (users || []).find(x => Number(x.id) === Number(id));
           return (u?.roles && u.roles[0]) || '';
         };
+        const targetByKey = new Map();
+        tasks.forEach(task => {
+          targetByKey.set(`task:${Number(task.id)}`, { id: Number(task.id), kind: 'task', title: task.title || task.name || `Task ${task.id}` });
+          (typeof wtWalkSubs === 'function' ? wtWalkSubs(task) : []).forEach(({ node }) => {
+            targetByKey.set(`sub:${Number(node.id)}`, { id: Number(node.id), kind: 'sub', title: node.title || node.name || `Sub-task ${node.id}` });
+          });
+        });
+        const dependencyCell = (row) => {
+          const taskId = row.dependsOnTaskId || row.DependsOnTaskId;
+          const subId = row.dependsOnSubTaskId || row.DependsOnSubTaskId;
+          const target = targetByKey.get(taskId ? `task:${Number(taskId)}` : `sub:${Number(subId)}`);
+          const label = row.dependsOnLabel || row.DependsOnLabel || (wtRowBlocked(row) ? wtRowBlockReason(row) : '—');
+          return `<td><span class="planning-dependency${wtRowBlocked(row) ? ' is-blocked' : ''}">${target ? `<button type="button" class="planning-dependency-link" title="Show dependency: ${esc(target.title)}" onclick="WTPages.focusDependency('${target.kind}', ${target.id})">${esc(label)}</button>` : esc(label)}</span></td>`;
+        };
         let comp = 0, prog = 0, del = 0, crit = 0;
 
         const statusBadge = (status, pct) => {
@@ -2921,13 +2995,10 @@ WTPages.switchProjView = function(view) {
           const assignee = row.assignedTo || row.AssignedTo;
           const start = row.startDate || row.StartDate;
           const end = row.dueDate || row.DueDate;
-          const dependency = row.dependsOnLabel || row.DependsOnLabel || (wtRowBlocked(row) ? wtRowBlockReason(row) : '—');
-          return `<td><span class="planning-dependency${wtRowBlocked(row) ? ' is-blocked' : ''}" title="${esc(dependency)}">${esc(dependency)}</span></td>
-            <td>${esc(userName(assignee))}</td>
+          return `<td>${esc(userName(assignee))}</td>
             <td>${start ? esc(String(start).slice(0, 10)) : '—'}</td>
             <td>${end ? esc(String(end).slice(0, 10)) : '—'}</td>
-            <td>${openIssueCount}</td>
-            <td>${esc(nameOf(row._projectId || pid))}<small style="display:block;color:var(--text-muted)">${tasks.length} task${tasks.length === 1 ? '' : 's'}</small></td>`;
+            `;
         };
         const progressCell = (row, pct) => `
           <td>
@@ -2958,7 +3029,7 @@ WTPages.switchProjView = function(view) {
           const owner = userName(t.assignedTo || t.AssignedTo);
           const ownerLabel = userRole(t.assignedTo || t.AssignedTo);
           const parentRow = `
-            <tr class="task-row">
+            <tr class="task-row" id="task-row-${Number(t.id)}">
               <td><code>${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t) : (t.displayCode || 'Task-' + t.id))}</code></td>
               <td class="nest-col depth-task is-filled">
                 <strong>${esc(t.title || t.name)}</strong>
@@ -2974,6 +3045,7 @@ WTPages.switchProjView = function(view) {
               ${planningInfoCells(t)}
               <td><span class="badge ${wtRowBlocked(t) ? 'amber' : statusBadge(t.status, pct)}">${wtRowBlocked(t) ? 'Waiting' : esc(formatStatus(t.status))}</span></td>
               ${progressCell(t, pct)}
+              ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(t)}` : ''}
               <td class="table-actions">${taskRowActionMenu(`
                 ${wtUpdateBtnHtml(t.id, null, t)}
                 ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>` : ''}
@@ -2988,13 +3060,14 @@ WTPages.switchProjView = function(view) {
             const addLabel = depth <= 1 ? 'Child' : 'Other';
             const code = esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s, index, depth) : (s.displayCode || 'Sub-' + s.id));
             return `
-              <tr class="subtask-row nest-depth-${depth}">
+              <tr class="subtask-row nest-depth-${depth}" id="subtask-row-${Number(s.id)}">
                 <td><code>${code}</code></td>
                 <td class="nest-col depth-task">${dash}</td>
                 ${nestCells(depth, nestTitle(s) + (kind === 'planning' ? '' : wtDepLineHtml(s)))}
                 ${planningInfoCells({ ...s, _projectId: t._projectId }, true)}
                 <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
                 ${progressCell(s, spct)}
+                ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(s)}` : ''}
                 <td class="table-actions">${taskRowActionMenu(`
                   ${wtUpdateBtnHtml(t.id, s.id, s)}
                   <button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>
@@ -3005,7 +3078,7 @@ WTPages.switchProjView = function(view) {
               </tr>`;
           }).join('') : '';
           return [parentRow, nestedRows];
-        }).join('') : emptyRow(nestCols, `No tasks for ${selectedLabel}. Other projects are hidden.`);
+        }).join('') : emptyRow(nestCols, `No tasks for ${selectedLabel}`);
 
         if (kind === 'planning' && tasks.length) void loadTaskEvidenceInBackground(tasks);
 
@@ -3419,6 +3492,14 @@ WTPages.switchProjView = function(view) {
       else await WisetrackAPI.createTask(data);
       closeModal(); showToast(id ? 'Task updated' : 'Task created'); await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  function focusDependency(kind, id) {
+    const row = document.getElementById(`${kind === 'sub' ? 'subtask' : 'task'}-row-${Number(id)}`);
+    if (!row) { showToast('Dependency task is not visible in this plan.', 'danger'); return; }
+    row.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    row.classList.add('dependency-target-highlight');
+    window.setTimeout(() => row.classList.remove('dependency-target-highlight'), 2200);
   }
 
   async function openDependencyModal(kind, id) {
@@ -4980,7 +5061,7 @@ WTPages.switchProjView = function(view) {
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory,
-    openDependencyModal, saveDependency,
+    openDependencyModal, saveDependency, focusDependency,
     openCreateSubTaskModal: (p, s) => openCreateSubTaskModal(p, s),
     saveSubTask: (e) => handleCreateSubTask(e),
     refreshPlanning: () => pageTasks('planning'),

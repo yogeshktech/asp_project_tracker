@@ -1705,6 +1705,37 @@ button.btn[disabled] {
   color: var(--text-muted);
 }
 
+.project-budget-chip {
+  padding: 5px 8px;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 7px;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.budget-allocation-button { white-space: nowrap; }
+.project-budget-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.project-budget-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+}
+.project-budget-summary small { color: var(--text-muted); }
+.project-budget-summary strong { font-size: 15px; }
+.project-budget-summary .available { border-color: #86efac; background: #f0fdf4; }
+.project-budget-no-children { padding: 12px; color: var(--text-muted); background: var(--bg-app); border-radius: 8px; }
+.project-budget-history { max-height: 260px; overflow: auto; }
+
 /* ==========================================================================
    14. BACKWARD SCHEDULING & MILESTONE TIMELINE (PM-17)
    ========================================================================== */
@@ -2173,7 +2204,7 @@ button.btn[disabled] {
 
 .planning-table {
   width: max-content !important;
-  min-width: 1900px !important;
+  min-width: 1745px !important;
   table-layout: fixed;
 }
 
@@ -2192,15 +2223,14 @@ button.btn[disabled] {
 .planning-table th:nth-child(3),
 .planning-table th:nth-child(4),
 .planning-table th:nth-child(5) { width: 165px; }
-.planning-table th:nth-child(6) { width: 190px; }
-.planning-table th:nth-child(7) { width: 145px; }
-.planning-table th:nth-child(8),
-.planning-table th:nth-child(9) { width: 115px; }
-.planning-table th:nth-child(10) { width: 85px; }
-.planning-table th:nth-child(11) { width: 155px; }
-.planning-table th:nth-child(12) { width: 120px; }
-.planning-table th:nth-child(13) { width: 120px; }
-.planning-table th:nth-child(14) { width: 140px; }
+.planning-table th:nth-child(6) { width: 145px; }
+.planning-table th:nth-child(7),
+.planning-table th:nth-child(8) { width: 115px; }
+.planning-table th:nth-child(9) { width: 120px; }
+.planning-table th:nth-child(10) { width: 120px; }
+.planning-table th:nth-child(11) { width: 85px; }
+.planning-table th:nth-child(12) { width: 190px; }
+.planning-table th:nth-child(13) { width: 140px; }
 
 .planning-table td {
   padding: 12px 14px;
@@ -2211,18 +2241,21 @@ button.btn[disabled] {
 }
 
 .planning-table td:nth-child(1),
+.planning-table td:nth-child(7),
 .planning-table td:nth-child(8),
 .planning-table td:nth-child(9),
 .planning-table td:nth-child(10),
-.planning-table td:nth-child(12),
-.planning-table td:nth-child(13) { vertical-align: middle; }
+.planning-table td:nth-child(11) { vertical-align: middle; }
+.planning-table td:nth-child(6),
 .planning-table td:nth-child(7),
 .planning-table td:nth-child(8),
 .planning-table td:nth-child(9),
 .planning-table td:nth-child(10),
 .planning-table td:nth-child(11) { overflow-wrap: normal; }
-.planning-table td:nth-child(11) { white-space: nowrap; }
-.planning-table td:nth-child(11) small { white-space: normal; }
+.planning-table td:nth-child(6),
+.planning-table td:nth-child(7),
+.planning-table td:nth-child(8) { white-space: nowrap; }
+.planning-table td:nth-child(12) { white-space: normal; }
 .planning-dependency {
   display: -webkit-box;
   overflow: hidden;
@@ -2233,6 +2266,22 @@ button.btn[disabled] {
   -webkit-line-clamp: 2;
 }
 .planning-dependency.is-blocked { color: #b45309; font-weight: 600; }
+.planning-dependency-link {
+  display: inline-block;
+  max-width: 175px;
+  padding: 0;
+  border: 0;
+  color: #b45309;
+  background: transparent;
+  text-align: left;
+  white-space: normal;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.planning-dependency-link:hover, .planning-dependency-link:focus-visible { color: #92400e; text-decoration-style: solid; }
+.planning-table tbody tr.dependency-target-highlight > td { background: #fef3c7 !important; box-shadow: inset 0 2px #f59e0b, inset 0 -2px #f59e0b; }
 
 .planning-table tbody tr { transition: background .16s ease, box-shadow .16s ease; }
 .planning-table tbody tr.task-row > td { background: #fff; }
@@ -2267,6 +2316,16 @@ button.btn[disabled] {
   justify-self: start;
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, .06);
+}
+
+.planning-table .row-action-popover .icon-action {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  height: auto;
+  padding: 6px 10px;
+  justify-content: flex-start;
+  flex: 0 0 auto;
 }
 
 .planning-table .icon-action:not(.primary):not(.danger) { background: #fff; }

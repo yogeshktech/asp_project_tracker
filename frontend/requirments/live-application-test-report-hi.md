@@ -28,7 +28,7 @@ Yeh records live demo database mein abhi maujood hain; test ke baad delete nahi 
 | Project | 19 | `QA-Live-UI-20260929-170701` / `PRJ-002` | Status `Active`; owner System Admin; test description ke saath. |
 | Task | 14 | `QA UI Task-20260929-171205` | Project 19; status `In Progress`; owner System Admin. |
 
-**Project creation verification:** Modal se project form fill kiya, `Create N-Level Project` submit kiya, API response se ID 19 capture hui, aur dashboard reload ke baad project selector mein project dikhा.  
+**Project creation verification:** Modal se project form fill kiya, `Create Project` submit kiya, API response se ID 19 capture hui, aur dashboard reload ke baad project selector mein project dikhा.  
 **Task creation verification:** Project 19 ke Planning page par `+ Task` form khola, title/description/status bhare, `Save` submit kiya; toast `Task created` aaya aur task ID 14 table mein dikhा.
 
 ## 3. Button guide: kya karta hai aur kaise kaam karta hai

@@ -569,10 +569,10 @@ public class ProjectService : IProjectService
                 case "description": dto.Description = null; break;
                 case "profilenotes": dto.ProfileNotes = null; break;
                 case "ownerid": dto.OwnerId = null; dto.OwnerName = null; break;
-                case "budget": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
-                case "projectbudgetamount": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
-                case "budgetcurrency": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
-                case "projectbudgetcurrency": dto.ProjectBudgetAmount = null; dto.ProjectBudgetCurrency = null; break;
+                case "budget": dto.ProjectBudgetAmount = null; dto.ProjectBudgetAvailable = null; dto.ProjectBudgetCurrency = null; break;
+                case "projectbudgetamount": dto.ProjectBudgetAmount = null; dto.ProjectBudgetAvailable = null; dto.ProjectBudgetCurrency = null; break;
+                case "budgetcurrency": dto.ProjectBudgetAmount = null; dto.ProjectBudgetAvailable = null; dto.ProjectBudgetCurrency = null; break;
+                case "projectbudgetcurrency": dto.ProjectBudgetAmount = null; dto.ProjectBudgetAvailable = null; dto.ProjectBudgetCurrency = null; break;
                 case "startdate": dto.StartDate = null; break;
                 case "enddate": dto.EndDate = null; break;
             }
@@ -600,6 +600,11 @@ public class ProjectService : IProjectService
         var allocations = await _db.BudgetAllocations.AsNoTracking().Where(a => budgetIds.Contains(a.BudgetId))
             .Select(a => new { ParentId = a.Budget.ProjectId, CostProjectId = a.CostCenter.ProjectId, Amount = a.AllocatedAmount, Currency = a.Budget.Currency })
             .ToListAsync();
+        var visibleProjectIds = canViewBudget.Concat(permittedParents).Distinct().ToList();
+        var projectAllocations = await _db.ProjectBudgetAllocations.AsNoTracking()
+            .Where(a => visibleProjectIds.Contains(a.FromProjectId) || canViewBudget.Contains(a.ToProjectId))
+            .Select(a => new { a.FromProjectId, a.ToProjectId, a.Amount, a.Currency })
+            .ToListAsync();
 
         foreach (var project in projects.Where(p => canViewBudget.Contains(p.Id)))
         {
@@ -608,17 +613,19 @@ public class ProjectService : IProjectService
                 (canViewBudget.Contains(project.ParentProjectId.Value) || permittedParents.Contains(project.ParentProjectId.Value))
                 ? allocations.Where(a => a.ParentId == project.ParentProjectId.Value && a.CostProjectId == project.Id).ToList()
                 : allocations.Where(a => false).ToList();
-            var allocatedFromParent = parentAllocations.Sum(a => a.Amount);
-            if (allocatedFromParent > 0)
-            {
-                project.ProjectBudgetAmount = allocatedFromParent;
-                project.ProjectBudgetCurrency = parentAllocations[0].Currency;
-            }
-            else if (ownBudgets.Count > 0)
-            {
-                project.ProjectBudgetAmount = ownBudgets.Sum(b => b.ApprovedAmount);
-                project.ProjectBudgetCurrency = ownBudgets[0].Currency;
-            }
+            var incomingTransfers = projectAllocations.Where(a => a.ToProjectId == project.Id).ToList();
+            var incoming = parentAllocations.Sum(a => a.Amount) + incomingTransfers.Sum(a => a.Amount);
+            var own = ownBudgets.Sum(b => b.ApprovedAmount);
+            if (incoming > 0 || ownBudgets.Count > 0)
+                project.ProjectBudgetAmount = incoming + own;
+            if (incomingTransfers.Count > 0) project.ProjectBudgetCurrency = incomingTransfers[0].Currency;
+            else if (parentAllocations.Count > 0) project.ProjectBudgetCurrency = parentAllocations[0].Currency;
+            else if (ownBudgets.Count > 0) project.ProjectBudgetCurrency = ownBudgets[0].Currency;
+
+            var outgoingLegacy = allocations.Where(a => a.ParentId == project.Id).Sum(a => a.Amount);
+            var outgoingTransfers = projectAllocations.Where(a => a.FromProjectId == project.Id).Sum(a => a.Amount);
+            if (project.ProjectBudgetAmount.HasValue)
+                project.ProjectBudgetAvailable = Math.Max(0, project.ProjectBudgetAmount.Value - outgoingLegacy - outgoingTransfers);
         }
     }
 

@@ -21,6 +21,8 @@ public interface IBudgetService
     Task<CostCenter?> UpdateCostCenterAsync(long id, UpdateCostCenterRequest request, long? userId);
     Task DeleteCostCenterAsync(long id, long? userId);
     Task AllocateAsync(CreateAllocationRequest request, long? userId);
+    Task<ProjectBudgetAllocationSummaryDto> GetProjectAllocationSummaryAsync(long userId, long projectId);
+    Task AllocateToProjectAsync(long userId, long fromProjectId, CreateProjectBudgetAllocationRequest request);
 }
 
 public class BudgetService : IBudgetService
@@ -246,5 +248,100 @@ public class BudgetService : IBudgetService
             Remarks = request.Remarks
         });
         await _audit.LogAsync(userId, "Allocate", "Budget", request.BudgetId);
+    }
+
+    public async Task<ProjectBudgetAllocationSummaryDto> GetProjectAllocationSummaryAsync(long userId, long projectId)
+    {
+        var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId)
+            ?? throw new InvalidOperationException("Project not found.");
+        if (!await _permissions.CanViewModuleAsync(userId, projectId, "Budgets"))
+            throw new UnauthorizedAccessException("No budget view permission on project.");
+
+        var ownBudgets = await _db.Budgets.AsNoTracking().Where(b => b.ProjectId == projectId)
+            .Select(b => new { b.ApprovedAmount, b.Currency }).ToListAsync();
+        var childProjects = await _db.Projects.AsNoTracking().Where(p => p.ParentProjectId == projectId)
+            .Select(p => new ProjectBudgetChildDto { Id = p.Id, Name = p.Name, Code = p.Code }).ToListAsync();
+        var legacyIncoming = await _db.BudgetAllocations.AsNoTracking()
+            .Where(a => a.CostCenter.ProjectId == projectId && project.ParentProjectId.HasValue && a.Budget.ProjectId == project.ParentProjectId.Value)
+            .Select(a => new { a.AllocatedAmount, a.Budget.Currency }).ToListAsync();
+        var transfers = await _db.ProjectBudgetAllocations.AsNoTracking()
+            .Where(a => a.FromProjectId == projectId || a.ToProjectId == projectId)
+            .Select(a => new ProjectBudgetAllocationHistoryDto
+            {
+                Id = a.Id, FromProjectId = a.FromProjectId, FromProjectName = a.FromProject.Name,
+                ToProjectId = a.ToProjectId, ToProjectName = a.ToProject.Name,
+                Amount = a.Amount, Currency = a.Currency, Remarks = a.Remarks,
+                CreatedBy = a.CreatedBy, CreatedByName = a.Creator == null ? null : a.Creator.FullName,
+                CreatedAt = a.CreatedAt
+            }).OrderByDescending(a => a.CreatedAt).ToListAsync();
+        var legacyOutgoing = await _db.BudgetAllocations.AsNoTracking()
+            .Where(a => a.Budget.ProjectId == projectId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
+
+        var currencies = ownBudgets.Select(b => b.Currency)
+            .Concat(legacyIncoming.Select(a => a.Currency))
+            .Concat(transfers.Select(a => a.Currency)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (currencies.Count > 1)
+            throw new InvalidOperationException("This project has budget funds in multiple currencies. Convert them to one currency before allocating.");
+        var currency = currencies.FirstOrDefault() ?? project.Currency;
+        var incomingLegacyAmount = legacyIncoming.Where(a => string.Equals(a.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(a => a.AllocatedAmount);
+        var incomingTransferAmount = transfers.Where(a => a.ToProjectId == projectId && string.Equals(a.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(a => a.Amount);
+        var outgoingTransferAmount = transfers.Where(a => a.FromProjectId == projectId && string.Equals(a.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(a => a.Amount);
+        var ownAmount = ownBudgets.Where(b => string.Equals(b.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(b => b.ApprovedAmount);
+        var totalFunding = ownAmount + incomingLegacyAmount + incomingTransferAmount;
+
+        return new ProjectBudgetAllocationSummaryDto
+        {
+            ProjectId = projectId,
+            ProjectName = project.Name,
+            Currency = currency,
+            TotalFunding = totalFunding,
+            AllocatedToChildren = legacyOutgoing + outgoingTransferAmount,
+            Available = Math.Max(0, totalFunding - legacyOutgoing - outgoingTransferAmount),
+            Children = childProjects,
+            History = transfers
+        };
+    }
+
+    public async Task AllocateToProjectAsync(long userId, long fromProjectId, CreateProjectBudgetAllocationRequest request)
+    {
+        var amount = decimal.Round(request.Amount, 2, MidpointRounding.AwayFromZero);
+        if (amount <= 0) throw new InvalidOperationException("Allocation amount must be greater than zero.");
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        var source = await _db.Projects.FirstOrDefaultAsync(p => p.Id == fromProjectId)
+            ?? throw new InvalidOperationException("Source project not found.");
+        var target = await _db.Projects.FirstOrDefaultAsync(p => p.Id == request.ToProjectId)
+            ?? throw new InvalidOperationException("Target project not found.");
+        if (target.ParentProjectId != source.Id)
+            throw new InvalidOperationException("Budget can only be allocated to a direct child project.");
+        await _permissions.EnsureModuleAsync(userId, source.Id, "Budgets", "edit");
+
+        var summary = await GetProjectAllocationSummaryAsync(userId, source.Id);
+        if (amount > summary.Available)
+            throw new InvalidOperationException($"Allocation exceeds the available balance of {summary.Currency} {summary.Available:N2}.");
+
+        var targetCurrencies = await _db.Budgets.AsNoTracking().Where(b => b.ProjectId == target.Id)
+            .Select(b => b.Currency).ToListAsync();
+        targetCurrencies.AddRange(await _db.ProjectBudgetAllocations.AsNoTracking()
+            .Where(a => a.ToProjectId == target.Id).Select(a => a.Currency).ToListAsync());
+        targetCurrencies.AddRange(await _db.BudgetAllocations.AsNoTracking()
+            .Where(a => a.CostCenter.ProjectId == target.Id && a.Budget.ProjectId == source.Id)
+            .Select(a => a.Budget.Currency).ToListAsync());
+        if (targetCurrencies.Any(currency => !string.Equals(currency, summary.Currency, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"The child project already uses a different budget currency. Allocation must use {summary.Currency}.");
+
+        _db.ProjectBudgetAllocations.Add(new ProjectBudgetAllocation
+        {
+            FromProjectId = source.Id,
+            ToProjectId = target.Id,
+            Amount = amount,
+            Currency = summary.Currency,
+            Remarks = string.IsNullOrWhiteSpace(request.Remarks) ? null : request.Remarks.Trim(),
+            CreatedBy = userId,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await _audit.LogAsync(userId, "Allocate", "ProjectBudget", source.Id,
+            $"{summary.Currency} {amount:N2} allocated to project {target.Id}");
     }
 }

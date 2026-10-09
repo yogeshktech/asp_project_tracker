@@ -25,7 +25,7 @@ All requirements from "requirments/Engg. Project Tracking-Wisetrack-v0.1.docx" h
 
 4. RESORT CREATION & N-LEVEL PROJECT CREATION:
    - "＋ Create Resort" modal: Add new master resort property with location, budget ceiling, GM, and target opening.
-   - "＋ Create N-Level Project" modal: Create Level 1 Root Projects, Level 2 Sub-Projects, or Level 3 Work Packages nested under any parent project or resort.
+   - "＋ Create Project" modal: Create Level 1 Root Projects, Level 2 Sub-Projects, or Level 3 Work Packages nested under any parent project or resort.
    - Interactive N-Level Tree Explorer in `projects.php` / `projects.html` with expand/collapse hierarchy.
 
 5. ROLES & GRANULAR PERMISSIONS MATRIX:

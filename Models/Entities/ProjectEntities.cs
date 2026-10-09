@@ -47,6 +47,22 @@ public class Project
     public ICollection<ProjectUser> ProjectUsers { get; set; } = new List<ProjectUser>();
 }
 
+[Table("project_budget_allocations")]
+public class ProjectBudgetAllocation
+{
+    public long Id { get; set; }
+    public long FromProjectId { get; set; }
+    public long ToProjectId { get; set; }
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "MVR";
+    public string? Remarks { get; set; }
+    public long? CreatedBy { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public Project FromProject { get; set; } = null!;
+    public Project ToProject { get; set; } = null!;
+    public User? Creator { get; set; }
+}
+
 [Table("project_users")]
 public class ProjectUser
 {

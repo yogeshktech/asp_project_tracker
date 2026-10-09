@@ -13,7 +13,7 @@
     </div>
     <div class="head-actions">
       <button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + Create Resort</button>
-      <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create N-Level Project</button>
+      <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>
     </div>
   </div>
 

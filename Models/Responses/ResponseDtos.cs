@@ -130,9 +130,44 @@ public class ProjectResponseDto
     public DateOnly? EndDate { get; set; }
     public string? ProfileNotes { get; set; }
     public decimal? ProjectBudgetAmount { get; set; }
+    public decimal? ProjectBudgetAvailable { get; set; }
     public string? ProjectBudgetCurrency { get; set; }
     public string Level { get; set; } = "Project";
     public List<ProjectResponseDto> SubProjects { get; set; } = new();
+}
+
+public class ProjectBudgetAllocationHistoryDto
+{
+    public long Id { get; set; }
+    public long FromProjectId { get; set; }
+    public string FromProjectName { get; set; } = string.Empty;
+    public long ToProjectId { get; set; }
+    public string ToProjectName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "MVR";
+    public string? Remarks { get; set; }
+    public long? CreatedBy { get; set; }
+    public string? CreatedByName { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class ProjectBudgetAllocationSummaryDto
+{
+    public long ProjectId { get; set; }
+    public string ProjectName { get; set; } = string.Empty;
+    public string Currency { get; set; } = "MVR";
+    public decimal TotalFunding { get; set; }
+    public decimal AllocatedToChildren { get; set; }
+    public decimal Available { get; set; }
+    public List<ProjectBudgetChildDto> Children { get; set; } = new();
+    public List<ProjectBudgetAllocationHistoryDto> History { get; set; } = new();
+}
+
+public class ProjectBudgetChildDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Code { get; set; }
 }
 
 public class CostVarianceDto

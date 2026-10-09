@@ -702,10 +702,10 @@ async function openCreateProjectModal(preselectedParentId = null) {
       </div>
       <div class="modalfoot" style="padding:0;margin-top:16px;">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn primary">＋ Create N-Level Project</button>
+        <button type="submit" class="btn primary">＋ Create Project</button>
       </div>
     </form>`;
-  openModal('Create N-Level Project / Sub-Project', html);
+  openModal('Create Project / Sub-Project', html);
   setTimeout(() => {
     if (typeof updateLevelPreview === 'function') updateLevelPreview(preselectedParentId || '');
   }, 50);

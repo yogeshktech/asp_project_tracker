@@ -380,7 +380,7 @@ function updateLevelPreview(parentId) {
   }
 }
 
-// 2. Create N-Level Project Modal (Parent Project -> Sub-Project -> Work Package)
+// 2. Create Project Modal (Parent Project -> Sub-Project -> Work Package)
 function openCreateProjectModal(preselectedParentId = null) {
   const resorts = getResorts();
   const projects = getProjects();
@@ -457,11 +457,11 @@ function openCreateProjectModal(preselectedParentId = null) {
       </div>
       <div class="modalfoot" style="padding-left:0;padding-right:0;padding-bottom:0;margin-top:16px;">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn primary">＋ Create N-Level Project</button>
+        <button type="submit" class="btn primary">＋ Create Project</button>
       </div>
     </form>
   `;
-  openModal("Create N-Level Project / Sub-Project", html);
+  openModal("Create Project / Sub-Project", html);
   setTimeout(() => updateLevelPreview(preselectedParentId), 50);
 }
 

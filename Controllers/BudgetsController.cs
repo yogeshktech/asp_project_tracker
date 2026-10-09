@@ -67,4 +67,20 @@ public class BudgetsController : ControllerBase
         await _budgetService.AllocateAsync(request, UserId);
         return Ok();
     }
+
+    [HttpGet("project-allocations/{projectId:long}")]
+    public async Task<IActionResult> ProjectAllocationSummary(long projectId)
+    {
+        try { return Ok(await _budgetService.GetProjectAllocationSummaryAsync(UserId, projectId)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
+    [HttpPost("project-allocations/{fromProjectId:long}")]
+    public async Task<IActionResult> AllocateToProject(long fromProjectId, [FromBody] CreateProjectBudgetAllocationRequest request)
+    {
+        try { await _budgetService.AllocateToProjectAsync(UserId, fromProjectId, request); return Ok(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
 }
