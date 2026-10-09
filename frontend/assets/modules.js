@@ -1490,9 +1490,8 @@ WTPages.switchProjView = function(view) {
                 <div class="tree-meta">
                   <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>
                   <span>${prog}%</span>
-                  ${node.projectBudgetAmount != null ? `<span class="project-budget-chip" title="Total funded: ${esc(formatBudgetValue(node.projectBudgetAmount, node.projectBudgetCurrency || node.currency))}">Available: ${esc(formatBudgetValue(node.projectBudgetAvailable ?? node.projectBudgetAmount, node.projectBudgetCurrency || node.currency))}</span>` : ''}
                   <span class="badge ${node.healthBadge || (prog>=80?'green':prog>=50?'blue':'amber')}">${esc(node.health || node.status || 'Active')}</span>
-                  ${(!wtCan || wtCan('Budgets', 'edit', Number(node.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget to child projects and view history" onclick="event.stopPropagation(); WTPages.openProjectBudgetAllocation(${Number(node.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Budget</button>` : ''}
+                  ${(!wtCan || wtCan('Budgets', 'edit', Number(node.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget to child projects and view history" onclick="event.stopPropagation(); WTPages.openProjectBudgetAllocation(${Number(node.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate Budget</button>` : ''}
                   <button class="btn sm primary" title="Add Child Sub-Package" onclick="event.stopPropagation(); openCreateProjectModal('${node.id}');"><i class="fa-solid fa-plus"></i> ${addBtnTxt}</button>
                   <button class="btn sm" title="Edit Package" onclick="event.stopPropagation(); openEditProjectModal('${node.id}');"><i class="fa-solid fa-pen"></i></button>
                   <button class="btn sm danger" title="Delete Package" onclick="event.stopPropagation(); confirmDeleteProject('${node.id}');"><i class="fa-solid fa-trash"></i></button>
@@ -1536,7 +1535,7 @@ WTPages.switchProjView = function(view) {
             <td><code>${esc(p.code || 'PRJ-01')}</code></td>
             <td><span class="badge blue">${esc(p.discipline || p.disc || 'Civil Structure')}</span></td>
             <td><b>${esc(p.owner || p.ownerName || 'Lead PM')}</b></td>
-            <td>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}${p.projectBudgetAmount != null ? `<small>Available: ${esc(formatBudgetValue(p.projectBudgetAvailable ?? p.projectBudgetAmount, p.projectBudgetCurrency || p.currency))}</small>` : ''}</td>
+            <td>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</td>
             <td>
               <div style="display:flex; align-items:center; gap:6px;">
                 <div class="progress ${progColor}" style="width:50px; margin:0;"><i style="width:${prog}%"></i></div>
@@ -1546,7 +1545,7 @@ WTPages.switchProjView = function(view) {
             <td><span class="badge ${p.healthBadge || 'green'}">${esc(p.health || p.status || 'On Track')}</span></td>
             <td>
               <div class="btn-group">
-                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm" title="Budget allocation history" aria-label="Budget allocation history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i></button>` : ''}
+                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget and view history" aria-label="Allocate budget and view history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate</button>` : ''}
                 <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
                 <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
                 <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>
@@ -1578,11 +1577,11 @@ WTPages.switchProjView = function(view) {
             <div class="progress ${progColor}"><i style="width:${prog}%"></i></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
               <span><b>${prog}%</b> complete</span>
-              <span>Budget: <b>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</b>${p.projectBudgetAmount != null ? `<small style="display:block">Available: ${esc(formatBudgetValue(p.projectBudgetAvailable ?? p.projectBudgetAmount, p.projectBudgetCurrency || p.currency))}</small>` : ''}</span>
+              <span>Budget: <b>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</b></span>
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:10px;">
               <div class="btn-group">
-                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm" title="Budget allocation history" aria-label="Budget allocation history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i></button>` : ''}
+                ${(!wtCan || wtCan('Budgets', 'edit', Number(p.id))) ? `<button class="btn sm budget-allocation-button" title="Allocate budget and view history" aria-label="Allocate budget and view history" onclick="WTPages.openProjectBudgetAllocation(${Number(p.id)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate</button>` : ''}
                 <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
                 <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
                 <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>

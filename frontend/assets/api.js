@@ -4,10 +4,9 @@ const API_BASE = (function () {
   const customBase = localStorage.getItem('WISETRACK_API_BASE');
   const isAppPath = location.pathname === '/app' || location.pathname.startsWith('/app/');
 
-  // A locally hosted /app is the ASP.NET application and has its own API.
-  // Standalone frontend previews continue to use the shared demo API.
+  // Local frontend pages use the shared live API, so local UI changes can be
+  // checked against live data without connecting the local backend to PostgreSQL.
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    if (isAppPath) return `${origin}/api`;
     return 'https://demo-project-tracker.workarya.com/api';
   }
 
