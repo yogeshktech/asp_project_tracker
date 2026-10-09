@@ -1351,6 +1351,17 @@ button.btn[disabled] {
   transition: background 0.15s ease;
 }
 
+/* Keep cost center values on one line; the wrapper provides horizontal scrolling on narrow screens. */
+.cost-center-table-wrap .table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.cost-center-table-wrap .table th,
+.cost-center-table-wrap .table td {
+  white-space: nowrap;
+}
+
 .table tr:last-child td {
   border-bottom: none;
 }

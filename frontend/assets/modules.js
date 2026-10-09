@@ -38,9 +38,9 @@
     </div>`;
   }
 
-  function tableWrap(headers, bodyId) {
+  function tableWrap(headers, bodyId, wrapClass = '') {
     headers = headers.map(h => String(h).trim().toLowerCase() === 'id' ? 'SR No' : h);
-    return `<div class="card"><div class="table-wrap"><table class="table"><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody id="${bodyId}"><tr><td colspan="${headers.length}">Loading...</td></tr></tbody></table></div></div>`;
+    return `<div class="card"><div class="table-wrap${wrapClass ? ` ${wrapClass}` : ''}"><table class="table"><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody id="${bodyId}"><tr><td colspan="${headers.length}">Loading...</td></tr></tbody></table></div></div>`;
   }
 
   function taskRowActionMenu(actions) {
@@ -2126,7 +2126,7 @@ WTPages.switchProjView = function(view) {
         <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>`)
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Actions'], 'budgetBody')
-      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Actions'], 'ccBody');
+      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Actions'], 'ccBody', 'cost-center-table-wrap');
     if (!pid) {
       $('#budgetBody').innerHTML = emptyRow(8, 'No project available.');
       $('#ccBody').innerHTML = emptyRow(9, 'No project available.');

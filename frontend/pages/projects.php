@@ -70,7 +70,6 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
         <span style="font-size:15px;">' . $icon . '</span>
         <div class="tree-title">
           <div style="display:flex; align-items:center; gap:8px; margin-bottom:3px;">
-            ' . $levelPill . '
             <strong style="font-size:14px;">' . htmlspecialchars($node['name']) . '</strong>
           </div>
           <small style="color:var(--text-muted); font-size:11.5px;">' . $relationTxt . ' · WBS: <code>' . htmlspecialchars($node['code']) . '</code> · Discipline: <b>' . htmlspecialchars($node['discipline'] ?? 'General') . '</b> · Lead: <b>' . htmlspecialchars($node['owner'] ?? 'Lead PM') . '</b> · Budget: <b>' . htmlspecialchars($node['budget'] ?? 'MVR 5.00 Cr') . '</b></small>
@@ -371,7 +370,6 @@ function syncClientSideProjects() {
           <span style="font-size:15px;">${icon}</span>
           <div class="tree-title">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:3px;">
-              ${levelPill}
               <strong style="font-size:14px;">${escapeHtml(node.name || '')}</strong>
             </div>
             <small style="color:var(--text-muted); font-size:11.5px;">${relationTxt} · WBS: <code>${escapeHtml(node.code || '')}</code> · Discipline: <b>${escapeHtml(node.discipline || 'General')}</b> · Lead: <b>${escapeHtml(node.owner || 'Lead PM')}</b> · Budget: <b>${node.budget || 'MVR 5.00 Cr'}</b></small>
