@@ -1676,7 +1676,7 @@ WTPages.switchProjView = function(view) {
         seen.add(id);
         return (children.get(id) || []).some(child => !selected.has(child) || hasUnselectedDescendant(child, seen));
       };
-      if (ids.some(hasUnselectedDescendant)) {
+      if (ids.some(id => hasUnselectedDescendant(id))) {
         showToast('Select all child projects under a selected parent before deleting.', 'danger');
         return;
       }
@@ -1877,12 +1877,13 @@ WTPages.switchProjView = function(view) {
         : '<small class="card-subtitle">No team assigned yet. Use the form to assign a member.</small>';
       const extra = [];
       if (variance) {
+        const approvedFunding = Number(p.projectBudgetAmount ?? p.ProjectBudgetAmount ?? profileBudget?.approvedAmount ?? variance.approvedBudget ?? variance.budget ?? 0);
         extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
           <strong>Budget RAG</strong>
           <div class="grid g4" style="margin-top:8px;font-size:12.5px;">
-            <div>Approved<br><b>MVR ${Number(variance.approvedBudget || 0).toLocaleString('en-US')}</b></div>
-            <div>Purchase<br><b>MVR ${Number(variance.purchaseTotal || 0).toLocaleString('en-US')}</b></div>
-            <div>Actual<br><b>MVR ${Number(variance.actualTotal || 0).toLocaleString('en-US')}</b></div>
+            <div>Approved<br><b>${esc(p.projectBudgetCurrency || p.currency || variance.currency || 'MVR')} ${approvedFunding.toLocaleString('en-US')}</b></div>
+            <div>Purchase<br><b>${esc(variance.currency || 'MVR')} ${Number(variance.purchaseTotal || 0).toLocaleString('en-US')}</b></div>
+            <div>Actual<br><b>${esc(variance.currency || 'MVR')} ${Number(variance.actualTotal || 0).toLocaleString('en-US')}</b></div>
             <div>RAG<br><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus || 'Green')}</span></div>
           </div>
         </div>`);
@@ -1927,7 +1928,9 @@ WTPages.switchProjView = function(view) {
     const ms = rows(milestones), ts = rows(tasks), riskItems = rows(exceptions), issueRows = rows(issues), boqRows = rows(boq);
     const completed = item => /complete|closed|done/i.test(String(item.status || item.Status || '')) || Number(item.completionPercent ?? item.CompletionPercent ?? 0) >= 100;
     const date = value => value ? new Date(value).toLocaleDateString() : '—';
-    const money = value => `${esc(variance?.currency || 'MVR')} ${Number(value || 0).toLocaleString('en-US')}`;
+    const approvedFunding = Number(project.projectBudgetAmount ?? project.ProjectBudgetAmount ?? variance?.approvedBudget ?? variance?.budget ?? 0);
+    const currency = project.projectBudgetCurrency || project.currency || variance?.currency || 'MVR';
+    const money = value => `${esc(currency)} ${Number(value || 0).toLocaleString('en-US')}`;
     const openIssues = issueRows.filter(i => !/closed|resolved/i.test(String(i.status || i.Status || '')));
     const taskActions = ts.flatMap(t => [t, ...rows(t.subTasks || t.SubTasks)]);
     const pendingTasks = taskActions.filter(t => !completed(t));
@@ -1940,9 +1943,14 @@ WTPages.switchProjView = function(view) {
     const card = (title, content) => `<div class="card" style="padding:14px"><h3 class="card-title">${title}</h3><div style="margin-top:10px">${content}</div></div>`;
     const listOrEmpty = (items, empty) => items.length ? `<ul style="margin:0;padding-left:20px">${items.join('')}</ul>` : `<span style="color:var(--text-muted)">${empty}</span>`;
     const milestonePct = ms.length ? Math.round(ms.reduce((sum,m) => sum + Number(m.completionPercent ?? m.CompletionPercent ?? (completed(m) ? 100 : 0)), 0) / ms.length) : 0;
+    const purchaseTotal = Number(variance?.purchaseTotal ?? variance?.currentCommitment ?? 0);
+    const actualTotal = Number(variance?.actualTotal ?? variance?.actualSpend ?? 0);
+    const forecastTotal = Number(variance?.forecastTotal ?? purchaseTotal + actualTotal);
+    const remainingForecast = approvedFunding - forecastTotal;
+    const computedBudgetStatus = remainingForecast < 0 ? 'Over Budget' : remainingForecast > 0 ? 'Under Budget' : 'On Budget';
     const budgetPanel = variance ? `<div class="grid g4" style="font-size:13px">
-      <div>Approved budget<br><strong>${money(variance.approvedBudget ?? variance.budget)}</strong></div><div>Purchase commitment<br><strong>${money(variance.purchaseTotal ?? variance.currentCommitment)}</strong></div>
-      <div>Actual cost<br><strong>${money(variance.actualTotal ?? variance.actualSpend)}</strong></div><div>Forecast position<br><span class="badge ${(variance.ragStatus || '').toLowerCase() === 'red' ? 'red' : (variance.ragStatus || '').toLowerCase() === 'amber' ? 'amber' : 'green'}">${esc(variance.budgetStatus || variance.ragStatus || 'On Budget')}</span><br>${money(variance.forecastVarianceAmount)}</div>
+      <div>Approved budget<br><strong>${money(approvedFunding)}</strong></div><div>Purchase commitment<br><strong>${money(purchaseTotal)}</strong></div>
+      <div>Actual cost<br><strong>${money(actualTotal)}</strong></div><div>Forecast position<br><span class="badge ${remainingForecast < 0 ? 'red' : remainingForecast === 0 ? 'amber' : 'green'}">${esc(computedBudgetStatus)}</span><br>${money(remainingForecast)}</div>
       </div>` : `<span style="color:var(--text-muted)">${can('Budgets') && can('Costs') ? 'Budget data is unavailable.' : 'Budget and cost data are hidden for your permissions.'}</span>`;
     const centers = rows(variance?.costCenters);
     const costCenterPanel = variance ? (centers.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Cost center</th><th>Budget</th><th>Commitment</th><th>Actual</th><th>Forecast RAG</th></tr></thead><tbody>${centers.map(c => `<tr><td>${esc(c.costCenterName || c.name || `#${c.costCenterId}`)}</td><td>${money(c.budget)}</td><td>${money(c.currentCommitment ?? c.purchaseCost)}</td><td>${money(c.actualSpend)}</td><td><span class="badge ${c.ragStatus === 'Red' ? 'red' : c.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(c.ragStatus || 'Green')}</span></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No cost center rollups.</span>') : budgetPanel;
@@ -2116,6 +2124,7 @@ WTPages.switchProjView = function(view) {
       ` ${pid ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
         <button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
         <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>`)
+      + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Actions'], 'budgetBody')
       + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Actions'], 'ccBody');
     if (!pid) {
@@ -2125,6 +2134,12 @@ WTPages.switchProjView = function(view) {
     }
     try {
       const [budgets, ccs] = await Promise.all([WisetrackAPI.getBudgets(pid), WisetrackAPI.getCostCenters(pid)]);
+      const funding = await WisetrackAPI.getProjectBudgetAllocationSummary(pid).catch(() => null);
+      const fundingCurrency = funding?.currency || funding?.Currency || budgets?.[0]?.currency || 'MVR';
+      const fundingValue = (camel, pascal) => Number(funding?.[camel] ?? funding?.[pascal] ?? 0);
+      $('#projectFundingPosition').innerHTML = funding
+        ? `<div>Total funding<br><strong>${esc(formatBudgetValue(fundingValue('totalFunding', 'TotalFunding'), fundingCurrency))}</strong></div><div>Allocated to child projects<br><strong>${esc(formatBudgetValue(fundingValue('allocatedToChildren', 'AllocatedToChildren'), fundingCurrency))}</strong></div><div>Available balance<br><strong>${esc(formatBudgetValue(fundingValue('available', 'Available'), fundingCurrency))}</strong></div><div>Currency<br><strong>${esc(fundingCurrency)}</strong></div>`
+        : `<span class="card-subtitle">Project funding summary is unavailable.</span>`;
       const variance = await WisetrackAPI.getVariance(pid).catch(() => ({ costCenters: [] }));
       const ragByCenter = new Map((variance.costCenters || []).map(x => [x.costCenterId, x]));
       $('#budgetBody').innerHTML = (budgets || []).map(b => {

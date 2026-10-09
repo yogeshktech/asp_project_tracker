@@ -70,12 +70,23 @@ public class CostRepository : ICostRepository
     public Task<List<ActualCost>> GetActualsAsync(long projectId) =>
         _db.ActualCosts.Where(c => c.ProjectId == projectId).AsNoTracking().ToListAsync();
 
-    public Task<decimal> GetApprovedBudgetAsync(long projectId) =>
-        _db.Budgets.Where(b => b.ProjectId == projectId ||
-            _db.Projects.Any(p => p.Id == b.ProjectId && p.ParentProjectId == projectId)).SumAsync(b => b.ApprovedAmount);
+    public async Task<decimal> GetApprovedBudgetAsync(long projectId)
+    {
+        var approvedBudgets = await _db.Budgets.Where(b => b.ProjectId == projectId ||
+            _db.Projects.Any(p => p.Id == b.ProjectId && p.ParentProjectId == projectId)).SumAsync(b => (decimal?)b.ApprovedAmount) ?? 0;
+        var projectAllocations = await _db.ProjectBudgetAllocations.Where(a => a.ToProjectId == projectId)
+            .SumAsync(a => (decimal?)a.Amount) ?? 0;
+        return approvedBudgets + projectAllocations;
+    }
 
-    public Task<decimal> GetAllocatedBudgetAsync(long projectId) =>
-        _db.BudgetAllocations.Where(a => a.Budget.ProjectId == projectId).SumAsync(a => a.AllocatedAmount);
+    public async Task<decimal> GetAllocatedBudgetAsync(long projectId)
+    {
+        var costCenterAllocations = await _db.BudgetAllocations.Where(a => a.Budget.ProjectId == projectId)
+            .SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
+        var projectAllocations = await _db.ProjectBudgetAllocations.Where(a => a.FromProjectId == projectId)
+            .SumAsync(a => (decimal?)a.Amount) ?? 0;
+        return costCenterAllocations + projectAllocations;
+    }
 
     public async Task<(decimal Purchase, decimal Actual)> GetProjectCostTotalsAsync(long projectId)
     {
@@ -111,7 +122,10 @@ public class CostRepository : ICostRepository
 
         foreach (var cc in centers)
         {
-            var allocated = await _db.BudgetAllocations.Where(a => a.CostCenterId == cc.Id && a.Budget.ProjectId == projectId).SumAsync(a => a.AllocatedAmount);
+            var allocated = await _db.BudgetAllocations.Where(a => a.CostCenterId == cc.Id && a.Budget.ProjectId == projectId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
+            if (cc.ProjectId.HasValue)
+                allocated += (await _db.ProjectBudgetAllocations.Where(a => a.ToProjectId == cc.ProjectId.Value)
+                    .SumAsync(a => (decimal?)a.Amount) ?? 0);
             var purchase = await _db.PurchaseCosts.Where(c => c.CostCenterId == cc.Id &&
                 (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
             var actual = await _db.ActualCosts.Where(c => c.CostCenterId == cc.Id &&
