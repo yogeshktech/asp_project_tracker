@@ -2525,7 +2525,7 @@ function globalFilterAllTables(query) {
 // ================================================================================
 // VISUAL DAILY REPORT CHARTS (DONUT / PIE & PROGRESS BARS)
 // ================================================================================
-function renderDailyReportCharts(targetContainerId, data = {}) {
+function renderLegacyDailyReportCharts(targetContainerId, data = {}) {
   const el = document.getElementById(targetContainerId);
   if (!el) return;
 
@@ -2640,6 +2640,64 @@ function renderDailyReportCharts(targetContainerId, data = {}) {
       </div>
     </div>
   `;
+}
+
+function renderDailyReportCharts(targetContainerId, data = {}) {
+  const el = document.getElementById(targetContainerId);
+  if (!el) return;
+  const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+  const rows = tasks.flatMap(task => [task, ...(typeof wtWalkSubs === 'function' ? wtWalkSubs(task).map(x => x.node) : [])]);
+  const pctOf = task => Math.max(0, Math.min(100, Number(task.completionPercent ?? task.CompletionPercent ?? task.progressPercent ?? task.ProgressPercent ?? task.progress ?? 0) || 0));
+  const statusOf = task => String(task.status || task.Status || '').toLowerCase();
+  const counts = rows.length ? {
+    completed: rows.filter(t => pctOf(t) >= 100 || statusOf(t).includes('complete')).length,
+    delayed: rows.filter(t => /delay|waiting|hold/.test(statusOf(t))).length,
+    critical: rows.filter(t => /critical|block|overdue/.test(statusOf(t))).length
+  } : { completed: 0, delayed: 0, critical: 0 };
+  counts.inProgress = Math.max(0, rows.length - counts.completed - counts.delayed - counts.critical);
+  const total = rows.length;
+  const pct = value => total ? Math.round(value * 100 / total) : 0;
+  const groups = new Map();
+  rows.forEach(task => {
+    const name = task._discipline || task.discipline || task.Discipline || 'Other';
+    const item = groups.get(name) || { count: 0, sum: 0, delayed: 0, critical: 0 };
+    const status = statusOf(task);
+    item.count++;
+    item.sum += pctOf(task);
+    if (/critical|block|overdue/.test(status)) item.critical++;
+    else if (/delay|waiting|hold/.test(status)) item.delayed++;
+    groups.set(name, item);
+  });
+  const disciplineRows = [...groups.entries()].map(([name, item]) => {
+    const average = Math.round(item.sum / item.count);
+    const rag = item.critical ? 'Red' : (item.delayed || average < 50 ? 'Amber' : 'Green');
+    const explanation = `${rag} RAG · ${item.count} tasks · ${item.critical} critical/blocked · ${item.delayed} delayed · ${average}% average completion`;
+    return `<div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:4px;gap:8px;">
+        <strong>${escapeHtmlAttr(name)}</strong>
+        <span style="white-space:nowrap"><b>${average}%</b> · ${item.count} tasks <span class="badge ${rag.toLowerCase()}" title="${escapeHtmlAttr(explanation)}" aria-label="${escapeHtmlAttr(explanation)}">${rag}</span></span>
+      </div><div class="progress ${rag.toLowerCase()}" style="height:8px"><i style="width:${average}%"></i></div>
+    </div>`;
+  }).join('');
+  const legend = [
+    ['Completed', counts.completed, '#059669'], ['In progress', counts.inProgress, '#2563eb'],
+    ['Delayed', counts.delayed, '#d97706'], ['Critical / blocked', counts.critical, '#dc2626']
+  ];
+  let offset = 0;
+  const rings = legend.map(([label, count, color]) => {
+    const slice = pct(count);
+    const circle = `<circle cx="18" cy="18" r="15.91549430918954" fill="transparent" stroke="${color}" stroke-width="3.5" stroke-dasharray="${slice} ${100 - slice}" stroke-dashoffset="-${offset}" aria-label="${label}: ${count}" />`;
+    offset += slice;
+    return circle;
+  }).join('');
+  el.innerHTML = `<div class="charts-grid">
+    <div class="chart-card"><div class="chart-header"><div><div class="chart-title">Task status distribution</div><small style="color:var(--text-muted)">Live tasks across selected resorts</small></div><span class="badge blue">${total} tasks</span></div>
+      <div class="chart-canvas-wrap"><svg viewBox="0 0 36 36" style="width:160px;height:160px;transform:rotate(-90deg)"><circle cx="18" cy="18" r="15.91549430918954" fill="transparent" stroke="#f1f5f9" stroke-width="3.5"></circle>${rings}</svg><div style="position:absolute;text-align:center"><div style="font-size:22px;font-weight:800">${total}</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Tasks</div></div></div>
+      <div class="donut-legend">${legend.map(([label, count, color]) => `<div class="donut-legend-item"><span class="donut-legend-color" style="background:${color}"></span><span>${label} (${count} · ${pct(count)}%)</span></div>`).join('')}</div>
+    </div>
+    <div class="chart-card"><div class="chart-header"><div><div class="chart-title">Progress & RAG by discipline</div><small style="color:var(--text-muted)">Hover a RAG badge for its reason and task counts</small></div><span class="badge gray">Live task data</span></div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">${disciplineRows || '<p style="color:var(--text-muted);font-size:12px">No task data available for the selected resorts.</p>'}</div>
+    </div></div>`;
 }
 
 // Universal Click & Attribute Listeners

@@ -1310,9 +1310,7 @@
     const resorts = await WisetrackAPI.getResorts().catch(() => []);
     const selectedResortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] ? String(resorts[0].id) : '1');
 
-    el.innerHTML = pageHead('', '',
-      `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
-       <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>`)
+    el.innerHTML = pageHead('', '')
       + `
         <!-- View Selector -->
         <div class="card" style="padding:14px 20px; margin-bottom:16px;">
@@ -1323,7 +1321,11 @@
               <button class="btn sm" id="btnViewCards" onclick="WTPages.switchProjView('cards')">▦ Card Grid View</button>
             </div>
               <span id="projectSelectionCount" style="font-size:12px;color:var(--text-muted)">0 selected</span>
-              <button class="btn sm danger" id="deleteSelectedProjectsBtn" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;">
+                <button class="btn sm" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
+                <button class="btn sm primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>
+                <button class="btn sm danger" id="deleteSelectedProjectsBtn" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
+              </div>
           </div>
         </div>
 
@@ -1459,19 +1461,14 @@ WTPages.switchProjView = function(view) {
           const levelClass = depth === 1 ? 'level-1' : (depth === 2 ? 'level-2' : (depth === 3 ? 'level-3' : 'level-4'));
           const icon = depth === 1 ? '🏗️' : (depth === 2 ? '↳ 🏢' : (depth === 3 ? '↳ ↳ 🔨' : '↳ ↳ ↳ ⚡'));
 
-          let levelPill = '';
           let addBtnTxt = '';
           if (depth === 1) {
-            levelPill = '<span class="tree-level-pill lvl-1">🔵 Level 1 · Root Parent</span>';
             addBtnTxt = '+ Sub-Project (L2)';
           } else if (depth === 2) {
-            levelPill = '<span class="tree-level-pill lvl-2">🟣 Level 2 · Sub-Project</span>';
             addBtnTxt = '+ Work Package (L3)';
           } else if (depth === 3) {
-            levelPill = '<span class="tree-level-pill lvl-3">🟢 Level 3 · Child Package</span>';
             addBtnTxt = '+ Sub-Task (L4)';
           } else {
-            levelPill = `<span class="tree-level-pill lvl-4">🟠 Level ${depth} · N-th Term Task</span>`;
             addBtnTxt = '+ Child Task';
           }
 
@@ -1482,8 +1479,7 @@ WTPages.switchProjView = function(view) {
                 <span class="tree-toggle">${hasChildren ? '▼' : '•'}</span>
                 <span style="font-size:15px;">${icon}</span>
                 <div class="tree-title">
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:3px;">
-                    ${levelPill}
+                  <div style="display:flex; align-items:center; margin-bottom:3px;">
                     <strong style="font-size:14px;">${esc(node.name || node.title)}</strong>
                   </div>
                 </div>
@@ -2899,10 +2895,27 @@ WTPages.switchProjView = function(view) {
   async function pageTasks(kind) {
     const el = root();
     const projects = await loadProjectsList();
+    const resorts = kind === 'daily' ? await WisetrackAPI.getResorts().catch(() => []) : [];
+    let dailyResortIds = [];
+    let dailyProjects = [];
+    if (kind === 'daily') {
+      try { dailyResortIds = JSON.parse(localStorage.getItem('WISETRACK_DSR_RESORTS') || '[]').map(String); } catch (_) {}
+      if (!dailyResortIds.length) {
+        const currentResort = localStorage.getItem('WISETRACK_SELECTED_RESORT') || String(resorts[0]?.id || '');
+        if (currentResort) dailyResortIds = [String(currentResort).replace(/^RES-/, '')];
+      }
+      localStorage.setItem('WISETRACK_DSR_RESORTS', JSON.stringify(dailyResortIds));
+      const projectBatches = await Promise.all(resorts.map(r => WisetrackAPI.getProjects(r.id).catch(() => [])));
+      dailyProjects = projectBatches.flatMap((rows, i) => (rows || []).map(p => ({ ...p, _resortId: String(resorts[i]?.id || '') })))
+        .filter((p, i, all) => all.findIndex(x => String(x.id) === String(p.id)) === i);
+      if (!dailyProjects.length) dailyProjects = projects;
+    }
     const pid = await selectedProjectId(projects);
     const title = kind === 'milestones' ? 'Milestones' : kind === 'daily' ? 'Daily Site Progress Report (DSR)' : 'Tasks & Planning';
     const selectedMeta = projects.find(p => String(p.id) === String(pid));
-    const selectedLabel = selectedMeta
+    const selectedLabel = kind === 'daily'
+      ? (dailyResortIds.map(id => resorts.find(r => String(r.id) === id)?.name || `Resort ${id}`).join(', ') || 'No resorts selected')
+      : selectedMeta
       ? `${selectedMeta.name || selectedMeta.title || 'Project'} (${selectedMeta.code || '#' + pid})`
       : (pid ? `Project #${pid}` : 'No project');
 
@@ -2912,10 +2925,16 @@ WTPages.switchProjView = function(view) {
             <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>
             <button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>`
         : kind === 'daily'
-        ? ` <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
+        ? ` <div class="daily-resort-filter" style="position:relative;display:inline-block;margin-right:6px;">
+              <button class="btn" type="button" onclick="WTPages.toggleDailyResortMenu()"><i class="fa-solid fa-hotel"></i> Resorts (${dailyResortIds.length}) <i class="fa-solid fa-chevron-down"></i></button>
+              <div id="dailyResortMenu" class="card" style="display:none;position:absolute;z-index:30;top:calc(100% + 4px);left:0;min-width:240px;max-height:280px;overflow:auto;padding:8px;box-shadow:var(--shadow-md);">
+                ${resorts.map(r => `<label style="display:flex;align-items:center;gap:8px;padding:7px 8px;cursor:pointer;white-space:nowrap;"><input type="checkbox" value="${esc(r.id)}" ${dailyResortIds.includes(String(r.id)) ? 'checked' : ''} onchange="WTPages.setDailyResort('${esc(r.id)}',this.checked)"><span>${esc(r.name || r.resortName || `Resort ${r.id}`)}</span></label>`).join('')}
+              </div>
+            </div>
+            <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
             <input id="dailyReportDate" type="date" value="${new Date().toLocaleDateString('en-CA')}" style="max-width:150px">
             <select id="dailyReportMode" style="max-width:210px"><option value="daily">Updates on date</option><option value="cumulative">Progress as of date</option></select>
-            <button class="btn" onclick="WTPages.loadDailyTaskReport(${pid})">Load report</button>
+            <button class="btn" onclick="WTPages.loadDailyTaskReport()">Load report</button>
             <button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
         : ` <button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub / Child</button>
@@ -2929,21 +2948,39 @@ WTPages.switchProjView = function(view) {
         ? ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Owner', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
         : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
+
+    if (kind === 'daily') {
+      WTPages.toggleDailyResortMenu = function() {
+        const menu = $('#dailyResortMenu');
+        if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      };
+      WTPages.setDailyResort = function(resortId, checked) {
+        let ids = [];
+        try { ids = JSON.parse(localStorage.getItem('WISETRACK_DSR_RESORTS') || '[]').map(String); } catch (_) {}
+        ids = checked ? [...new Set([...ids, String(resortId)])] : ids.filter(id => id !== String(resortId));
+        localStorage.setItem('WISETRACK_DSR_RESORTS', JSON.stringify(ids));
+        pageTasks('daily');
+      };
+    }
     
     const nestCols = kind === 'planning' ? 13 : 8;
     if (kind === 'planning') {
       el.querySelector('#tasksBody')?.closest('.table-wrap')?.classList.add('planning-table-wrap');
       el.querySelector('#tasksBody')?.closest('table')?.classList.add('planning-table');
     }
-    if (!pid) {
+    if (!pid && kind !== 'daily') {
       $('#tasksBody').innerHTML = emptyRow(kind === 'milestones' ? 6 : nestCols, 'No project available. Create / open a project first.');
       $('#excList').innerHTML = '<p style="color:var(--text-muted);font-size:12.5px;">Select a project to view exceptions.</p>';
       return;
     }
     try {
-      const scopeIds = [Number(pid)];
+      const selectedDailyProjects = kind === 'daily' ? dailyProjects.filter(p => {
+        const resortId = String(p.resortId || p.ResortId || p._resortId || '').replace(/^RES-/, '');
+        return dailyResortIds.includes(resortId);
+      }) : [];
+      const scopeIds = kind === 'daily' ? selectedDailyProjects.map(p => Number(p.id)) : [Number(pid)];
       const nameOf = (id) => {
-        const p = projects.find(x => Number(x.id) === Number(id));
+        const p = (kind === 'daily' ? dailyProjects : projects).find(x => Number(x.id) === Number(id));
         return p ? (p.code || p.name || `#${id}`) : `#${id}`;
       };
 
@@ -2978,10 +3015,11 @@ WTPages.switchProjView = function(view) {
         }).join('') : emptyRow(6, `No milestones for ${selectedLabel}. Other projects are hidden.`);
       } else {
         const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id)));
-        const tasks = filterRowsForProject(
-          batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => ({ ...t, _projectId: scopeIds[i] }))),
-          pid
-        );
+        const fetchedTasks = batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => {
+          const project = kind === 'daily' ? dailyProjects.find(p => Number(p.id) === Number(scopeIds[i])) : null;
+          return { ...t, _projectId: scopeIds[i], _projectName: project?.name || project?.title || '', _discipline: project?.discipline || project?.disc || 'Other' };
+        }));
+        const tasks = kind === 'daily' ? fetchedTasks : filterRowsForProject(fetchedTasks, pid);
         const [projectIssues, users] = await Promise.all([
           kind === 'planning' ? WisetrackAPI.getIssues(Number(pid)).catch(() => []) : Promise.resolve([]),
           WisetrackAPI.getUsers().catch(() => [])
@@ -3126,7 +3164,8 @@ WTPages.switchProjView = function(view) {
               completedCount: comp,
               inProgressCount: prog,
               delayedCount: del,
-              criticalCount: crit
+              criticalCount: crit,
+              tasks
             });
           }
         }
@@ -3139,6 +3178,7 @@ WTPages.switchProjView = function(view) {
         : '<p style="color:var(--text-muted);font-size:12.5px;">🟢 Zero active blockers or exceptions flagged for this package.</p>';
       
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
+      if (kind === 'daily') await loadDailyTaskReport();
     } catch (e) {
       $('#tasksBody').innerHTML = errRow(kind === 'milestones' ? 6 : nestCols, e);
       $('#excList').innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`;
@@ -3146,18 +3186,41 @@ WTPages.switchProjView = function(view) {
     }
   }
 
-  async function loadDailyTaskReport(projectId) {
+  async function loadDailyTaskReport() {
     const target = $('#dailyReportContent');
     if (!target) return;
     const date = $('#dailyReportDate')?.value || '';
     const cumulative = $('#dailyReportMode')?.value === 'cumulative';
     target.innerHTML = 'Loading report...';
     try {
-      const report = await WisetrackAPI.getDailyReport(projectId, date, cumulative);
-      const updates = report.taskUpdates || report.TaskUpdates || [];
-      target.innerHTML = `<div style="margin-bottom:10px"><strong>${cumulative ? 'Progress as of' : 'Updates on'}:</strong> ${esc(report.reportDate || report.ReportDate || date)} &nbsp; <strong>Completion represented by the listed updates:</strong> ${Number(report.overallCompletionPercent ?? report.OverallCompletionPercent ?? 0).toFixed(1)}%</div>
-        <div class="table-wrap"><table class="table"><thead><tr><th>Task / Sub-task</th><th>Status</th><th>Completion</th><th>Remarks</th></tr></thead><tbody>
-          ${updates.length ? updates.map(u => `<tr><td>${esc(u.title || u.Title || '')}${(u.subTaskTitle || u.SubTaskTitle) ? `<small style="display:block;color:var(--text-muted)">${esc(u.subTaskTitle || u.SubTaskTitle)}</small>` : ''}</td><td>${esc(u.status || u.Status || '—')}</td><td>${Number(u.completionPercent ?? u.CompletionPercent ?? 0)}%</td><td>${esc(u.remarks || u.Remarks || '—')}</td></tr>`).join('') : '<tr><td colspan="4">No progress updates recorded for this date.</td></tr>'}
+      let resortIds = [];
+      try { resortIds = JSON.parse(localStorage.getItem('WISETRACK_DSR_RESORTS') || '[]').map(String); } catch (_) {}
+      const resorts = await WisetrackAPI.getResorts().catch(() => []);
+      const projectBatches = await Promise.all(resortIds.map(id => WisetrackAPI.getProjects(id).catch(() => [])));
+      const selectedProjects = projectBatches.flatMap((rows, i) => (rows || []).map(project => ({ ...project, _resortId: resortIds[i] })));
+      const reports = (await Promise.all(selectedProjects.map(async project => {
+        try {
+          const report = await WisetrackAPI.getDailyReport(project.id, date, cumulative);
+          const resortId = String(project.resortId || project.ResortId || project._resortId || '').replace(/^RES-/, '');
+          const resort = resorts.find(r => String(r.id) === resortId);
+          return { project, resort, report, updates: report.taskUpdates || report.TaskUpdates || [] };
+        } catch (error) {
+          const resort = resorts.find(r => String(r.id) === String(project._resortId));
+          return { project, resort, report: {}, updates: [], error };
+        }
+      })));
+      const updates = reports.flatMap(({ project, resort, updates: rows }) => rows.map(u => ({ ...u, _projectName: project.name || project.title || `Project ${project.id}`, _projectCode: project.code || '', _resortName: resort?.name || resort?.resortName || `Resort ${project.resortId || ''}` })));
+      const reportRows = reports.flatMap(({ project, resort, updates: rows, error }) => {
+        const resortName = resort?.name || resort?.resortName || `Resort ${project._resortId || project.resortId || ''}`;
+        const projectName = project.name || project.title || `Project ${project.id}`;
+        const projectCode = project.code ? `<small style="display:block;color:var(--text-muted)">${esc(project.code)}</small>` : '';
+        if (error) return [`<tr><td>${esc(resortName)}</td><td>${esc(projectName)}${projectCode}</td><td colspan="4" style="color:#b91c1c">Report could not be loaded: ${esc(error.message || 'Request failed')}</td></tr>`];
+        if (!rows.length) return [`<tr><td>${esc(resortName)}</td><td>${esc(projectName)}${projectCode}</td><td colspan="4" style="color:var(--text-muted)">No ${cumulative ? 'progress snapshot' : 'daily report entries'} for this date.</td></tr>`];
+        return rows.map(u => `<tr><td>${esc(resortName)}</td><td>${esc(projectName)}${projectCode}</td><td>${esc(u.title || u.Title || '')}${(u.subTaskTitle || u.SubTaskTitle) ? `<small style="display:block;color:var(--text-muted)">${esc(u.subTaskTitle || u.SubTaskTitle)}</small>` : ''}</td><td>${esc(u.status || u.Status || '—')}</td><td>${Number(u.completionPercent ?? u.CompletionPercent ?? 0)}%</td><td>${esc(u.remarks || u.Remarks || '—')}</td></tr>`);
+      });
+      target.innerHTML = `<div style="margin-bottom:10px"><strong>${cumulative ? 'Progress as of' : 'Updates on'}:</strong> ${esc(date || new Date().toLocaleDateString('en-CA'))} &nbsp; <strong>Selected resorts:</strong> ${resortIds.length} &nbsp; <strong>Projects included:</strong> ${selectedProjects.length} &nbsp; <strong>Daily entries:</strong> ${updates.length}</div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Resort</th><th>Project</th><th>Task / Sub-task</th><th>Status</th><th>Completion</th><th>Remarks</th></tr></thead><tbody>
+          ${reportRows.length ? reportRows.join('') : '<tr><td colspan="6">No projects found for the selected resorts.</td></tr>'}
         </tbody></table></div>`;
     } catch (e) { target.innerHTML = `<p style="color:#dc2626">${esc(e.message)}</p>`; }
   }
@@ -5098,7 +5161,7 @@ WTPages.switchProjView = function(view) {
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, createBoqRevision, saveBoqRevisionItem, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
-    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory,
+    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,
     openDependencyModal, saveDependency, focusDependency,
     openCreateSubTaskModal: (p, s) => openCreateSubTaskModal(p, s),
     saveSubTask: (e) => handleCreateSubTask(e),
