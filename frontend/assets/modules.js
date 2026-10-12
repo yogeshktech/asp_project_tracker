@@ -2193,7 +2193,10 @@ WTPages.switchProjView = function(view) {
         const rollupBudget = Number(rollup.budget ?? rollup.Budget ?? 0);
         // A project's approved budget is available to its own cost center even
         // when nobody has created an explicit BudgetAllocation record.
-        const childFunding = Number(childSummary?.totalFunding ?? childSummary?.TotalFunding ?? 0);
+        // Rows represent each project's own funding. The parent summary can also
+        // include deeper descendants, so using TotalFunding here would double count.
+        const childFunding = Number(childSummary?.projectFunding ?? childSummary?.ProjectFunding
+          ?? childSummary?.totalFunding ?? childSummary?.TotalFunding ?? 0);
         const centerBudget = ccProjectId === Number(pid)
           ? Math.max(rollupBudget, ownApprovedFunding)
           : Math.max(allocated, rollupBudget, childFunding);

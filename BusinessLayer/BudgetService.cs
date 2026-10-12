@@ -274,8 +274,18 @@ public class BudgetService : IBudgetService
 
         var ownBudgets = await _db.Budgets.AsNoTracking().Where(b => b.ProjectId == projectId)
             .Select(b => new { b.ApprovedAmount, b.Currency }).ToListAsync();
+        var projectParents = await _db.Projects.AsNoTracking().Where(p => p.ParentProjectId.HasValue)
+            .Select(p => new { p.Id, p.ParentProjectId }).ToListAsync();
+        var descendantIds = new HashSet<long>();
+        var frontier = new HashSet<long> { projectId };
+        while (frontier.Count > 0)
+        {
+            var next = projectParents.Where(p => p.ParentProjectId.HasValue && frontier.Contains(p.ParentProjectId.Value))
+                .Select(p => p.Id).Where(id => descendantIds.Add(id)).ToHashSet();
+            frontier = next;
+        }
         var childBudgets = await _db.Budgets.AsNoTracking()
-            .Where(b => _db.Projects.Any(p => p.Id == b.ProjectId && p.ParentProjectId == projectId))
+            .Where(b => descendantIds.Contains(b.ProjectId))
             .Select(b => new { b.ApprovedAmount, b.Currency }).ToListAsync();
         var childProjects = await _db.Projects.AsNoTracking().Where(p => p.ParentProjectId == projectId)
             .Select(p => new ProjectBudgetChildDto { Id = p.Id, Name = p.Name, Code = p.Code }).ToListAsync();
@@ -308,7 +318,8 @@ public class BudgetService : IBudgetService
         var outgoingTransferAmount = transfers.Where(a => a.FromProjectId == projectId && string.Equals(a.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(a => a.Amount);
         var ownAmount = ownBudgets.Where(b => string.Equals(b.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(b => b.ApprovedAmount);
         var childBudgetAmount = childBudgets.Where(b => string.Equals(b.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(b => b.ApprovedAmount);
-        var totalFunding = ownAmount + incomingLegacyAmount + incomingTransferAmount + childBudgetAmount;
+        var projectFunding = ownAmount + incomingLegacyAmount + incomingTransferAmount;
+        var totalFunding = projectFunding + childBudgetAmount;
         var allocatedToChildren = legacyOutgoing + outgoingTransferAmount + childBudgetAmount;
 
         return new ProjectBudgetAllocationSummaryDto
@@ -316,6 +327,7 @@ public class BudgetService : IBudgetService
             ProjectId = projectId,
             ProjectName = project.Name,
             Currency = currency,
+            ProjectFunding = projectFunding,
             TotalFunding = totalFunding,
             AllocatedToChildren = allocatedToChildren,
             Available = Math.Max(0, totalFunding - allocatedToChildren),

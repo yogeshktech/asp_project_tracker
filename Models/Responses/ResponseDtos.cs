@@ -156,6 +156,7 @@ public class ProjectBudgetAllocationSummaryDto
     public long ProjectId { get; set; }
     public string ProjectName { get; set; } = string.Empty;
     public string Currency { get; set; } = "MVR";
+    public decimal ProjectFunding { get; set; }
     public decimal TotalFunding { get; set; }
     public decimal AllocatedToChildren { get; set; }
     public decimal Available { get; set; }
