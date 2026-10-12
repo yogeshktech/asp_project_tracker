@@ -7,6 +7,7 @@ public class Boq
 {
     public long Id { get; set; }
     public long ProjectId { get; set; }
+    public int ProjectVersionNo { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Status { get; set; } = "Draft";
     public long? CreatedBy { get; set; }
@@ -39,6 +40,7 @@ public class BoqItem
     public string? ItemCode { get; set; }
     public string? ItemName { get; set; }
     public int? LineNo { get; set; }
+    public string? DisplayLineNo { get; set; }
     public string? Description { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }

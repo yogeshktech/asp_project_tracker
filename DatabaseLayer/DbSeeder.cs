@@ -485,6 +485,7 @@ public static class DbSeeder
         var boq = new Boq
         {
             ProjectId = subMep.Id,
+            ProjectVersionNo = 1,
             Title = "MEP Bill of Quantities — Tower A",
             Status = "Baseline",
             CreatedBy = pm.Id,
@@ -499,11 +500,11 @@ public static class DbSeeder
         await db.SaveChangesAsync();
 
         db.BoqItems.AddRange(
-            new BoqItem { BoqVersionId = boqV2.Id, ItemId = itemVrv.Id, LineNo = 1, Description = itemVrv.Name, Quantity = 48, UnitPrice = 45000m, Amount = 2160000m, Remarks = "Guest suites" },
-            new BoqItem { BoqVersionId = boqV2.Id, ItemId = items[3].Id, LineNo = 2, Description = items[3].Name, Quantity = 8, UnitPrice = 320000m, Amount = 2560000m, Remarks = "Roof condensers" },
-            new BoqItem { BoqVersionId = boqV2.Id, ItemId = itemCopper.Id, LineNo = 3, Description = itemCopper.Name, Quantity = 1200, UnitPrice = 620m, Amount = 744000m, Remarks = "Risers L1-L4" },
-            new BoqItem { BoqVersionId = boqV2.Id, ItemId = itemLed.Id, LineNo = 4, Description = itemLed.Name, Quantity = 320, UnitPrice = 850m, Amount = 272000m, Remarks = "Corridors" },
-            new BoqItem { BoqVersionId = boqV2.Id, ItemId = items[9].Id, LineNo = 5, Description = items[9].Name, Quantity = 1, UnitPrice = 450000m, Amount = 450000m, Remarks = "T&C" }
+            new BoqItem { BoqVersionId = boqV2.Id, ItemId = itemVrv.Id, LineNo = 1, DisplayLineNo = "1", Description = itemVrv.Name, Quantity = 48, UnitPrice = 45000m, Amount = 2160000m, Remarks = "Guest suites" },
+            new BoqItem { BoqVersionId = boqV2.Id, ItemId = items[3].Id, LineNo = 2, DisplayLineNo = "2", Description = items[3].Name, Quantity = 8, UnitPrice = 320000m, Amount = 2560000m, Remarks = "Roof condensers" },
+            new BoqItem { BoqVersionId = boqV2.Id, ItemId = itemCopper.Id, LineNo = 3, DisplayLineNo = "3", Description = itemCopper.Name, Quantity = 1200, UnitPrice = 620m, Amount = 744000m, Remarks = "Risers L1-L4" },
+            new BoqItem { BoqVersionId = boqV2.Id, ItemId = itemLed.Id, LineNo = 4, DisplayLineNo = "4", Description = itemLed.Name, Quantity = 320, UnitPrice = 850m, Amount = 272000m, Remarks = "Corridors" },
+            new BoqItem { BoqVersionId = boqV2.Id, ItemId = items[9].Id, LineNo = 5, DisplayLineNo = "5", Description = items[9].Name, Quantity = 1, UnitPrice = 450000m, Amount = 450000m, Remarks = "T&C" }
         );
         await db.SaveChangesAsync();
         var boqLines = await db.BoqItems.Where(b => b.BoqVersionId == boqV2.Id).OrderBy(b => b.LineNo).ToListAsync();

@@ -85,6 +85,7 @@ public static class DatabaseBootstrap
         if (!budgetVersionCurrencyExists)
             await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions v SET currency = b.currency FROM budgets b WHERE v.budget_id = b.id""");
         await EnsureItemMasterColumnsAsync(db);
+        await EnsureBoqProjectVersionColumnAsync(db);
         await EnsureBoqItemColumnsAsync(db);
         await EnsureBoqBaselineColumnAsync(db);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS field_permissions_json TEXT NULL""");
@@ -129,6 +130,17 @@ public static class DatabaseBootstrap
 
     private static async Task EnsureBoqItemColumnsAsync(AppDbContext db)
     {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS display_line_no VARCHAR(30)""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            WITH ranked AS (
+                SELECT id, ROW_NUMBER() OVER (PARTITION BY boq_version_id ORDER BY id) AS line_number
+                FROM boq_items WHERE line_no IS NULL
+            )
+            UPDATE boq_items i SET line_no = ranked.line_number
+            FROM ranked WHERE i.id = ranked.id
+            """);
+        await db.Database.ExecuteSqlRawAsync("""UPDATE boq_items SET display_line_no = line_no::TEXT WHERE display_line_no IS NULL AND line_no IS NOT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS item_code VARCHAR(50)""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS item_name VARCHAR(250)""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS unit VARCHAR(100)""");
@@ -137,6 +149,24 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ALTER COLUMN remarks TYPE TEXT""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS attachment_path TEXT""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS attachment_name TEXT""");
+    }
+
+    private static async Task EnsureBoqProjectVersionColumnAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boqs ADD COLUMN IF NOT EXISTS project_version_no INTEGER NOT NULL DEFAULT 0""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            WITH ranked AS (
+                SELECT b.id,
+                       COALESCE((SELECT MAX(existing.project_version_no) FROM boqs existing
+                                 WHERE existing.project_id = b.project_id AND existing.project_version_no > 0), 0)
+                       + ROW_NUMBER() OVER (PARTITION BY b.project_id ORDER BY b.created_at, b.id) AS project_version
+                FROM boqs b WHERE b.project_version_no = 0
+            )
+            UPDATE boqs b SET project_version_no = ranked.project_version
+            FROM ranked WHERE b.id = ranked.id
+            """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS ux_boqs_project_version ON boqs(project_id, project_version_no) WHERE project_version_no > 0""");
     }
 
     private static async Task EnsureBoqBaselineColumnAsync(AppDbContext db)

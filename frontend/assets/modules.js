@@ -2671,9 +2671,9 @@ WTPages.switchProjView = function(view) {
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
       ` <button class="btn" onclick="WTPages.boqFromMaster()">From Master Items</button>
         <button class="btn primary" onclick="WTPages.boqImport()">Import vendor file (CSV)</button>`)
-      + tableWrap(['ID', 'Title', 'Status', 'Latest / Current Baseline', 'Actions'], 'boqBody');
+      + tableWrap(['SR NO', 'Title', 'Status', 'BOQ Version', 'Latest / Current Baseline', 'Created', 'Actions'], 'boqBody');
     if (!pid) {
-      $('#boqBody').innerHTML = emptyRow(5, 'No project available.');
+      $('#boqBody').innerHTML = emptyRow(7, 'No project available.');
       return;
     }
     try {
@@ -2681,11 +2681,35 @@ WTPages.switchProjView = function(view) {
       const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id).catch(() => [])));
       const list = batches.flat();
       $('#boqBody').innerHTML = list.length ? list.map(b => `
-        <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || '—')}</td>
-        <td>${(() => { const vs = b.versions || b.Versions || []; const latest = Math.max(0, ...vs.map(v => Number(v.versionNo || v.VersionNo || 0))); const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `v${latest || '—'} / Baseline v${base?.versionNo || base?.VersionNo || '—'}`; })()}</td>
-        <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button></td></tr>`
-      ).join('') : emptyRow(5, 'No BOQ — import or create from master');
-    } catch (e) { $('#boqBody').innerHTML = errRow(5, e); }
+        <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || b.Status || '—')}</td>
+        <td>v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</td>
+        <td>${(() => { const vs = b.versions || b.Versions || []; const latest = Math.max(0, ...vs.map(v => Number(v.versionNo || v.VersionNo || 0))); const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `Revision v${latest || '—'} / Baseline v${base?.versionNo || base?.VersionNo || '—'}`; })()}</td>
+        <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '—')}</td>
+        <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button> <button class="btn sm" onclick="WTPages.editBoq(${b.id})">Edit</button></td></tr>`
+      ).join('') : emptyRow(7, 'No BOQ — import or create from master');
+    } catch (e) { $('#boqBody').innerHTML = errRow(7, e); }
+  }
+
+  async function editBoq(id) {
+    try {
+      const boq = await WisetrackAPI.getBoq(id);
+      const statuses = ['Draft', 'Imported', 'Under Review', 'Submitted', 'Approved', 'Rejected', 'Completed', 'Cancelled', 'Baseline'];
+      const currentStatus = boq.status || boq.Status || 'Draft';
+      if (!statuses.some(status => status.toLowerCase() === currentStatus.toLowerCase())) statuses.unshift(currentStatus);
+      const options = statuses.map(status => `<option value="${esc(status)}" ${status.toLowerCase() === currentStatus.toLowerCase() ? 'selected' : ''}>${esc(status)}</option>`).join('');
+      openModal('Edit BOQ', `<form onsubmit="WTPages.saveBoqEdit(event, ${id})"><div class="form-grid">
+        <div class="field full"><label>Title *</label><input id="boqEditTitle" value="${esc(boq.title || boq.Title || '')}" required></div>
+        <div class="field full"><label>Status *</label><select id="boqEditStatus" required>${options}</select></div>
+        </div><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save changes</button></div></form>`);
+    } catch (error) { showToast(error.message || 'Could not load BOQ.', 'danger'); }
+  }
+
+  async function saveBoqEdit(event, id) {
+    event.preventDefault();
+    try {
+      await WisetrackAPI.updateBoq(id, { title: $('#boqEditTitle').value.trim(), status: $('#boqEditStatus').value });
+      closeModal(); showToast('BOQ updated'); await pageBoq();
+    } catch (error) { showToast(error.message || 'BOQ update failed.', 'danger'); }
   }
 
   async function boqFromMaster() {
@@ -2873,7 +2897,8 @@ WTPages.switchProjView = function(view) {
       const latestIsBaseline = latest?.isCurrentBaseline || latest?.IsCurrentBaseline;
       openModal(`BOQ — ${esc(b.title || b.name || '#' + id)}`, `
         <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <span class="badge blue">${esc(b.status || 'Draft')}</span>
+          <span class="badge blue">${esc(b.status || b.Status || 'Draft')}</span>
+          <span class="badge gray">BOQ Version v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</span>
           <span class="badge gray">Latest: Version ${latest?.versionNo || latest?.VersionNo || versions.length || 1}</span>
           <span class="badge green">Current Baseline: Version ${currentBaseline?.versionNo || currentBaseline?.VersionNo || '—'}</span>
           ${latest?.remarks || latest?.Remarks ? `<small style="color:var(--text-muted)">${esc(latest.remarks || latest.Remarks)}</small>` : ''}
@@ -2899,7 +2924,7 @@ WTPages.switchProjView = function(view) {
           <tbody>
             ${items.length ? items.map(it => `
               <tr>
-                <td>${it.lineNo ?? it.LineNo ?? it.id ?? '—'}</td>
+                <td>${esc(it.displayLineNo || it.DisplayLineNo || it.lineNo || it.LineNo || it.id || '—')}</td>
                 <td>${esc(it.itemName || it.ItemName || it.itemCode || it.ItemCode || it.item?.name || it.Item?.name || '—')}</td>
                 <td>${esc(it.unit || it.Unit || it.item?.unit?.name || it.Item?.unit?.name || '—')}</td>
                 <td>${latestIsBaseline ? `MVR ${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-US')}` : `<input id="boqPrice-${it.id || it.Id}" type="number" min="0" step="0.01" value="${it.unitPrice ?? it.UnitPrice ?? 0}" style="width:110px">`}</td>
@@ -5231,7 +5256,7 @@ WTPages.switchProjView = function(view) {
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,
-    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, createBoqRevision, saveBoqRevisionItem, setBoqBaseline, downloadReport,
+    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, editBoq, saveBoqEdit, createBoqRevision, saveBoqRevisionItem, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,

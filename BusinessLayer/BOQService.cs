@@ -4,6 +4,8 @@ using project_tracker_madhu.DatabaseLayer.Items;
 using project_tracker_madhu.Models.Entities;
 using project_tracker_madhu.Models.Requests;
 using project_tracker_madhu.Models.Responses;
+using project_tracker_madhu.DatabaseLayer.Context;
+using Microsoft.EntityFrameworkCore;
 
 namespace project_tracker_madhu.BusinessLayer.BoqModule;
 
@@ -11,6 +13,7 @@ public interface IBOQService
 {
     Task<List<Boq>> GetByProjectAsync(long userId, long projectId);
     Task<Boq?> GetAsync(long id);
+    Task<Boq?> UpdateAsync(long id, UpdateBoqRequest request, long userId);
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
     Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId);
     Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId);
@@ -24,13 +27,15 @@ public class BOQService : IBOQService
     private readonly IItemRepository _items;
     private readonly IAuditService _audit;
     private readonly IPermissionService _permissions;
+    private readonly AppDbContext _db;
 
-    public BOQService(IBOQRepository repository, IItemRepository items, IAuditService audit, IPermissionService permissions)
+    public BOQService(IBOQRepository repository, IItemRepository items, IAuditService audit, IPermissionService permissions, AppDbContext db)
     {
         _repository = repository;
         _items = items;
         _audit = audit;
         _permissions = permissions;
+        _db = db;
     }
 
     public async Task<List<Boq>> GetByProjectAsync(long userId, long projectId)
@@ -39,6 +44,28 @@ public class BOQService : IBOQService
         return await _repository.GetByProjectAsync(projectId);
     }
     public Task<Boq?> GetAsync(long id) => _repository.GetAsync(id);
+
+    private async Task<int> NextProjectBoqVersionAsync(long projectId) =>
+        (await _db.Boqs.Where(b => b.ProjectId == projectId).MaxAsync(b => (int?)b.ProjectVersionNo) ?? 0) + 1;
+
+    public async Task<Boq?> UpdateAsync(long id, UpdateBoqRequest request, long userId)
+    {
+        var boq = await _repository.GetAsync(id);
+        if (boq == null) return null;
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        var title = request.Title.Trim();
+        var status = request.Status.Trim();
+        var allowedStatuses = new[] { "Draft", "Imported", "Under Review", "Submitted", "Approved", "Rejected", "Completed", "Cancelled", "Baseline" };
+        if (string.IsNullOrWhiteSpace(title)) throw new InvalidOperationException("BOQ title is required.");
+        if (!allowedStatuses.Contains(status, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Choose a valid BOQ status.");
+        boq.Title = title;
+        boq.Status = allowedStatuses.First(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+        boq.UpdatedAt = DateTime.UtcNow;
+        await _repository.UpdateAsync(boq);
+        await _audit.LogAsync(userId, "Update", "BOQ", id, $"Status: {boq.Status}");
+        return boq;
+    }
 
     public async Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId)
     {
@@ -104,9 +131,12 @@ public class BOQService : IBOQService
         if (!dto.Commit || !result.IsValid)
             return result;
 
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        var projectVersionNo = await NextProjectBoqVersionAsync(dto.ProjectId);
         var boq = await _repository.AddAsync(new Boq
         {
             ProjectId = dto.ProjectId,
+            ProjectVersionNo = projectVersionNo,
             Title = dto.Title,
             Status = "Imported",
             CreatedBy = userId,
@@ -140,7 +170,8 @@ public class BOQService : IBOQService
                 ItemId = itemId,
                 ItemCode = masterItem?.ItemCode ?? l.ItemCode,
                 ItemName = masterItem?.Name ?? l.Description,
-                LineNo = l.LineNo,
+                LineNo = l.LineNo ?? lines.Count + 1,
+                DisplayLineNo = (l.LineNo ?? lines.Count + 1).ToString(),
                 Description = l.Description,
                 Quantity = l.Quantity,
                 UnitPrice = l.UnitPrice,
@@ -155,6 +186,7 @@ public class BOQService : IBOQService
         }
 
         await _repository.AddItemsAsync(lines);
+        await transaction.CommitAsync();
         await _audit.LogAsync(userId, "Import", "BOQ", boq.Id, $"{lines.Count} lines");
         result.CommittedBoq = await _repository.GetAsync(boq.Id);
         return result;
@@ -172,9 +204,12 @@ public class BOQService : IBOQService
             var item = await _items.GetAsync(line.ItemId) ?? throw new InvalidOperationException($"Item {line.ItemId} was not found in Item Master.");
             items.Add((line, item));
         }
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        var projectVersionNo = await NextProjectBoqVersionAsync(projectId);
         var boq = await _repository.AddAsync(new Boq
         {
             ProjectId = projectId,
+            ProjectVersionNo = projectVersionNo,
             Title = "BOQ from Item Master",
             Status = "Draft",
             CreatedBy = userId,
@@ -202,7 +237,8 @@ public class BOQService : IBOQService
                 ItemId = item.Id,
                 ItemCode = item.ItemCode,
                 ItemName = item.Name,
-                LineNo = lineNo++,
+                LineNo = lineNo,
+                DisplayLineNo = (lineNo++).ToString(),
                 Description = string.IsNullOrWhiteSpace(request.Description) ? item.Description ?? item.Name : request.Description.Trim(),
                 Quantity = request.Quantity,
                 UnitPrice = request.UnitPrice,
@@ -217,6 +253,7 @@ public class BOQService : IBOQService
         }
 
         await _repository.AddItemsAsync(lines);
+        await transaction.CommitAsync();
         return await _repository.GetAsync(boq.Id) ?? boq;
     }
 
@@ -243,6 +280,7 @@ public class BOQService : IBOQService
             ItemCode = item.ItemCode,
             ItemName = item.ItemName,
             LineNo = item.LineNo,
+            DisplayLineNo = item.DisplayLineNo ?? item.LineNo?.ToString(),
             Description = item.Description,
             Quantity = item.Quantity,
             UnitPrice = item.UnitPrice,
@@ -285,14 +323,33 @@ public class BOQService : IBOQService
         if (request.UnitPrice < 0) throw new InvalidOperationException("Purchase price cannot be negative.");
         var item = await _repository.GetItemAsync(itemId);
         if (item == null || item.BoqVersionId != versionId) return null;
+        var previousVersion = boq.Versions.Where(v => v.VersionNo < latest.VersionNo).OrderByDescending(v => v.VersionNo).FirstOrDefault();
+        var previousItem = previousVersion?.Items.FirstOrDefault(i => i.LineNo == item.LineNo);
+        var description = request.Description?.Trim();
+        var remarks = request.Remarks?.Trim();
+        var lineChanged = previousItem != null &&
+            (previousItem.Quantity != request.Quantity || previousItem.UnitPrice != request.UnitPrice ||
+             !string.Equals(previousItem.Description, description, StringComparison.Ordinal) ||
+             !string.Equals(previousItem.Remarks, remarks, StringComparison.Ordinal));
         decimal amount;
         try { amount = request.Quantity * request.UnitPrice; }
         catch (OverflowException) { throw new InvalidOperationException("Quantity × purchase price exceeds the supported amount range."); }
+        if (previousItem != null)
+        {
+            var previousSerial = previousItem.DisplayLineNo ?? previousItem.LineNo?.ToString() ?? item.LineNo?.ToString() ?? "1";
+            if (lineChanged)
+            {
+                var serialParts = previousSerial.Split('.');
+                var revisionCount = serialParts.Length > 1 && int.TryParse(serialParts[^1], out var previousRevision) ? previousRevision : 0;
+                item.DisplayLineNo = $"{serialParts[0]}.{revisionCount + 1}";
+            }
+            else item.DisplayLineNo = previousSerial;
+        }
         item.Quantity = request.Quantity;
         item.UnitPrice = request.UnitPrice;
         item.Amount = amount;
-        item.Description = request.Description?.Trim();
-        item.Remarks = request.Remarks?.Trim();
+        item.Description = description;
+        item.Remarks = remarks;
         await _repository.UpdateItemAsync(item);
         await _audit.LogAsync(userId, "UpdateRevisionLine", "BOQ", boqId, $"Version {latest.VersionNo}, line {itemId}");
         return item;

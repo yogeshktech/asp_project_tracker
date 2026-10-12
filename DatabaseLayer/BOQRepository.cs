@@ -9,6 +9,7 @@ public interface IBOQRepository
     Task<List<Boq>> GetByProjectAsync(long projectId);
     Task<Boq?> GetAsync(long id);
     Task<Boq> AddAsync(Boq boq);
+    Task UpdateAsync(Boq boq);
     Task<BoqVersion> AddVersionAsync(BoqVersion version);
     Task AddItemsAsync(IEnumerable<BoqItem> items);
     Task SetCurrentBaselineAsync(long boqId, long versionId);
@@ -34,6 +35,15 @@ public class BOQRepository : IBOQRepository
         _db.Boqs.Add(boq);
         await _db.SaveChangesAsync();
         return boq;
+    }
+
+    public async Task UpdateAsync(Boq boq)
+    {
+        _db.Boqs.Attach(boq);
+        _db.Entry(boq).Property(x => x.Title).IsModified = true;
+        _db.Entry(boq).Property(x => x.Status).IsModified = true;
+        _db.Entry(boq).Property(x => x.UpdatedAt).IsModified = true;
+        await _db.SaveChangesAsync();
     }
 
     public async Task<BoqVersion> AddVersionAsync(BoqVersion version)

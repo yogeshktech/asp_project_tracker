@@ -288,6 +288,12 @@ public class CreateBoqRevisionRequest
     public string? Remarks { get; set; }
 }
 
+public class UpdateBoqRequest
+{
+    public string Title { get; set; } = string.Empty;
+    public string Status { get; set; } = "Draft";
+}
+
 public class UpdateBoqVersionItemRequest
 {
     public decimal Quantity { get; set; }

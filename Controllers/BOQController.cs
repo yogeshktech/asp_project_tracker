@@ -38,6 +38,18 @@ public class BOQController : ControllerBase
         return Ok(boq);
     }
 
+    [HttpPut("{id:long}")]
+    public async Task<IActionResult> Update(long id, [FromBody] UpdateBoqRequest request)
+    {
+        try
+        {
+            var boq = await _boqService.UpdateAsync(id, request, UserId);
+            return boq == null ? NotFound() : Ok(boq);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
     [HttpPost("{id:long}/versions")]
     public async Task<IActionResult> CreateRevision(long id, [FromBody] CreateBoqRevisionRequest request)
     {
