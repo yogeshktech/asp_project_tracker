@@ -58,6 +58,22 @@ public static class DatabaseBootstrap
         var budgetVersionCurrencyExists = await ColumnExistsAsync(db, "budget_versions", "currency");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS approver_id BIGINT NULL REFERENCES users(id) ON DELETE SET NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'MVR'""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ADD COLUMN IF NOT EXISTS version_label TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            WITH ranked AS (
+                SELECT v.id,
+                       ROW_NUMBER() OVER (PARTITION BY b.project_id ORDER BY v.created_at, v.budget_id, v.version_no, v.id) AS project_version
+                FROM budget_versions v
+                JOIN budgets b ON b.id = v.budget_id
+                WHERE v.version_label IS NULL
+            )
+            UPDATE budget_versions v
+            SET version_label = CASE WHEN ranked.project_version = 1 THEN 'v1'
+                                     ELSE 'v1.' || (ranked.project_version - 1)::TEXT END
+            FROM ranked
+            WHERE v.id = ranked.id
+            """);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE projects ALTER COLUMN currency SET DEFAULT 'MVR'""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ALTER COLUMN currency SET DEFAULT 'MVR'""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ALTER COLUMN currency SET DEFAULT 'MVR'""");

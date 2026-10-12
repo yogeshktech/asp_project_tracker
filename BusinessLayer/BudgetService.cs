@@ -40,6 +40,12 @@ public class BudgetService : IBudgetService
         _db = db;
     }
 
+    private async Task<string> NextProjectVersionLabelAsync(long projectId)
+    {
+        var versionCount = await _db.BudgetVersions.CountAsync(v => v.Budget.ProjectId == projectId);
+        return versionCount == 0 ? "v1" : $"v1.{versionCount}";
+    }
+
     public async Task<List<Budget>> GetByProjectAsync(long userId, long projectId)
     {
         if (!await _permissions.CanViewModuleAsync(userId, projectId, "Budgets")) return new();
@@ -54,7 +60,8 @@ public class BudgetService : IBudgetService
         if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Budgets"))
             throw new UnauthorizedAccessException("No permission.");
 
-        await using var transaction = await _db.Database.BeginTransactionAsync();
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        var versionLabel = await NextProjectVersionLabelAsync(request.ProjectId);
         var budget = await _repository.AddAsync(new Budget
         {
             ProjectId = request.ProjectId,
@@ -70,6 +77,7 @@ public class BudgetService : IBudgetService
         {
             BudgetId = budget.Id,
             VersionNo = 1,
+            VersionLabel = versionLabel,
             TotalAmount = request.ApprovedAmount,
             Currency = projectCurrency,
             Remarks = "Initial approved baseline",
@@ -100,15 +108,16 @@ public class BudgetService : IBudgetService
         budget.ApprovedAmount = request.ApprovedAmount;
         budget.Currency = projectCurrency;
         budget.UpdatedAt = DateTime.UtcNow;
-        await using var transaction = await _db.Database.BeginTransactionAsync();
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        var versionLabel = baselineChanged ? await NextProjectVersionLabelAsync(budget.ProjectId) : null;
         await _repository.UpdateAsync(budget);
         if (baselineChanged) await _repository.AddVersionAsync(new BudgetVersion
         {
-            BudgetId = budget.Id, VersionNo = next, TotalAmount = request.ApprovedAmount, Currency = projectCurrency,
+            BudgetId = budget.Id, VersionNo = next, VersionLabel = versionLabel, TotalAmount = request.ApprovedAmount, Currency = projectCurrency,
             Remarks = request.Remarks!.Trim(), CreatedBy = userId, ApproverId = userId, CreatedAt = DateTime.UtcNow
         });
         await transaction.CommitAsync();
-        await _audit.LogAsync(userId, "Update", "Budget", budget.Id, baselineChanged ? $"Version {next}" : "Budget details updated");
+        await _audit.LogAsync(userId, "Update", "Budget", budget.Id, baselineChanged ? $"Version {versionLabel}" : "Budget details updated");
         return budget;
     }
 
@@ -133,12 +142,14 @@ public class BudgetService : IBudgetService
         var next = (budget.Versions.Count == 0 ? 0 : budget.Versions.Max(v => v.VersionNo)) + 1;
         budget.ApprovedAmount = totalAmount;
         budget.UpdatedAt = DateTime.UtcNow;
-        await using var transaction = await _db.Database.BeginTransactionAsync();
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        var versionLabel = await NextProjectVersionLabelAsync(budget.ProjectId);
         await _repository.UpdateAsync(budget);
         var version = await _repository.AddVersionAsync(new BudgetVersion
         {
             BudgetId = budgetId,
             VersionNo = next,
+            VersionLabel = versionLabel,
             TotalAmount = totalAmount,
             Currency = budget.Currency,
             Remarks = remarks.Trim(),
@@ -147,7 +158,7 @@ public class BudgetService : IBudgetService
             CreatedAt = DateTime.UtcNow
         });
         await transaction.CommitAsync();
-        await _audit.LogAsync(userId, "Revise", "Budget", budgetId, $"Version {next}");
+        await _audit.LogAsync(userId, "Revise", "Budget", budgetId, $"Version {versionLabel}");
         return version;
     }
 

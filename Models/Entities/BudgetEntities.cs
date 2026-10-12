@@ -39,6 +39,7 @@ public class BudgetVersion
     public long Id { get; set; }
     public long BudgetId { get; set; }
     public int VersionNo { get; set; }
+    public string? VersionLabel { get; set; }
     public decimal TotalAmount { get; set; }
     public string Currency { get; set; } = "MVR";
     public string? Remarks { get; set; }

@@ -2159,12 +2159,13 @@ WTPages.switchProjView = function(view) {
         const versions = b.versions || b.Versions || [];
         const latestVersion = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo) - Number(a.versionNo ?? a.VersionNo))[0];
         const versionNo = latestVersion?.versionNo ?? latestVersion?.VersionNo;
+        const versionLabel = latestVersion?.versionLabel ?? latestVersion?.VersionLabel ?? (versionNo ? `v${versionNo}` : '—');
         const canUpdate = !wtCan || wtCan('Budgets', 'update', Number(pid));
         const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
         return `<tr><td>${b.id}</td><td>${esc(b.name)}</td>
           <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
-          <td>${esc(b.currency || b.Currency || 'MVR')}</td><td>${versionNo ? `v${versionNo}` : '—'}</td>
+          <td>${esc(b.currency || b.Currency || 'MVR')}</td><td>${esc(versionLabel)}</td>
           <td class="table-actions"><button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> <button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') || emptyRow(8, 'No budgets');
       const allocationMap = new Map();
@@ -2200,6 +2201,10 @@ WTPages.switchProjView = function(view) {
         const centerBudget = ccProjectId === Number(pid)
           ? Math.max(rollupBudget, ownApprovedFunding)
           : Math.max(allocated, rollupBudget, childFunding);
+        const childNameArg = esc(JSON.stringify(String(c.name || '')));
+        const childHistoryButton = ccProjectId !== Number(pid)
+          ? `<button class="btn sm" title="View project budget history" aria-label="View project budget history" onclick="WTPages.openChildBudgetHistory(${ccProjectId}, ${childNameArg})"><i class="fa-solid fa-clock-rotate-left"></i></button>`
+          : '';
         return `<tr><td>${esc(c.name)}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
           <td title="${esc(sourceTitle || 'No budget allocations')}">${esc(budgets?.[0]?.currency || fundingCurrency || 'MVR')} ${centerBudget.toLocaleString('en-US')}${sourceTitle ? ' <i class="fa-solid fa-circle-info" aria-label="Allocation sources"></i>' : ''}</td>
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-US')}</td>
@@ -2208,7 +2213,7 @@ WTPages.switchProjView = function(view) {
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.variance ?? allocated).toLocaleString('en-US')}</td>
           <td><span class="badge ${rollup.budgetStatus === 'Over Budget' ? 'red' : rollup.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(rollup.budgetStatus || 'On Budget')}</span></td>
           <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td>
-          <td class="table-actions">${canEditCenter ? `<button class="btn sm" title="Edit cost center" aria-label="Edit cost center" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDeleteCenter ? `<button class="btn sm danger" title="Delete cost center" aria-label="Delete cost center" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
+          <td class="table-actions">${childHistoryButton}${canEditCenter ? `<button class="btn sm" title="Edit cost center" aria-label="Edit cost center" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDeleteCenter ? `<button class="btn sm danger" title="Delete cost center" aria-label="Delete cost center" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') || emptyRow(9, 'No cost centers. Add sub-projects to use them as cost centers.');
     } catch (e) {
       $('#budgetBody').innerHTML = errRow(8, e);
@@ -2297,19 +2302,46 @@ WTPages.switchProjView = function(view) {
       const budget = (budgets || []).find(b => b.id === id);
       if (!budget) throw new Error('Budget not found');
       const versions = [...(budget.versions || [])].sort((a, z) => Number(a.versionNo) - Number(z.versionNo));
-      const latestNo = versions.reduce((n, v) => Math.max(n, Number(v.versionNo || 0)), 0);
+      const latestNo = versions.reduce((n, v) => Math.max(n, Number(v.versionNo ?? v.VersionNo ?? 0)), 0);
       const rows = versions.map((v, index) => {
         const previous = index > 0 ? `${esc(versions[index - 1].currency || budget.currency || 'MVR')} ${Number(versions[index - 1].totalAmount || 0).toLocaleString('en-US')}` : '—';
-        const isCurrent = Number(v.versionNo) === latestNo;
-        return `<tr><td>v${v.versionNo}${isCurrent ? ' <span class="badge green">Current approved</span>' : ''}</td>
+        const versionNo = Number(v.versionNo ?? v.VersionNo ?? 0);
+        const versionLabel = v.versionLabel || v.VersionLabel || `v${versionNo}`;
+        const isCurrent = versionNo === latestNo;
+        return `<tr><td>${esc(versionLabel)}${isCurrent ? ' <span class="badge green">Current approved</span>' : ''}</td>
           <td>${previous}</td><td>${esc(v.currency || budget.currency || 'MVR')} ${Number(v.totalAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(v.remarks || '—')}</td><td>${esc(v.createdAt ? new Date(v.createdAt).toLocaleString() : '—')}</td>
           <td>${esc(v.approverName || (v.approverId ? `User #${v.approverId}` : '—'))}</td></tr>`;
       }).join('');
-      openModal(`Budget History · ${esc(budget.name)}`, `<div class="card-subtitle" style="margin-bottom:12px">Current approved version: v${latestNo || '—'} · ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</div>
+      const latestVersion = versions.find(v => Number(v.versionNo ?? v.VersionNo ?? 0) === latestNo);
+      const latestLabel = latestVersion?.versionLabel || latestVersion?.VersionLabel || `v${latestNo || '—'}`;
+      openModal(`Budget History · ${esc(budget.name)}`, `<div class="card-subtitle" style="margin-bottom:12px">Current approved version: ${esc(latestLabel)} · ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</div>
         <div class="table-wrap"><table><thead><tr><th>Version</th><th>Previous Budget</th><th>Revised Budget</th><th>Revision Reason</th><th>Revision Date</th><th>Approver</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="6">No version history found.</td></tr>'}</tbody></table></div>`);
     } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function openChildBudgetHistory(projectId, projectName) {
+    try {
+      const budgets = await WisetrackAPI.getBudgets(projectId);
+      const history = (budgets || []).flatMap(budget => {
+        const versions = budget.versions || budget.Versions || [];
+        const latestNo = Math.max(0, ...versions.map(v => Number(v.versionNo ?? v.VersionNo ?? 0)));
+        return versions.map(version => ({ budget, version, current: Number(version.versionNo ?? version.VersionNo ?? 0) === latestNo }));
+      }).sort((a, b) => new Date(a.version.createdAt || a.version.CreatedAt || 0) - new Date(b.version.createdAt || b.version.CreatedAt || 0));
+      const rows = history.map(({ budget, version, current }) => {
+        const versionNo = Number(version.versionNo ?? version.VersionNo ?? 0);
+        const label = version.versionLabel || version.VersionLabel || `v${versionNo}`;
+        const amount = Number(version.totalAmount ?? version.TotalAmount ?? 0);
+        const currency = version.currency || version.Currency || budget.currency || budget.Currency || 'MVR';
+        const createdAt = version.createdAt || version.CreatedAt;
+        const approver = version.approverName || version.ApproverName || (version.approverId || version.ApproverId ? `User #${version.approverId || version.ApproverId}` : '—');
+        return `<tr><td>${esc(budget.name || budget.Name || 'Budget')}</td><td>${esc(label)}${current ? ' <span class="badge green">Current approved</span>' : ''}</td>
+          <td>${esc(currency)} ${amount.toLocaleString('en-US')}</td><td>${esc(version.remarks || version.Remarks || '—')}</td>
+          <td>${esc(createdAt ? new Date(createdAt).toLocaleString() : '—')}</td><td>${esc(approver)}</td></tr>`;
+      }).join('');
+      openModal(`Budget History · ${esc(projectName || 'Sub-project')}`, `<div class="table-wrap"><table><thead><tr><th>Budget</th><th>Version</th><th>Approved amount</th><th>Remarks</th><th>Date</th><th>Approver</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No budget history found.</td></tr>'}</tbody></table></div>`);
+    } catch (error) { showToast(error.message || 'Could not load project budget history.', 'danger'); }
   }
 
   async function openAllocationModal(budgetId) {
@@ -5195,7 +5227,7 @@ WTPages.switchProjView = function(view) {
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
-    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC,
+    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC,
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,
