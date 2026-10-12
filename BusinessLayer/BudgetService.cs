@@ -173,10 +173,19 @@ public class BudgetService : IBudgetService
         var isAdmin = await _permissions.IsAdminAsync(userId);
         if (projectId.HasValue && !isAdmin
             && !await _permissions.CanViewModuleAsync(userId, projectId.Value, "Budgets")) return new();
+        var descendantIds = new HashSet<long>();
         if (projectId.HasValue)
         {
-            // Direct sub-projects act as cost centers beneath their parent project.
-            var children = await _db.Projects.Where(p => p.ParentProjectId == projectId.Value).ToListAsync();
+            var frontier = new List<long> { projectId.Value };
+            while (frontier.Count > 0)
+            {
+                var next = await _db.Projects.Where(p => p.ParentProjectId.HasValue && frontier.Contains(p.ParentProjectId.Value))
+                    .ToListAsync();
+                next = next.Where(p => descendantIds.Add(p.Id)).ToList();
+                frontier = next.Select(p => p.Id).ToList();
+            }
+            // Descendant projects act as cost centers in every ancestor's rollup.
+            var children = await _db.Projects.Where(p => descendantIds.Contains(p.Id)).ToListAsync();
             var existing = await _repository.GetCostCentersAsync(null);
             foreach (var child in children.Where(p => !existing.Any(c => c.ProjectId == p.Id)))
                 existing.Add(await _repository.AddCostCenterAsync(new CostCenter
@@ -188,15 +197,18 @@ public class BudgetService : IBudgetService
                     CreatedAt = DateTime.UtcNow
                 }));
         }
-        if (isAdmin) return await _repository.GetCostCentersAsync(projectId);
+        if (isAdmin)
+        {
+            var all = await _repository.GetCostCentersAsync(null);
+            return projectId.HasValue ? all.Where(c => c.ProjectId == projectId || (c.ProjectId.HasValue && descendantIds.Contains(c.ProjectId.Value))).ToList() : all;
+        }
         var allowed = await _permissions.GetAccessibleProjectIdsAsync(userId);
         var centers = await _repository.GetCostCentersAsync(projectId);
         var visible = new List<CostCenter>();
         foreach (var center in centers)
         {
             if (!center.ProjectId.HasValue) continue;
-            var parentOwnedCenter = projectId.HasValue && await _db.Projects.AnyAsync(p =>
-                p.Id == center.ProjectId.Value && p.ParentProjectId == projectId.Value);
+            var parentOwnedCenter = projectId.HasValue && descendantIds.Contains(center.ProjectId.Value);
             if ((allowed.Contains(center.ProjectId.Value) && await _permissions.CanViewModuleAsync(userId, center.ProjectId.Value, "Budgets"))
                 || (parentOwnedCenter && await _permissions.CanViewModuleAsync(userId, projectId!.Value, "Budgets")))
                 visible.Add(center);
@@ -262,6 +274,9 @@ public class BudgetService : IBudgetService
 
         var ownBudgets = await _db.Budgets.AsNoTracking().Where(b => b.ProjectId == projectId)
             .Select(b => new { b.ApprovedAmount, b.Currency }).ToListAsync();
+        var childBudgets = await _db.Budgets.AsNoTracking()
+            .Where(b => _db.Projects.Any(p => p.Id == b.ProjectId && p.ParentProjectId == projectId))
+            .Select(b => new { b.ApprovedAmount, b.Currency }).ToListAsync();
         var childProjects = await _db.Projects.AsNoTracking().Where(p => p.ParentProjectId == projectId)
             .Select(p => new ProjectBudgetChildDto { Id = p.Id, Name = p.Name, Code = p.Code }).ToListAsync();
         var legacyIncoming = await _db.BudgetAllocations.AsNoTracking()
@@ -278,9 +293,11 @@ public class BudgetService : IBudgetService
                 CreatedAt = a.CreatedAt
             }).OrderByDescending(a => a.CreatedAt).ToListAsync();
         var legacyOutgoing = await _db.BudgetAllocations.AsNoTracking()
-            .Where(a => a.Budget.ProjectId == projectId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
+            .Where(a => a.Budget.ProjectId == projectId && a.CostCenter.ProjectId != projectId)
+            .SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
 
         var currencies = ownBudgets.Select(b => b.Currency)
+            .Concat(childBudgets.Select(b => b.Currency))
             .Concat(legacyIncoming.Select(a => a.Currency))
             .Concat(transfers.Select(a => a.Currency)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (currencies.Count > 1)
@@ -290,7 +307,9 @@ public class BudgetService : IBudgetService
         var incomingTransferAmount = transfers.Where(a => a.ToProjectId == projectId && string.Equals(a.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(a => a.Amount);
         var outgoingTransferAmount = transfers.Where(a => a.FromProjectId == projectId && string.Equals(a.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(a => a.Amount);
         var ownAmount = ownBudgets.Where(b => string.Equals(b.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(b => b.ApprovedAmount);
-        var totalFunding = ownAmount + incomingLegacyAmount + incomingTransferAmount;
+        var childBudgetAmount = childBudgets.Where(b => string.Equals(b.Currency, currency, StringComparison.OrdinalIgnoreCase)).Sum(b => b.ApprovedAmount);
+        var totalFunding = ownAmount + incomingLegacyAmount + incomingTransferAmount + childBudgetAmount;
+        var allocatedToChildren = legacyOutgoing + outgoingTransferAmount + childBudgetAmount;
 
         return new ProjectBudgetAllocationSummaryDto
         {
@@ -298,8 +317,8 @@ public class BudgetService : IBudgetService
             ProjectName = project.Name,
             Currency = currency,
             TotalFunding = totalFunding,
-            AllocatedToChildren = legacyOutgoing + outgoingTransferAmount,
-            Available = Math.Max(0, totalFunding - legacyOutgoing - outgoingTransferAmount),
+            AllocatedToChildren = allocatedToChildren,
+            Available = Math.Max(0, totalFunding - allocatedToChildren),
             Children = childProjects,
             History = transfers
         };

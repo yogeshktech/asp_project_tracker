@@ -124,8 +124,12 @@ public class CostRepository : ICostRepository
         {
             var allocated = await _db.BudgetAllocations.Where(a => a.CostCenterId == cc.Id && a.Budget.ProjectId == projectId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
             if (cc.ProjectId.HasValue)
+            {
                 allocated += (await _db.ProjectBudgetAllocations.Where(a => a.ToProjectId == cc.ProjectId.Value)
                     .SumAsync(a => (decimal?)a.Amount) ?? 0);
+                allocated += (await _db.Budgets.Where(b => b.ProjectId == cc.ProjectId.Value)
+                    .SumAsync(b => (decimal?)b.ApprovedAmount) ?? 0);
+            }
             var purchase = await _db.PurchaseCosts.Where(c => c.CostCenterId == cc.Id &&
                 (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
             var actual = await _db.ActualCosts.Where(c => c.CostCenterId == cc.Id &&
@@ -150,6 +154,27 @@ public class CostRepository : ICostRepository
                 BudgetStatus = actual > allocated ? "Over Budget" : actual < allocated ? "Under Budget" : "On Budget",
                 RagStatus = pct >= red ? "Red" : pct >= amber ? "Amber" : "Green"
             });
+        }
+
+        // Approved funding that has not been assigned to a cost center remains
+        // available to the project. Display it on the project's own center so the
+        // project and cost-center views reconcile without inflating child centers.
+        var ownCenter = result.FirstOrDefault(c => centers.Any(x => x.Id == c.CostCenterId && x.ProjectId == projectId));
+        if (ownCenter != null)
+        {
+            var ownApproved = await _db.Budgets.Where(b => b.ProjectId == projectId)
+                .SumAsync(b => (decimal?)b.ApprovedAmount) ?? 0;
+            var incomingTransfers = await _db.ProjectBudgetAllocations.Where(a => a.ToProjectId == projectId)
+                .SumAsync(a => (decimal?)a.Amount) ?? 0;
+            var projectFunding = ownApproved + incomingTransfers;
+            var unassigned = Math.Max(0, projectFunding - ownCenter.Budget);
+            ownCenter.Budget += unassigned;
+            ownCenter.Allocated += unassigned;
+            ownCenter.Variance += unassigned;
+            ownCenter.ForecastVariance += unassigned;
+            ownCenter.BudgetStatus = ownCenter.ActualSpend > ownCenter.Budget ? "Over Budget" : ownCenter.ActualSpend < ownCenter.Budget ? "Under Budget" : "On Budget";
+            var utilization = ownCenter.Budget == 0 ? 0 : ownCenter.Forecast / ownCenter.Budget * 100;
+            ownCenter.RagStatus = utilization >= red ? "Red" : utilization >= amber ? "Amber" : "Green";
         }
         return result;
     }

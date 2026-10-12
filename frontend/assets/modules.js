@@ -2138,29 +2138,67 @@ WTPages.switchProjView = function(view) {
         : `<span class="card-subtitle">Project funding summary is unavailable.</span>`;
       const variance = await WisetrackAPI.getVariance(pid).catch(() => ({ costCenters: [] }));
       const ragByCenter = new Map((variance.costCenters || []).map(x => [x.costCenterId, x]));
-      $('#budgetBody').innerHTML = (budgets || []).map(b => {
-        const allocated = (b.allocations || []).reduce((n, a) => n + Number(a.allocatedAmount || 0), 0);
-        const remaining = Number(b.approvedAmount || 0) - allocated;
-        const latestVersion = [...(b.versions || [])].sort((a, z) => Number(z.versionNo) - Number(a.versionNo))[0];
+      // Project transfers are recorded at project level, while legacy cost-center
+      // allocations are attached to individual budget rows. Include transfers in
+      // the budget table and distribute them across rows so the displayed totals
+      // reconcile with the project funding summary.
+      const budgetRows = budgets || [];
+      const fundingHistory = funding?.history || funding?.History || [];
+      let unassignedProjectTransfers = fundingHistory
+        .filter(item => Number(item.fromProjectId ?? item.FromProjectId) === Number(pid))
+        .reduce((sum, item) => sum + Number(item.amount ?? item.Amount ?? 0), 0);
+      const rowAllocations = budgetRows.map(b => {
+        const legacy = (b.allocations || b.Allocations || []).reduce((n, a) => n + Number(a.allocatedAmount ?? a.AllocatedAmount ?? 0), 0);
+        const transfer = Math.min(unassignedProjectTransfers, Math.max(0, Number(b.approvedAmount ?? b.ApprovedAmount ?? 0) - legacy));
+        unassignedProjectTransfers -= transfer;
+        return legacy + transfer;
+      });
+      $('#budgetBody').innerHTML = budgetRows.map((b, index) => {
+        const allocated = rowAllocations[index];
+        const remaining = Number(b.approvedAmount ?? b.ApprovedAmount ?? 0) - allocated;
+        const versions = b.versions || b.Versions || [];
+        const latestVersion = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo) - Number(a.versionNo ?? a.VersionNo))[0];
+        const versionNo = latestVersion?.versionNo ?? latestVersion?.VersionNo;
         const canUpdate = !wtCan || wtCan('Budgets', 'update', Number(pid));
         const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
         return `<tr><td>${b.id}</td><td>${esc(b.name)}</td>
           <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
-          <td>${esc(b.currency || 'MVR')}</td><td>${latestVersion ? `v${latestVersion.versionNo}` : '—'}</td>
+          <td>${esc(b.currency || b.Currency || 'MVR')}</td><td>${versionNo ? `v${versionNo}` : '—'}</td>
           <td class="table-actions"><button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> <button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') || emptyRow(8, 'No budgets');
       const allocationMap = new Map();
-      for (const b of budgets || []) for (const a of b.allocations || []) allocationMap.set(a.costCenterId, (allocationMap.get(a.costCenterId) || 0) + Number(a.allocatedAmount || 0));
+      const allocationSources = new Map();
+      for (const b of budgets || []) for (const a of (b.allocations || b.Allocations || [])) {
+        const centerId = Number(a.costCenterId ?? a.CostCenterId), amount = Number(a.allocatedAmount ?? a.AllocatedAmount ?? 0);
+        allocationMap.set(centerId, (allocationMap.get(centerId) || 0) + amount);
+        const source = `${b.name || b.Name}: ${b.currency || b.Currency || 'MVR'} ${amount.toLocaleString('en-US')}${a.remarks || a.Remarks ? ` · ${a.remarks || a.Remarks}` : ''}`;
+        allocationSources.set(centerId, [...(allocationSources.get(centerId) || []), source]);
+      }
+      const projectTransfers = await Promise.all((ccs || []).filter(c => Number(c.projectId) && Number(c.projectId) !== Number(pid)).map(async c => [Number(c.projectId), await WisetrackAPI.getProjectBudgetAllocationSummary(Number(c.projectId)).catch(() => null)]));
+      const transferByProject = new Map(projectTransfers);
+      const ownApprovedFunding = budgetRows.reduce((sum, b) => sum + Number(b.approvedAmount ?? b.ApprovedAmount ?? 0), 0);
       $('#ccBody').innerHTML = (ccs || []).map(c => {
         const rollup = ragByCenter.get(c.id) || {};
-        const allocated = allocationMap.get(c.id) || 0;
+        const legacyAllocated = allocationMap.get(Number(c.id)) || 0;
+        const childSummary = transferByProject.get(Number(c.projectId));
+        const incomingTransfers = (childSummary?.history || childSummary?.History || []).filter(t => Number(t.toProjectId ?? t.ToProjectId) === Number(c.projectId));
+        const transferred = incomingTransfers.reduce((sum, t) => sum + Number(t.amount ?? t.Amount ?? 0), 0);
+        const allocated = legacyAllocated + transferred;
+        const sourceTitle = [...(allocationSources.get(Number(c.id)) || []), ...incomingTransfers.map(t => `${t.fromProjectName || t.FromProjectName || 'Parent project'} → ${c.name}: ${t.currency || t.Currency || 'MVR'} ${Number(t.amount ?? t.Amount ?? 0).toLocaleString('en-US')}${t.remarks || t.Remarks ? ` · ${t.remarks || t.Remarks}` : ''}`)].join('\n');
         const status = rollup.ragStatus || 'Green';
         const ccProjectId = Number(c.projectId || pid);
         const canEditCenter = !wtCan || wtCan('Budgets', 'update', ccProjectId);
         const canDeleteCenter = !wtCan || wtCan('Budgets', 'delete', ccProjectId);
+        const rollupBudget = Number(rollup.budget ?? rollup.Budget ?? 0);
+        // A project's approved budget is available to its own cost center even
+        // when nobody has created an explicit BudgetAllocation record.
+        const childFunding = Number(childSummary?.totalFunding ?? childSummary?.TotalFunding ?? 0);
+        const centerBudget = ccProjectId === Number(pid)
+          ? Math.max(rollupBudget, ownApprovedFunding)
+          : Math.max(allocated, rollupBudget, childFunding);
         return `<tr><td>${esc(c.name)}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
-          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.budget ?? allocated).toLocaleString('en-US')}</td>
+          <td title="${esc(sourceTitle || 'No budget allocations')}">${esc(budgets?.[0]?.currency || fundingCurrency || 'MVR')} ${centerBudget.toLocaleString('en-US')}${sourceTitle ? ' <i class="fa-solid fa-circle-info" aria-label="Allocation sources"></i>' : ''}</td>
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-US')}</td>
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.actualSpend || 0).toLocaleString('en-US')}</td>
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.forecast ?? rollup.spent ?? 0).toLocaleString('en-US')}</td>
