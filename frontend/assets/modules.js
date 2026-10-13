@@ -2484,11 +2484,11 @@ WTPages.switchProjView = function(view) {
       ` <button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
-      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)'], 'costCenterFinanceBody')
+      + tableWrap(['Cost Center', 'Budget', 'Actual Spend', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)'], 'costCenterFinanceBody')
       + tableWrap(['ID', 'Type', 'Capture Level', 'Amount', 'Date', 'Notes', 'Actions'], 'costsBody');
     if (!pid) {
       $('#varianceBox').innerHTML = 'No project available.';
-      $('#costCenterFinanceBody').innerHTML = emptyRow(8, 'No project available.');
+      $('#costCenterFinanceBody').innerHTML = emptyRow(6, 'No project available.');
       $('#costsBody').innerHTML = emptyRow(7, 'No project available.');
       return;
     }
@@ -2522,11 +2522,10 @@ WTPages.switchProjView = function(view) {
       $('#costCenterFinanceBody').innerHTML = (variance.costCenters || []).length ? variance.costCenters.map(c => {
         const status = c.ragStatus || 'Green';
         return `<tr><td>${esc(c.name)}</td><td>${money(c.budget ?? c.allocated)}</td>
-          <td>${money(c.currentCommitment ?? c.purchaseCost)}</td><td>${money(c.actualSpend)}</td>
-          <td>${money(c.forecast ?? c.spent)}</td><td>${money(c.variance)}</td>
+          <td>${money(c.actualSpend)}</td><td>${money(c.variance)}</td>
           <td><span class="badge ${c.budgetStatus === 'Over Budget' ? 'red' : c.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(c.budgetStatus || 'On Budget')}</span></td>
           <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td></tr>`;
-      }).join('') : emptyRow(8, 'No Cost Center financial data.');
+      }).join('') : emptyRow(6, 'No Cost Center financial data.');
       const rows = [
         ...(purchases || []).map(x => ({ ...x, _t: 'Purchase' })),
         ...(actuals || []).map(x => ({ ...x, _t: 'Actual' }))
