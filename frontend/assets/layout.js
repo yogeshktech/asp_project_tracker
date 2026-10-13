@@ -143,18 +143,18 @@ function wtBuildSidebar() {
     const active = page === item.href ? ' active' : '';
     html += `<a class="nav-link${active}" href="${item.href}" title="${item.label}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
   }
-  const storedName = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
-  const initials = storedName.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
-  const profileImage = localStorage.getItem('WISETRACK_PROFILE_IMAGE') || '';
-  const avatarContent = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(profileImage)
-    ? `<img src="${profileImage}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : initials;
-  const roleLabel = wtIsAdmin() ? 'Project Admin' : (localStorage.getItem('WISETRACK_ROLE') || 'User');
   html += `</div>`;
   return html;
 }
 
 function wtBuildTopbar() {
   const currentTheme = localStorage.getItem('WISETRACK_THEME') || 'blue';
+  const storedName = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
+  const initials = storedName.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
+  const profileImage = localStorage.getItem('WISETRACK_PROFILE_IMAGE') || '';
+  const avatarContent = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(profileImage)
+    ? `<img src="${profileImage}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : initials;
+  const roleLabel = wtIsAdmin() ? 'Project Admin' : (localStorage.getItem('WISETRACK_ROLE') || 'User');
   return `
     <div class="topbar-left">
       <button type="button" class="nav-toggle" data-wt-nav-toggle="1" aria-label="Open menu">
