@@ -2669,8 +2669,8 @@ WTPages.switchProjView = function(view) {
     const el = root();
     const pid = await selectedProjectId();
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
-      ` <button class="btn" onclick="WTPages.boqFromMaster()">From Master Items</button>
-        <button class="btn primary" onclick="WTPages.boqImport()">Import vendor file (CSV)</button>`)
+      ` <button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>
+        <button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>`)
       + tableWrap(['SR NO', 'Title', 'Status', 'BOQ Version', 'Latest / Current Baseline', 'Created', 'Actions'], 'boqBody');
     if (!pid) {
       $('#boqBody').innerHTML = emptyRow(7, 'No project available.');
@@ -2678,14 +2678,16 @@ WTPages.switchProjView = function(view) {
     }
     try {
       const scopeIds = await projectScopeIds(pid);
-      const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id).catch(() => [])));
+      const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id)));
       const list = batches.flat();
+      const canCreateBoq = list.length === 0;
+      ['boqFromMasterButton', 'boqImportButton'].forEach(id => { const button = document.getElementById(id); if (button) button.disabled = !canCreateBoq; });
       $('#boqBody').innerHTML = list.length ? list.map(b => `
         <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || b.Status || '—')}</td>
         <td>v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</td>
         <td>${(() => { const vs = b.versions || b.Versions || []; const latest = Math.max(0, ...vs.map(v => Number(v.versionNo || v.VersionNo || 0))); const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `Revision v${latest || '—'} / Baseline v${base?.versionNo || base?.VersionNo || '—'}`; })()}</td>
         <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '—')}</td>
-        <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button> <button class="btn sm" onclick="WTPages.editBoq(${b.id})">Edit</button></td></tr>`
+        <td><button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button></td></tr>`
       ).join('') : emptyRow(7, 'No BOQ — import or create from master');
     } catch (e) { $('#boqBody').innerHTML = errRow(7, e); }
   }
@@ -2697,18 +2699,22 @@ WTPages.switchProjView = function(view) {
       const currentStatus = boq.status || boq.Status || 'Draft';
       if (!statuses.some(status => status.toLowerCase() === currentStatus.toLowerCase())) statuses.unshift(currentStatus);
       const options = statuses.map(status => `<option value="${esc(status)}" ${status.toLowerCase() === currentStatus.toLowerCase() ? 'selected' : ''}>${esc(status)}</option>`).join('');
-      openModal('Edit BOQ', `<form onsubmit="WTPages.saveBoqEdit(event, ${id})"><div class="form-grid">
-        <div class="field full"><label>Title *</label><input id="boqEditTitle" value="${esc(boq.title || boq.Title || '')}" required></div>
+      const history = await WisetrackAPI.getBoqStatusHistory(id);
+      openModal('BOQ Status Update', `<form onsubmit="WTPages.saveBoqEdit(event, ${id})"><div class="form-grid">
         <div class="field full"><label>Status *</label><select id="boqEditStatus" required>${options}</select></div>
-        </div><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save changes</button></div></form>`);
+        </div><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Update status</button></div></form>
+        <div class="card" style="padding:12px;margin-top:16px"><strong>Status history</strong><div class="table-wrap" style="margin-top:8px"><table class="table"><thead><tr><th>Previous status</th><th>New status</th><th>Updated by</th><th>Email</th><th>Date &amp; time</th></tr></thead><tbody>
+        ${history.length ? history.map(h => `<tr><td>${esc(h.previousStatus || '—')}</td><td>${esc(h.newStatus || '—')}</td><td>${esc(h.userName || 'Unknown')}</td><td>${esc(h.userEmail || '—')}</td><td>${esc(new Date(h.createdAt).toLocaleString())}</td></tr>`).join('') : '<tr><td colspan="5">No status changes recorded yet.</td></tr>'}
+        </tbody></table></div></div>`);
     } catch (error) { showToast(error.message || 'Could not load BOQ.', 'danger'); }
   }
 
   async function saveBoqEdit(event, id) {
     event.preventDefault();
     try {
-      await WisetrackAPI.updateBoq(id, { title: $('#boqEditTitle').value.trim(), status: $('#boqEditStatus').value });
-      closeModal(); showToast('BOQ updated'); await pageBoq();
+      const boq = await WisetrackAPI.getBoq(id);
+      await WisetrackAPI.updateBoq(id, { title: boq.title || boq.Title, status: $('#boqEditStatus').value });
+      closeModal(); showToast('BOQ status updated'); await pageBoq();
     } catch (error) { showToast(error.message || 'BOQ update failed.', 'danger'); }
   }
 

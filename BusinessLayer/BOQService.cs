@@ -53,17 +53,23 @@ public class BOQService : IBOQService
         var boq = await _repository.GetAsync(id);
         if (boq == null) return null;
         await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
-        var title = request.Title.Trim();
-        var status = request.Status.Trim();
+        var title = request.Title?.Trim() ?? string.Empty;
+        var status = request.Status?.Trim() ?? string.Empty;
         var allowedStatuses = new[] { "Draft", "Imported", "Under Review", "Submitted", "Approved", "Rejected", "Completed", "Cancelled", "Baseline" };
         if (string.IsNullOrWhiteSpace(title)) throw new InvalidOperationException("BOQ title is required.");
         if (!allowedStatuses.Contains(status, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException("Choose a valid BOQ status.");
+        var previousStatus = boq.Status;
         boq.Title = title;
         boq.Status = allowedStatuses.First(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
         boq.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(boq);
-        await _audit.LogAsync(userId, "Update", "BOQ", id, $"Status: {boq.Status}");
+        if (!string.Equals(previousStatus, boq.Status, StringComparison.Ordinal))
+        {
+            var email = await _db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync() ?? "Unknown";
+            await _audit.LogAsync(userId, "StatusUpdate", "BOQStatus", id,
+                $"Previous status: {previousStatus}; New status: {boq.Status}; Email: {email}");
+        }
         return boq;
     }
 

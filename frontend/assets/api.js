@@ -253,6 +253,7 @@ const WisetrackAPI = {
   getBoqs(projectId) { return this.get(`/boq/project/${projectId}`); },
   getBoq(id) { return this.get(`/boq/${id}`); },
   updateBoq(id, data) { return this.put(`/boq/${id}`, data); },
+  getBoqStatusHistory(id) { return this.get(`/boq/${id}/status-history`); },
   createBoqRevision(id, remarks) { return this.post(`/boq/${id}/versions`, { remarks }); },
   setBoqBaseline(id, versionId) { return this.post(`/boq/${id}/versions/${versionId}/baseline`, {}); },
   updateBoqRevisionItem(id, versionId, itemId, data) { return this.put(`/boq/${id}/versions/${versionId}/items/${itemId}`, data); },

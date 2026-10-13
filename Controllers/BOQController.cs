@@ -6,6 +6,8 @@ using System.Xml.Linq;
 using project_tracker_madhu.BusinessLayer.BoqModule;
 using project_tracker_madhu.Common;
 using project_tracker_madhu.Models.Requests;
+using project_tracker_madhu.DatabaseLayer.Context;
+using Microsoft.EntityFrameworkCore;
 
 namespace project_tracker_madhu.Controllers;
 
@@ -17,11 +19,13 @@ public class BOQController : ControllerBase
     private readonly IBOQService _boqService;
     private readonly IPermissionService _permissions;
     private readonly IWebHostEnvironment _env;
-    public BOQController(IBOQService boqService, IPermissionService permissions, IWebHostEnvironment env)
+    private readonly AppDbContext _db;
+    public BOQController(IBOQService boqService, IPermissionService permissions, IWebHostEnvironment env, AppDbContext db)
     {
         _boqService = boqService;
         _permissions = permissions;
         _env = env;
+        _db = db;
     }
     private long UserId => UserContext.GetUserId(User)!.Value;
 
@@ -36,6 +40,39 @@ public class BOQController : ControllerBase
         if (boq == null) return NotFound();
         if (!await _permissions.CanViewModuleAsync(UserId, boq.ProjectId, "BOQ")) return Forbid();
         return Ok(boq);
+    }
+
+    [HttpGet("{id:long}/status-history")]
+    public async Task<IActionResult> GetStatusHistory(long id)
+    {
+        var boq = await _boqService.GetAsync(id);
+        if (boq == null) return NotFound();
+        if (!await _permissions.CanViewModuleAsync(UserId, boq.ProjectId, "BOQ")) return Forbid();
+        var logs = await _db.AuditLogs.AsNoTracking()
+            .Where(a => a.EntityName == "BOQStatus" && a.EntityId == id)
+            .OrderByDescending(a => a.CreatedAt).ToListAsync();
+        var userIds = logs.Where(a => a.UserId.HasValue).Select(a => a.UserId!.Value).Distinct().ToArray();
+        var users = await _db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => new { u.FullName, u.Email });
+        return Ok(logs.Select(log =>
+        {
+            var previous = ReadAuditValue(log.Details, "Previous status:");
+            var next = ReadAuditValue(log.Details, "New status:");
+            var email = ReadAuditValue(log.Details, "Email:");
+            users.TryGetValue(log.UserId ?? 0, out var user);
+            return new { log.Id, PreviousStatus = previous, NewStatus = next,
+                UserName = user?.FullName ?? "Unknown", UserEmail = email ?? user?.Email ?? "—", log.CreatedAt };
+        }));
+    }
+
+    private static string? ReadAuditValue(string? details, string label)
+    {
+        if (string.IsNullOrWhiteSpace(details)) return null;
+        var start = details.IndexOf(label, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return null;
+        start += label.Length;
+        var end = details.IndexOf(';', start);
+        return (end < 0 ? details[start..] : details[start..end]).Trim();
     }
 
     [HttpPut("{id:long}")]
