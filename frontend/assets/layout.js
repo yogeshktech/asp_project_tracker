@@ -149,15 +149,7 @@ function wtBuildSidebar() {
   const avatarContent = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(profileImage)
     ? `<img src="${profileImage}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">` : initials;
   const roleLabel = wtIsAdmin() ? 'Project Admin' : (localStorage.getItem('WISETRACK_ROLE') || 'User');
-  html += `</div>
-    <div class="side-user">
-      <div class="avatar">${avatarContent}</div>
-      <div class="user-meta">
-        <div class="user-name">${storedName.replace(/[<>]/g, '')}</div>
-        <div class="user-role-badge current-role-label">${roleLabel}</div>
-      </div>
-      <a href="login.html" title="Sign Out" style="color:var(--sidebar-muted); font-size:13px; margin-left:auto; padding:4px;"><i class="fa-solid fa-arrow-right-from-bracket"></i></a>
-    </div>`;
+  html += `</div>`;
   return html;
 }
 
@@ -186,23 +178,42 @@ function wtBuildTopbar() {
       </div>
     </div>
     <div class="topbar-right">
-      <!-- Theme Switcher -->
-      <div class="theme-switcher" title="Switch Theme Palette">
-        <i class="fa-solid fa-palette"></i>
-        <select id="globalThemeSelector" onchange="setGlobalTheme(this.value)">
-          <option value="blue" ${currentTheme === 'blue' ? 'selected' : ''}>🔵 Sapphire</option>
-          <option value="red" ${currentTheme === 'red' ? 'selected' : ''}>🔴 Ruby</option>
-          <option value="green" ${currentTheme === 'green' ? 'selected' : ''}>🟢 Emerald</option>
-          <option value="yellow" ${currentTheme === 'yellow' ? 'selected' : ''}>🟡 Amber</option>
-          <option value="white" ${currentTheme === 'white' ? 'selected' : ''}>⚪ Studio</option>
-          <option value="dark" ${currentTheme === 'dark' ? 'selected' : ''}>⚫ Obsidian</option>
-          <option value="light" ${currentTheme === 'light' ? 'selected' : ''}>🟣 Amethyst</option>
-        </select>
+      <div class="user-menu">
+        <button type="button" class="user-menu-trigger" aria-expanded="false" aria-haspopup="true" onclick="wtToggleUserMenu(this)">
+          <span class="avatar">${avatarContent}</span><span class="user-menu-identity"><strong>${storedName.replace(/[<>]/g, '')}</strong><small class="current-role-label">${roleLabel}</small></span><i class="fa-solid fa-chevron-down user-menu-chevron"></i>
+        </button>
+        <div class="user-menu-dropdown" hidden>
+          <label class="user-menu-section" for="globalThemeSelector"><i class="fa-solid fa-palette"></i> Theme Settings</label>
+          <select id="globalThemeSelector" class="user-menu-theme" onchange="setGlobalTheme(this.value)">
+          <option value="blue" ${currentTheme === 'blue' ? 'selected' : ''}>Sapphire</option><option value="red" ${currentTheme === 'red' ? 'selected' : ''}>Ruby</option><option value="green" ${currentTheme === 'green' ? 'selected' : ''}>Emerald</option><option value="yellow" ${currentTheme === 'yellow' ? 'selected' : ''}>Amber</option><option value="white" ${currentTheme === 'white' ? 'selected' : ''}>Studio</option><option value="dark" ${currentTheme === 'dark' ? 'selected' : ''}>Obsidian</option><option value="light" ${currentTheme === 'light' ? 'selected' : ''}>Amethyst</option>
+          </select>
+          <a href="login.html" class="user-menu-logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+        </div>
       </div>
       <a href="notifications.html" class="header-action-btn" title="Notifications & Escalations"><i class="fa-solid fa-bell"></i></a>
-      <a href="login.html" class="header-action-btn" title="Sign Out" style="color:#ef4444;"><i class="fa-solid fa-right-from-bracket"></i></a>
     </div>`;
 }
+
+
+function wtToggleUserMenu(button) {
+  const dropdown = button?.closest('.user-menu')?.querySelector('.user-menu-dropdown');
+  if (!dropdown) return;
+  const opening = dropdown.hidden;
+  document.querySelectorAll('.user-menu-dropdown').forEach(el => { el.hidden = true; });
+  document.querySelectorAll('.user-menu-trigger').forEach(el => el.setAttribute('aria-expanded', 'false'));
+  dropdown.hidden = !opening;
+  button.setAttribute('aria-expanded', String(opening));
+}
+document.addEventListener('click', event => {
+  if (event.target.closest('.user-menu')) return;
+  document.querySelectorAll('.user-menu-dropdown').forEach(el => { el.hidden = true; });
+  document.querySelectorAll('.user-menu-trigger').forEach(el => el.setAttribute('aria-expanded', 'false'));
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  document.querySelectorAll('.user-menu-dropdown').forEach(el => { el.hidden = true; });
+  document.querySelectorAll('.user-menu-trigger').forEach(el => el.setAttribute('aria-expanded', 'false'));
+});
 
 function wtApplyLayout() {
   wtEnsureNavChrome();

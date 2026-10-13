@@ -2944,7 +2944,7 @@ WTPages.switchProjView = function(view) {
   }
 
   async function createBoqRevision(id) {
-    const remarks = prompt('Revision notes (optional):', '');
+    const remarks = prompt('Revision notes *', '');
     if (remarks === null) return;
     try {
       const version = await WisetrackAPI.createBoqRevision(id, remarks.trim() || null);
@@ -3110,7 +3110,7 @@ WTPages.switchProjView = function(view) {
             ${wtCan && wtCan('Tasks', 'delete', Number(pid)) ? `<button class="btn sm danger" title="Delete milestone" aria-label="Delete milestone" onclick="WTPages.deleteMilestone(${m.id}, '${esc(m.name || m.title)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
           `)}</td>
           </tr>`;
-        }).join('') : emptyRow(6, `No milestones for ${selectedLabel}. Other projects are hidden.`);
+        }).join('') : emptyRow(6, `No milestones for ${selectedLabel}.`);
       } else {
         const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getTasks(id)));
         const fetchedTasks = batches.flatMap((rows, i) => (typeof wtAsArray === 'function' ? wtAsArray(rows) : (rows || [])).map(t => {
