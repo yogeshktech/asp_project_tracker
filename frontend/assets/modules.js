@@ -2482,7 +2482,6 @@ WTPages.switchProjView = function(view) {
     const pid = await selectedProjectId();
     el.innerHTML = pageHead('Purchases, Actuals & Variance', '/api/costs',
       ` <button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
-        <button class="btn" onclick="WTPages.openPurchaseModal()">+ Purchase</button>
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
       + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)'], 'costCenterFinanceBody')
@@ -2503,15 +2502,12 @@ WTPages.switchProjView = function(view) {
       $('#varianceBox').innerHTML = `
         <div class="grid g4">
           <div><div class="kpi-label">Budget</div><strong>${money(variance.budget ?? variance.approvedBudget)}</strong></div>
-          <div><div class="kpi-label">Current Commitment / Purchase Cost</div><strong>${money(variance.currentCommitment ?? variance.purchaseTotal)}</strong></div>
           <div><div class="kpi-label">Actual Spend</div><strong>${money(variance.actualSpend ?? variance.actualTotal)}</strong></div>
-          <div><div class="kpi-label">Forecast</div><strong>${money(variance.forecastTotal)}</strong></div>
           <div><div class="kpi-label">Variance (Budget - Actual)</div><strong>${money(variance.varianceAmount)}</strong></div>
           <div><div class="kpi-label">Budget Status</div><span class="badge ${variance.budgetStatus === 'Over Budget' ? 'red' : variance.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(variance.budgetStatus || 'On Budget')}</span></div>
           <div><div class="kpi-label">Forecast Variance (incl. commitment)</div><strong>${money(variance.forecastVarianceAmount)}</strong></div>
           <div><div class="kpi-label">RAG</div><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus)}</span></div>
         </div>
-        <p class="card-subtitle" style="margin:10px 0 0">Forecast is calculated from recorded Actual Spend + Purchase/Commitment costs; no separate forecast input is currently captured.</p>
         <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
           <strong>Variance explanations (PM-24)</strong>
           <div id="varExplainList" style="margin:8px 0;font-size:13px;">${(explanations || []).length
