@@ -113,9 +113,30 @@ public class BOQController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    [HttpPut("{id:long}/versions/{versionId:long}/items")]
+    public async Task<IActionResult> UpdateRevisionItems(long id, long versionId, [FromBody] List<UpdateBoqRevisionLineRequest> lines)
+    {
+        try { return Ok(await _boqService.UpdateRevisionItemsAsync(id, versionId, lines, UserId)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    [HttpDelete("{id:long}/versions/{versionId:long}/items/{itemId:long}")]
+    public async Task<IActionResult> RemoveRevisionItem(long id, long versionId, long itemId)
+    {
+        try
+        {
+            var removed = await _boqService.RemoveRevisionItemAsync(id, versionId, itemId, UserId);
+            return removed ? NoContent() : NotFound(new { message = "BOQ revision line not found." });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [HttpPost("import")]
-    public async Task<IActionResult> Import([FromBody] BOQImportDto dto) =>
-        Ok(await _boqService.ImportAsync(dto, UserId));
+    public async Task<IActionResult> Import([FromBody] BOQImportDto dto)
+    {
+        try { return Ok(await _boqService.ImportAsync(dto, UserId)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 
     [HttpPost("import-file")]
     [Consumes("multipart/form-data")]
@@ -130,6 +151,7 @@ public class BOQController : ControllerBase
             var result = await _boqService.ImportAsync(new BOQImportDto
             {
                 ProjectId = request.ProjectId,
+                BoqId = request.BoqId,
                 Title = string.IsNullOrWhiteSpace(request.Title) ? Path.GetFileNameWithoutExtension(request.File.FileName) : request.Title,
                 Commit = request.Commit,
                 Lines = lines
@@ -140,12 +162,16 @@ public class BOQController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPost("from-master")]
     public async Task<IActionResult> FromMaster([FromBody] BoqFromMasterRequest request)
     {
-        try { return Ok(await _boqService.CreateFromMasterAsync(request.ProjectId, request.Lines, UserId)); }
+        try { return Ok(await _boqService.CreateFromMasterAsync(request.ProjectId, request.Lines, UserId, request.BoqId)); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
@@ -184,6 +210,7 @@ public class BOQController : ControllerBase
 public sealed class BOQFileImportRequest
 {
     public long ProjectId { get; set; }
+    public long? BoqId { get; set; }
     public string? Title { get; set; }
     public bool Commit { get; set; }
     public IFormFile File { get; set; } = null!;
@@ -357,5 +384,6 @@ internal static class BOQSpreadsheetReader
 public class BoqFromMasterRequest
 {
     public long ProjectId { get; set; }
+    public long? BoqId { get; set; }
     public List<BoqFromMasterLineRequest> Lines { get; set; } = new();
 }

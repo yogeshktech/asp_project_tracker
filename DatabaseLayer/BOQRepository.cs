@@ -15,6 +15,7 @@ public interface IBOQRepository
     Task SetCurrentBaselineAsync(long boqId, long versionId);
     Task<BoqItem?> GetItemAsync(long itemId);
     Task UpdateItemAsync(BoqItem item);
+    Task DeleteItemAsync(BoqItem item);
 }
 
 public class BOQRepository : IBOQRepository
@@ -72,6 +73,12 @@ public class BOQRepository : IBOQRepository
     public async Task UpdateItemAsync(BoqItem item)
     {
         _db.BoqItems.Update(item);
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task DeleteItemAsync(BoqItem item)
+    {
+        _db.BoqItems.Remove(item);
         await _db.SaveChangesAsync();
     }
 }

@@ -248,6 +248,7 @@ public class UpdateCategoryRequest
 public class BOQImportDto
 {
     public long ProjectId { get; set; }
+    public long? BoqId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Remarks { get; set; }
     public bool Commit { get; set; }
@@ -300,6 +301,12 @@ public class UpdateBoqVersionItemRequest
     public decimal UnitPrice { get; set; }
     public string? Description { get; set; }
     public string? Remarks { get; set; }
+}
+
+public class UpdateBoqRevisionLineRequest
+{
+    public long ItemId { get; set; }
+    public UpdateBoqVersionItemRequest Values { get; set; } = new();
 }
 
 public class CreateMilestoneRequest

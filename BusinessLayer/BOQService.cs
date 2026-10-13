@@ -15,10 +15,12 @@ public interface IBOQService
     Task<Boq?> GetAsync(long id);
     Task<Boq?> UpdateAsync(long id, UpdateBoqRequest request, long userId);
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
-    Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId);
+    Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId, long? boqId = null);
     Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId);
     Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId);
     Task<BoqItem?> UpdateRevisionItemAsync(long boqId, long versionId, long itemId, UpdateBoqVersionItemRequest request, long userId);
+    Task<List<BoqItem>> UpdateRevisionItemsAsync(long boqId, long versionId, List<UpdateBoqRevisionLineRequest> lines, long userId);
+    Task<bool> RemoveRevisionItemAsync(long boqId, long versionId, long itemId, long userId);
 }
 
 public class BOQService : IBOQService
@@ -138,28 +140,46 @@ public class BOQService : IBOQService
             return result;
 
         await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
-        var projectVersionNo = await NextProjectBoqVersionAsync(dto.ProjectId);
-        var boq = await _repository.AddAsync(new Boq
+        Boq boq;
+        BoqVersion version;
+        List<BoqItem> lines;
+        if (dto.BoqId.HasValue)
         {
-            ProjectId = dto.ProjectId,
-            ProjectVersionNo = projectVersionNo,
-            Title = dto.Title,
-            Status = "Imported",
-            CreatedBy = userId,
-            CreatedAt = DateTime.UtcNow
-        });
-
-        var version = await _repository.AddVersionAsync(new BoqVersion
+            boq = await _repository.GetAsync(dto.BoqId.Value) ?? throw new InvalidOperationException("Target BOQ was not found.");
+            if (boq.ProjectId != dto.ProjectId) throw new InvalidOperationException("Target BOQ does not belong to the selected project.");
+            var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault()
+                ?? throw new InvalidOperationException("Target BOQ has no version to revise.");
+            version = await _repository.AddVersionAsync(new BoqVersion
+            {
+                BoqId = boq.Id, VersionNo = latest.VersionNo + 1, IsCurrentBaseline = false,
+                Remarks = string.IsNullOrWhiteSpace(dto.Remarks) ? "Imported revision" : dto.Remarks,
+                CreatedBy = userId, CreatedAt = DateTime.UtcNow
+            });
+            lines = latest.Items.Select(item => new BoqItem
+            {
+                BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
+                LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
+                Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount, Unit = item.Unit,
+                Brand = item.Brand, ImageUrl = item.ImageUrl, Remarks = item.Remarks,
+                AttachmentPath = item.AttachmentPath, AttachmentName = item.AttachmentName
+            }).ToList();
+        }
+        else
         {
-            BoqId = boq.Id,
-            VersionNo = 1,
-            IsCurrentBaseline = true,
-            Remarks = dto.Remarks,
-            CreatedBy = userId,
-            CreatedAt = DateTime.UtcNow
-        });
+            var projectVersionNo = await NextProjectBoqVersionAsync(dto.ProjectId);
+            boq = await _repository.AddAsync(new Boq
+            {
+                ProjectId = dto.ProjectId, ProjectVersionNo = projectVersionNo, Title = dto.Title,
+                Status = "Imported", CreatedBy = userId, CreatedAt = DateTime.UtcNow
+            });
+            version = await _repository.AddVersionAsync(new BoqVersion
+            {
+                BoqId = boq.Id, VersionNo = 1, IsCurrentBaseline = true, Remarks = dto.Remarks,
+                CreatedBy = userId, CreatedAt = DateTime.UtcNow
+            });
+            lines = new List<BoqItem>();
+        }
 
-        var lines = new List<BoqItem>();
         foreach (var l in dto.Lines)
         {
             long? itemId = l.ItemId;
@@ -176,8 +196,8 @@ public class BOQService : IBOQService
                 ItemId = itemId,
                 ItemCode = masterItem?.ItemCode ?? l.ItemCode,
                 ItemName = masterItem?.Name ?? l.Description,
-                LineNo = l.LineNo ?? lines.Count + 1,
-                DisplayLineNo = (l.LineNo ?? lines.Count + 1).ToString(),
+                LineNo = dto.BoqId.HasValue ? lines.Count + 1 : l.LineNo ?? lines.Count + 1,
+                DisplayLineNo = (dto.BoqId.HasValue ? lines.Count + 1 : l.LineNo ?? lines.Count + 1).ToString(),
                 Description = l.Description,
                 Quantity = l.Quantity,
                 UnitPrice = l.UnitPrice,
@@ -198,7 +218,7 @@ public class BOQService : IBOQService
         return result;
     }
 
-    public async Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> requestedLines, long? userId)
+    public async Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> requestedLines, long? userId, long? boqId = null)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, projectId, "BOQ", "edit");
         if (requestedLines.Count == 0) throw new InvalidOperationException("Select at least one Item Master item.");
@@ -211,28 +231,44 @@ public class BOQService : IBOQService
             items.Add((line, item));
         }
         await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
-        var projectVersionNo = await NextProjectBoqVersionAsync(projectId);
-        var boq = await _repository.AddAsync(new Boq
-        {
-            ProjectId = projectId,
-            ProjectVersionNo = projectVersionNo,
-            Title = "BOQ from Item Master",
-            Status = "Draft",
-            CreatedBy = userId,
-            CreatedAt = DateTime.UtcNow
-        });
-
-        var version = await _repository.AddVersionAsync(new BoqVersion
-        {
-            BoqId = boq.Id,
-            VersionNo = 1,
-            IsCurrentBaseline = true,
-            CreatedBy = userId,
-            CreatedAt = DateTime.UtcNow
-        });
-
+        Boq boq;
+        BoqVersion version;
         var lines = new List<BoqItem>();
-        var lineNo = 1;
+        if (boqId.HasValue)
+        {
+            boq = await _repository.GetAsync(boqId.Value) ?? throw new InvalidOperationException("Target BOQ was not found.");
+            if (boq.ProjectId != projectId) throw new InvalidOperationException("Target BOQ does not belong to the selected project.");
+            var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault()
+                ?? throw new InvalidOperationException("Target BOQ has no version to revise.");
+            version = await _repository.AddVersionAsync(new BoqVersion
+            {
+                BoqId = boq.Id, VersionNo = latest.VersionNo + 1, IsCurrentBaseline = false,
+                Remarks = "Revision from Item Master", CreatedBy = userId, CreatedAt = DateTime.UtcNow
+            });
+            lines.AddRange(latest.Items.Select(item => new BoqItem
+            {
+                BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
+                LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
+                Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount, Unit = item.Unit,
+                Brand = item.Brand, ImageUrl = item.ImageUrl, Remarks = item.Remarks,
+                AttachmentPath = item.AttachmentPath, AttachmentName = item.AttachmentName
+            }));
+        }
+        else
+        {
+            var projectVersionNo = await NextProjectBoqVersionAsync(projectId);
+            boq = await _repository.AddAsync(new Boq
+            {
+                ProjectId = projectId, ProjectVersionNo = projectVersionNo, Title = "BOQ from Item Master",
+                Status = "Draft", CreatedBy = userId, CreatedAt = DateTime.UtcNow
+            });
+            version = await _repository.AddVersionAsync(new BoqVersion
+            {
+                BoqId = boq.Id, VersionNo = 1, IsCurrentBaseline = true,
+                CreatedBy = userId, CreatedAt = DateTime.UtcNow
+            });
+        }
+        var lineNo = lines.Count == 0 ? 1 : lines.Max(line => line.LineNo ?? 0) + 1;
         foreach (var selection in items)
         {
             var item = selection.Item;
@@ -260,6 +296,7 @@ public class BOQService : IBOQService
 
         await _repository.AddItemsAsync(lines);
         await transaction.CommitAsync();
+        if (boqId.HasValue) await _audit.LogAsync(userId, "ImportMasterRevision", "BOQ", boq.Id, $"Version {version.VersionNo}; {requestedLines.Count} Item Master lines added");
         return await _repository.GetAsync(boq.Id) ?? boq;
     }
 
@@ -359,6 +396,35 @@ public class BOQService : IBOQService
         await _repository.UpdateItemAsync(item);
         await _audit.LogAsync(userId, "UpdateRevisionLine", "BOQ", boqId, $"Version {latest.VersionNo}, line {itemId}");
         return item;
+    }
+
+    public async Task<List<BoqItem>> UpdateRevisionItemsAsync(long boqId, long versionId, List<UpdateBoqRevisionLineRequest> lines, long userId)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        var updated = new List<BoqItem>(lines.Count);
+        foreach (var line in lines)
+        {
+            var item = await UpdateRevisionItemAsync(boqId, versionId, line.ItemId, line.Values, userId);
+            if (item == null) throw new InvalidOperationException($"BOQ line {line.ItemId} was not found in this revision.");
+            updated.Add(item);
+        }
+        await transaction.CommitAsync();
+        return updated;
+    }
+
+    public async Task<bool> RemoveRevisionItemAsync(long boqId, long versionId, long itemId, long userId)
+    {
+        var boq = await _repository.GetAsync(boqId);
+        if (boq == null) return false;
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
+        if (latest == null || latest.Id != versionId || latest.IsCurrentBaseline)
+            throw new InvalidOperationException("Only lines in the latest draft revision can be removed.");
+        var item = await _repository.GetItemAsync(itemId);
+        if (item == null || item.BoqVersionId != versionId) return false;
+        await _repository.DeleteItemAsync(item);
+        await _audit.LogAsync(userId, "RemoveRevisionLine", "BOQ", boqId, $"Version {latest.VersionNo}, line {itemId}");
+        return true;
     }
 
     private static string? CombineBoqRemarks(BOQImportLineDto line)
