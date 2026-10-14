@@ -5275,8 +5275,21 @@ WTPages.switchProjView = function(view) {
           <div class="kpi danger"><span class="kpi-label">Unresolved Exceptions</span><span class="kpi-value" id="pm25Exceptions">…</span></div>
         </div>
         <section class="card" style="margin-top:18px">
-          <div class="card-header"><div><h3 class="card-title">Portfolio overview</h3><div class="card-subtitle">Figures reflect your authorized projects and available module permissions.</div></div></div>
-          <div id="pm25Portfolio" class="table-wrap"><p style="padding:16px;color:var(--text-muted)">Loading portfolio…</p></div>
+          <div class="card-header"><div><h3 class="card-title">Portfolio totals &amp; reports</h3><div class="card-subtitle">Summary across all projects you are authorized to view.</div></div><a class="btn sm" href="reports.html">Open Reports</a></div>
+          <div id="pm25Portfolio" class="grid g4" style="margin-top:12px"></div>
+        </section>
+        <section class="card" style="margin-top:18px">
+          <div class="card-header"><div><h3 class="card-title">Work &amp; material totals</h3><div class="card-subtitle">Tasks, milestones, issues, master items, BOQ baseline quantities, and inventory across projects you can view.</div></div></div>
+          <div id="pm25WorkTotals" class="grid g4" style="margin-top:12px"><p>Loading totals…</p></div>
+        </section>
+        <section class="card" id="pm25UserAccessSection" style="margin-top:18px;display:none">
+          <div class="card-header"><div><h3 class="card-title">Users &amp; permissions</h3><div class="card-subtitle">Active user count and each user’s module and project access.</div></div><a class="btn sm" href="users.html">Manage users</a></div>
+          <div id="pm25UserTotals" class="grid g4" style="margin-top:12px"></div>
+          <div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr><th>User</th><th>Status</th><th>Modules permitted</th><th>Projects permitted</th><th>Access grants</th></tr></thead><tbody id="pm25UserAccessBody"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
+        </section>
+        <section class="card" style="margin-top:18px;border-color:#f5c66a">
+          <div class="card-header"><div><h3 class="card-title"><i class="fa-solid fa-triangle-exclamation" style="color:#d97706"></i> Need Your Attention</h3><div class="card-subtitle">Schedule, budget, and unresolved issue totals across the portfolio.</div></div><a class="btn sm" href="reports.html">View report</a></div>
+          <div id="pm25AttentionCards" class="grid g3" style="margin-top:12px"></div>
         </section>`;
     try {
       const report = await WisetrackAPI.getPortfolioReport();
@@ -5288,30 +5301,104 @@ WTPages.switchProjView = function(view) {
       $('#pm25Risk').textContent = String(riskCount);
       $('#pm25Exceptions').textContent = String(exceptions);
       const showBudget = typeof wtCanViewModule !== 'function' || wtCanViewModule('Budgets') || wtCanViewModule('Costs');
-      const dateText = value => value ? new Date(value).toLocaleDateString() : '—';
-      $('#pm25Portfolio').innerHTML = projects.length ? `<table class="table"><thead><tr>
-        <th>Project</th><th>Status</th><th>Next critical milestone</th><th>Schedule risk</th>${showBudget ? '<th>Budget position</th>' : ''}<th>Unresolved exceptions</th><th>Progress</th>
-        </tr></thead><tbody>${projects.map(p => {
-          const id = Number(p.projectId ?? p.ProjectId);
-          const name = p.name || p.Name || 'Project';
-          const status = p.status || p.Status || '—';
-          const milestone = p.nextMilestone || p.NextMilestone || 'No upcoming milestone';
-          const due = p.nextMilestoneDueDate || p.NextMilestoneDueDate;
-          const risk = p.scheduleRisk || p.ScheduleRisk || 'Low';
-          const rag = p.budgetRag || p.BudgetRag || '';
-          const exceptionCount = Number(p.unresolvedExceptions ?? p.UnresolvedExceptions ?? p.openIssues ?? p.OpenIssues ?? 0);
-          const progress = Number(p.progressPercent ?? p.ProgressPercent ?? 0);
-          const budgetText = rag === 'Red' ? 'Over budget / forecast' : rag === 'Amber' ? 'Near budget limit' : rag === 'Green' ? 'Under budget' : rag === 'Unbudgeted' ? 'No budget set' : 'Restricted';
-          return `<tr><td><a href="project-detail.html?id=${id}" onclick="localStorage.setItem('WISETRACK_SELECTED_PROJECT','${id}')"><strong>${esc(name)}</strong></a></td>
-            <td><span class="badge blue">${esc(status)}</span></td>
-            <td>${esc(milestone)}<small style="display:block;color:var(--text-muted)">${esc(dateText(due))}</small></td>
-            <td><span class="badge ${/high|overdue/i.test(risk) ? 'red' : /medium|risk/i.test(risk) ? 'amber' : 'green'}">${esc(risk)}</span></td>
-            ${showBudget ? `<td><span class="badge ${rag === 'Red' ? 'red' : rag === 'Amber' ? 'amber' : rag === 'Green' ? 'green' : 'gray'}">${esc(budgetText)}</span></td>` : ''}
-            <td><span class="badge ${exceptionCount ? 'red' : 'green'}">${exceptionCount}</span></td>
-            <td>${Number.isFinite(progress) ? `${Math.round(progress)}%` : '—'}</td></tr>`;
-        }).join('')}</tbody></table>` : '<p style="padding:16px;color:var(--text-muted)">No authorized projects are available for your account.</p>';
+      const statusCounts = new Map();
+      projects.forEach(project => {
+        const status = String(project.status || project.Status || 'Unknown');
+        statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
+      });
+      const averageProgress = projects.length
+        ? Math.round(projects.reduce((sum, project) => sum + Number(project.progressPercent ?? project.ProgressPercent ?? 0), 0) / projects.length)
+        : 0;
+      const budgetRiskProjects = projects.filter(project => /red|amber/i.test(project.budgetRag || project.BudgetRag || ''));
+      const statusCards = [['Total projects', projects.length, 'blue']]
+        .concat([...statusCounts.entries()].map(([status, count]) => [status, count, /closed|complete/i.test(status) ? 'success' : '']))
+        .concat([['Average progress', averageProgress + '%', 'success']]);
+      if (showBudget) statusCards.push(['Budget alerts', budgetRiskProjects.length, budgetRiskProjects.length ? 'warning' : 'success']);
+      $('#pm25Portfolio').innerHTML = statusCards.map(card =>
+        '<div class="kpi ' + card[2] + '"><span class="kpi-label">' + esc(card[0]) + '</span><span class="kpi-value">' + esc(card[1]) + '</span></div>'
+      ).join('') || '<p>No authorized projects are available.</p>';
+      const rows = value => Array.isArray(value) ? value : (value?.items || value?.Items || value?.data || value?.Data || []);
+      const canSee = (module, projectId) => typeof wtCan !== 'function' || wtCan(module, 'view', Number(projectId));
+      const projectModules = await Promise.all(projects.map(async project => {
+        const projectId = project.projectId ?? project.ProjectId ?? project.id ?? project.Id;
+        const requests = [
+          canSee('Tasks', projectId) ? WisetrackAPI.getTasks(projectId).catch(() => []) : Promise.resolve([]),
+          canSee('Tasks', projectId) ? WisetrackAPI.getMilestones(projectId).catch(() => []) : Promise.resolve([]),
+          canSee('Issues', projectId) ? WisetrackAPI.getIssues(projectId).catch(() => []) : Promise.resolve([]),
+          canSee('BOQ', projectId) ? WisetrackAPI.getBoqs(projectId).catch(() => []) : Promise.resolve([]),
+          (canSee('Inventory', projectId) || canSee('Closure', projectId)) ? WisetrackAPI.getInventory(projectId).catch(() => []) : Promise.resolve([])
+        ];
+        return Promise.all(requests);
+      }));
+      const taskRows = projectModules.flatMap(batch => rows(batch[0]));
+      const milestoneRows = projectModules.flatMap(batch => rows(batch[1]));
+      const issueRows = projectModules.flatMap(batch => rows(batch[2]));
+      const boqRows = projectModules.flatMap(batch => rows(batch[3]));
+      const inventoryRows = projectModules.flatMap(batch => rows(batch[4]));
+      const isDone = row => /complete|closed|done|resolved/i.test(row.status || row.Status || '') || Number(row.completionPercent ?? row.CompletionPercent ?? 0) >= 100;
+      const countSubtasks = task => rows(task.subTasks || task.SubTasks).reduce((count, subtask) => count + 1 + countSubtasks(subtask), 0);
+      const countCompletedSubtasks = task => rows(task.subTasks || task.SubTasks).reduce((count, subtask) => count + (isDone(subtask) ? 1 : 0) + countCompletedSubtasks(subtask), 0);
+      const allTaskCount = taskRows.reduce((count, task) => count + 1 + countSubtasks(task), 0);
+      const completeTaskCount = taskRows.reduce((count, task) => count + (isDone(task) ? 1 : 0) + countCompletedSubtasks(task), 0);
+      const openIssues = issueRows.filter(row => !/closed|resolved|complete/i.test(row.status || row.Status || ''));
+      let baselineItems = [];
+      boqRows.forEach(boq => {
+        const versions = rows(boq.versions || boq.Versions);
+        const baseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline);
+        if (baseline) baselineItems.push(...rows(baseline.items || baseline.Items));
+      });
+      const boqQty = baselineItems.reduce((sum, row) => sum + Number(row.quantity ?? row.Quantity ?? 0), 0);
+      const inventoryQty = inventoryRows.reduce((sum, row) => sum + Number(row.quantity ?? row.Quantity ?? row.orderQuantity ?? row.OrderQuantity ?? 0), 0);
+      const workCards = [
+        ['Tasks & subtasks', allTaskCount, completeTaskCount + ' complete'],
+        ['Milestones', milestoneRows.length, milestoneRows.filter(isDone).length + ' complete'],
+        ['Open issues', openIssues.length, issueRows.length + ' total'],
+        ['Item Master', '—', 'Not available'],
+        ['BOQ baseline items', baselineItems.length, boqQty.toLocaleString() + ' total quantity'],
+        ['Inventory records', inventoryRows.length, inventoryQty.toLocaleString() + ' total quantity']
+      ];
+      if ((typeof wtCanViewModule !== 'function' || wtCanViewModule('Module') || wtCanViewModule('BOQ')) && WisetrackAPI.getItems) {
+        try {
+          const masterItems = rows(await WisetrackAPI.getItems());
+          workCards[3] = ['Item Master', masterItems.length, 'Reusable catalog items'];
+        } catch (_) { workCards[3] = ['Item Master', '—', 'Permission unavailable']; }
+      }
+      $('#pm25WorkTotals').innerHTML = workCards.map((card, index) => '<div class="kpi ' + (index === 2 && openIssues.length ? 'warning' : '') + '"><span class="kpi-label">' + esc(card[0]) + '</span><span class="kpi-value">' + esc(card[1]) + '</span><small style="color:var(--text-muted)">' + esc(card[2]) + '</small></div>').join('');
+      if (typeof wtIsAdmin === 'function' && wtIsAdmin()) {
+        $('#pm25UserAccessSection').style.display = '';
+        try {
+          const users = rows(await WisetrackAPI.getUsers());
+          const accessRows = await Promise.all(users.map(async user => {
+            const grants = rows(await WisetrackAPI.getUserProjectPermissions(user.id ?? user.Id).catch(() => []));
+            const modules = new Set(grants.map(grant => grant.module || grant.Module).filter(Boolean));
+            const projectIds = new Set(grants.map(grant => grant.projectId ?? grant.ProjectId).filter(id => id != null));
+            return { user, grants, modules, projectIds };
+          }));
+          $('#pm25UserTotals').innerHTML = [
+            ['Users', users.length], ['Active users', users.filter(user => user.isActive ?? user.IsActive).length],
+            ['Modules assigned', new Set(accessRows.flatMap(row => [...row.modules])).size],
+            ['User-project grants', accessRows.reduce((sum, row) => sum + row.grants.length, 0)]
+          ].map(card => '<div class="kpi"><span class="kpi-label">' + esc(card[0]) + '</span><span class="kpi-value">' + esc(card[1]) + '</span></div>').join('');
+          $('#pm25UserAccessBody').innerHTML = accessRows.length ? accessRows.map(({ user, grants, modules, projectIds }) => '<tr><td>' + esc(user.fullName || user.FullName || user.email || user.Email || 'User') + '</td><td>' + ((user.isActive ?? user.IsActive) ? '<span class="badge green">Active</span>' : '<span class="badge">Inactive</span>') + '</td><td>' + modules.size + (modules.size ? ' · ' + esc([...modules].sort().join(', ')) : '') + '</td><td>' + projectIds.size + '</td><td>' + grants.length + '</td></tr>').join('') : '<tr><td colspan="5">No users found.</td></tr>';
+        } catch (_) {
+          $('#pm25UserTotals').innerHTML = '<p>User totals are unavailable.</p>';
+          $('#pm25UserAccessBody').innerHTML = '<tr><td colspan="5">User permission data is unavailable.</td></tr>';
+        }
+      }
+      const riskProjects = projects.filter(project => /high|medium|risk|overdue/i.test(project.scheduleRisk || project.ScheduleRisk || ''));
+      const exceptionProjects = projects.filter(project => Number(project.unresolvedExceptions ?? project.UnresolvedExceptions ?? project.openIssues ?? project.OpenIssues ?? 0) > 0);
+      const attentionCard = (title, projectRows, count, tone, countField) =>
+        '<article class="card" style="padding:16px"><div style="display:flex;justify-content:space-between;gap:10px"><strong>' + esc(title) +
+        '</strong><span class="badge ' + tone + '">' + count + '</span></div><div style="margin-top:10px;color:var(--text-muted);font-size:13px">' +
+        (projectRows.length ? projectRows.slice(0, 4).map(project => '<div style="padding:4px 0">' + esc(project.name || project.Name || 'Project') +
+          (countField ? ' (' + Number(project[countField] ?? project[countField[0].toUpperCase() + countField.slice(1)] ?? project.openIssues ?? project.OpenIssues ?? 0) + ')' : '') + '</div>').join('') : 'No projects need attention.') +
+        (projectRows.length > 4 ? '<small>+' + (projectRows.length - 4) + ' more projects</small>' : '') + '</div></article>';
+      $('#pm25AttentionCards').innerHTML = attentionCard('Schedule risk', riskProjects, riskCount, riskCount ? 'red' : 'green', null) +
+        attentionCard('Unresolved exceptions', exceptionProjects, exceptions, exceptions ? 'red' : 'green', 'unresolvedExceptions') +
+        (showBudget ? attentionCard('Budget alerts', budgetRiskProjects, budgetRiskProjects.length, budgetRiskProjects.length ? 'amber' : 'green', null) : '');
     } catch (err) {
       $('#pm25Portfolio').innerHTML = `<p style="padding:16px;color:var(--danger,#b91c1c)">Portfolio could not be loaded: ${esc(err.message || 'Request failed')}</p>`;
+      $('#pm25AttentionCards').innerHTML = '<p style="padding:12px;color:var(--text-muted)">Attention summary is unavailable.</p>';
       ['pm25ProjectCount','pm25OnTrack','pm25Risk','pm25Exceptions'].forEach(id => { const node = document.getElementById(id); if (node) node.textContent = '—'; });
     }
   }
