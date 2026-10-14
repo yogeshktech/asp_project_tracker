@@ -12,6 +12,8 @@ public class Inventory
     public decimal Quantity { get; set; }
     public long? UnitId { get; set; }
     public string? Remarks { get; set; }
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
     public DateTime CreatedAt { get; set; }
     public Project Project { get; set; } = null!;
     public Item? Item { get; set; }

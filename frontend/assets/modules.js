@@ -4643,24 +4643,55 @@ WTPages.switchProjView = function(view) {
   async function pageInventory() {
     const el = root();
     const pid = await selectedProjectId();
-    el.innerHTML = pageHead('Project Inventory', 'Record leftover materials and their transfer or storage action.',
-      ` <button class="btn primary" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>`)
-      + tableWrap(['ID', 'Item', 'Qty', 'Action'], 'invBody');
-    if (!pid) {
-      $('#invBody').innerHTML = emptyRow(4, 'No project available.');
-      return;
-    }
+    const headers = ['Baseline', 'Unit', 'Purchase Price', 'Order QTY', 'Description', 'Image', 'Total Amount', 'Brand', 'Used QTY', 'Remaining QTY', 'Remark', 'Attachment', 'Action'];
+    el.innerHTML = pageHead('Project Inventory', 'Inventory items come from the current BOQ baseline.',
+      ' <button class="btn primary" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>') +
+      '<div class="card"><div class="table-wrap" style="overflow-x:auto"><table class="table"><thead><tr>' +
+      headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody id="invBody"><tr><td colspan="13">Loading...</td></tr></tbody></table></div></div>';
+    if (!pid) { $('#invBody').innerHTML = emptyRow(13, 'No project available.'); return; }
     try {
       const scopeIds = await projectScopeIds(pid);
-      const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getInventory(id).catch(() => [])));
-      const inv = batches.flat();
-      $('#invBody').innerHTML = inv.length ? inv.map(i => `
-        <tr><td>${i.id}</td><td>${esc(i.itemName || i.name || i.description)}</td>
-        <td>${i.quantity ?? i.leftoverQty ?? '—'}</td><td>${esc(i.action || i.disposition || i.remarks || '—')}</td></tr>`
-      ).join('') : emptyRow(4, 'No inventory rows');
-    } catch (e) { $('#invBody').innerHTML = errRow(4, e); }
+      const batches = await Promise.all(scopeIds.map(id => Promise.all([
+        WisetrackAPI.getBoqs(id), WisetrackAPI.getInventory(id).catch(() => [])
+      ])));
+      const boqs = batches.flatMap(pair => pair[0] || []);
+      const inventory = batches.flatMap(pair => pair[1] || []);
+      const lines = boqs.flatMap(boq => {
+        const versions = boq.versions || boq.Versions || [];
+        const baseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline);
+        return (baseline?.items || baseline?.Items || []).map(line => ({
+          ...line, _title: boq.title || boq.Title || 'BOQ',
+          _version: baseline.versionNo || baseline.VersionNo
+        }));
+      });
+      $('#invBody').innerHTML = lines.length ? lines.map(line => {
+        const itemId = line.itemId ?? line.ItemId;
+        const desc = line.description || line.Description || line.itemName || line.ItemName || '';
+        const records = inventory.filter(i =>
+          (itemId && String(i.itemId || i.ItemId) === String(itemId)) ||
+          String(i.description || i.Description || '').trim().toLowerCase() === desc.trim().toLowerCase());
+        const orderQty = Number(line.quantity ?? line.Quantity ?? 0);
+        const remaining = records.reduce((sum, i) => sum + Number(i.quantity ?? i.Quantity ?? 0), 0);
+        const used = Math.max(0, orderQty - remaining);
+        const price = line.unitPrice ?? line.UnitPrice;
+        const amount = line.amount ?? line.Amount ?? orderQty * Number(price || 0);
+        const image = line.imageUrl || line.ImageUrl;
+        const attachment = (records[0] && (records[0].attachmentPath || records[0].AttachmentPath)) || line.attachmentPath || line.AttachmentPath;
+        const cell = value => '<td>' + value + '</td>';
+        return '<tr>' +
+          cell(esc(line._title) + ' v' + esc(line._version)) +
+          cell(esc(line.unit || line.Unit || '—')) +
+          cell(formatBudgetValue(price, 'MVR')) + cell(orderQty) + cell(esc(desc || '—')) +
+          cell(image ? '<a href="' + esc(image) + '" target="_blank" rel="noopener">View</a>' : '—') +
+          cell(formatBudgetValue(amount, 'MVR')) + cell(esc(line.brand || line.Brand || '—')) +
+          cell(used) + cell('<strong>' + remaining + '</strong>') +
+          cell(esc((records[0] && (records[0].remarks || records[0].Remarks)) || line.remarks || line.Remarks || '—')) +
+          cell(attachment ? '<a href="' + esc(attachment) + '" target="_blank" rel="noopener">' + esc((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || line.attachmentName || line.AttachmentName || 'Open') + '</a>' : '—') +
+          cell('<button class="btn sm" onclick=\'WTPages.openInventoryModal(' + JSON.stringify(itemId || null) + ',' + JSON.stringify(desc) + ',' + JSON.stringify((records[0] && (records[0].id || records[0].Id)) || null) + ',' + JSON.stringify((records[0] && (records[0].quantity ?? records[0].Quantity)) ?? '') + ',' + JSON.stringify((records[0] && (records[0].remarks || records[0].Remarks)) || '') + ',' + JSON.stringify(attachment || '') + ',' + JSON.stringify((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || '') + ')\'>' + (records.length ? 'Edit' : 'Record remaining') + '</button>') +
+          '</tr>';
+      }).join('') : emptyRow(13, boqs.length ? 'No current BOQ baseline is set for this project.' : 'No BOQ baseline items found.');
+    } catch (e) { $('#invBody').innerHTML = errRow(13, e); }
   }
-
   async function pageClosure() {
     const el = root();
     el.innerHTML = pageHead('Project Closure', 'Complete the handover requirements before closing the selected project.',
@@ -4676,30 +4707,48 @@ WTPages.switchProjView = function(view) {
         </div>`;
   }
 
-  async function openInventoryModal() {
+  async function openInventoryModal(itemId = null, description = '', inventoryId = null, quantity = '', remarks = '', attachmentPath = '', attachmentName = '') {
     const pid = await selectedProjectId();
     openModal('Add Inventory', `
       <form onsubmit="WTPages.saveInventory(event)">
         <input type="hidden" id="invProj" value="${pid}">
+        <input type="hidden" id="invItemId" value="${itemId || ''}">
+        <input type="hidden" id="invRecordId" value="${inventoryId || ''}">
+        <input type="hidden" id="invAttachmentPath" value="${esc(attachmentPath)}">
+        <input type="hidden" id="invAttachmentName" value="${esc(attachmentName)}">
         <p class="card-subtitle">Record all leftovers before closure. If none remain, enter “No leftover inventory” with quantity 0.</p>
         <div class="form-grid">
-          <div class="field full"><label>Item Name *</label><input id="invName" required></div>
-          <div class="field"><label>Quantity * (0 when none remain)</label><input id="invQty" type="number" min="0" step="0.01" required></div>
-          <div class="field"><label>Action</label><input id="invAct" placeholder="Transfer / Store"></div>
+          <div class="field full"><label>Item Name *</label><input id="invName" value="${esc(description)}" required></div>
+          <div class="field"><label>Remaining QTY * (0 when none remain)</label><input id="invQty" type="number" min="0" step="0.01" value="${quantity}" required></div>
+          <div class="field"><label>Remark / Action</label><input id="invAct" value="${esc(remarks)}" placeholder="Transfer / Store"></div>
+          <div class="field full"><label>Attachment</label><input id="invAttachment" type="file"><small id="invCurrentAttachment">${attachmentName ? `Current file: ${esc(attachmentName)}` : 'Optional file'}</small></div>
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">${inventoryId ? 'Update' : 'Save'} Inventory</button></div>
       </form>`);
   }
 
   async function saveInventory(e) {
     e.preventDefault();
     try {
-      await WisetrackAPI.addInventory({
+      let attachmentPath = $('#invAttachmentPath').value;
+      let attachmentName = $('#invAttachmentName').value;
+      const file = $('#invAttachment').files[0];
+      if (file) {
+        const uploaded = await WisetrackAPI.uploadFile(file, 'Inventory', Number($('#invProj').value));
+        attachmentPath = uploaded.filePath || uploaded.FilePath;
+        attachmentName = uploaded.fileName || uploaded.FileName || file.name;
+      }
+      const payload = {
         projectId: Number($('#invProj').value),
+        itemId: Number($('#invItemId').value) || null,
         description: $('#invName').value.trim(),
         quantity: Number($('#invQty').value),
-        remarks: $('#invAct').value.trim()
-      });
+        remarks: $('#invAct').value.trim(),
+        attachmentPath, attachmentName
+      };
+      const recordId = Number($('#invRecordId').value);
+      if (recordId) await WisetrackAPI.updateInventory(recordId, payload);
+      else await WisetrackAPI.addInventory(payload);
       closeModal(); showToast('Saved'); await pageInventory();
     } catch (err) { showToast(err.message, 'danger'); }
   }

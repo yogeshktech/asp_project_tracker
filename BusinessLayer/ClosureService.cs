@@ -8,6 +8,7 @@ namespace project_tracker_madhu.BusinessLayer.Closure;
 public interface IClosureService
 {
     Task<Inventory> AddInventoryAsync(CreateInventoryRequest request, long? userId);
+    Task<Inventory?> UpdateInventoryAsync(long id, CreateInventoryRequest request, long userId);
     Task<List<Inventory>> GetInventoryAsync(long projectId, long userId);
     Task<ProjectCompletionReport> CloseProjectAsync(ProjectClosureDto dto, long userId);
 }
@@ -41,10 +42,31 @@ public class ClosureService : IClosureService
             Quantity = request.Quantity,
             UnitId = request.UnitId,
             Remarks = request.Remarks,
+            AttachmentPath = request.AttachmentPath,
+            AttachmentName = request.AttachmentName,
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "Inventory", inv.Id);
         return inv;
+    }
+
+    public async Task<Inventory?> UpdateInventoryAsync(long id, CreateInventoryRequest request, long userId)
+    {
+        var inventory = await _repository.GetInventoryItemAsync(id);
+        if (inventory == null) return null;
+        if (!await _permissions.CanEditModuleAsync(userId, inventory.ProjectId, "Closure"))
+            throw new UnauthorizedAccessException("No permission.");
+        if (string.IsNullOrWhiteSpace(request.Description)) throw new InvalidOperationException("Inventory description is required.");
+        if (request.Quantity < 0) throw new InvalidOperationException("Inventory quantity cannot be negative.");
+        inventory.ItemId = request.ItemId;
+        inventory.Description = request.Description;
+        inventory.Quantity = request.Quantity;
+        inventory.Remarks = request.Remarks;
+        inventory.AttachmentPath = request.AttachmentPath;
+        inventory.AttachmentName = request.AttachmentName;
+        await _repository.UpdateInventoryAsync(inventory);
+        await _audit.LogAsync(userId, "Update", "Inventory", inventory.Id);
+        return inventory;
     }
 
     public async Task<List<Inventory>> GetInventoryAsync(long projectId, long userId)

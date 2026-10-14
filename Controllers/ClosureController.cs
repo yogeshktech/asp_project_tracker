@@ -23,6 +23,13 @@ public class ClosureController : ControllerBase
     public async Task<IActionResult> AddInventory([FromBody] CreateInventoryRequest request) =>
         Ok(await _closureService.AddInventoryAsync(request, UserId));
 
+    [HttpPut("inventory/{id:long}")]
+    public async Task<IActionResult> UpdateInventory(long id, [FromBody] CreateInventoryRequest request)
+    {
+        var inventory = await _closureService.UpdateInventoryAsync(id, request, UserId);
+        return inventory == null ? NotFound() : Ok(inventory);
+    }
+
     [HttpPost("close")]
     public async Task<IActionResult> Close([FromBody] ProjectClosureDto dto) =>
         Ok(await _closureService.CloseProjectAsync(dto, UserId));

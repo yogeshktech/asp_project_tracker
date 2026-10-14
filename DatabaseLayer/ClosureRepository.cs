@@ -7,6 +7,8 @@ namespace project_tracker_madhu.DatabaseLayer.Closure;
 public interface IClosureRepository
 {
     Task<Inventory> AddInventoryAsync(Inventory inventory);
+    Task<Inventory?> GetInventoryItemAsync(long id);
+    Task UpdateInventoryAsync(Inventory inventory);
     Task<List<Inventory>> GetInventoryAsync(long projectId);
     Task<ProjectCompletionReport?> GetCompletionAsync(long projectId);
     Task<bool> HasUploadedClosureDocumentAsync(long projectId, string filePath);
@@ -28,6 +30,14 @@ public class ClosureRepository : IClosureRepository
 
     public Task<List<Inventory>> GetInventoryAsync(long projectId) =>
         _db.Inventories.Include(i => i.Item).Where(i => i.ProjectId == projectId).AsNoTracking().ToListAsync();
+
+    public Task<Inventory?> GetInventoryItemAsync(long id) => _db.Inventories.FirstOrDefaultAsync(i => i.Id == id);
+
+    public async Task UpdateInventoryAsync(Inventory inventory)
+    {
+        _db.Inventories.Update(inventory);
+        await _db.SaveChangesAsync();
+    }
 
     public Task<ProjectCompletionReport?> GetCompletionAsync(long projectId) =>
         _db.ProjectCompletionReports.FirstOrDefaultAsync(r => r.ProjectId == projectId);

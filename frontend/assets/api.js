@@ -348,6 +348,7 @@ const WisetrackAPI = {
   // Closure
   getInventory(projectId) { return this.get(`/closure/inventory/${projectId}`); },
   addInventory(data) { return this.post('/closure/inventory', data); },
+  updateInventory(id, data) { return this.put(`/closure/inventory/${id}`, data); },
   closeProject(data) { return this.post('/closure/close', data); },
 
   // Audit
