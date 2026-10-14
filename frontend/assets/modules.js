@@ -2516,7 +2516,6 @@ WTPages.switchProjView = function(view) {
           <div><div class="kpi-label">Actual Spend</div><strong>${money(variance.actualSpend ?? variance.actualTotal)}</strong></div>
           <div><div class="kpi-label">Variance (Budget - Actual)</div><strong>${money(variance.varianceAmount)}</strong></div>
           <div><div class="kpi-label">Budget Status</div><span class="badge ${variance.budgetStatus === 'Over Budget' ? 'red' : variance.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(variance.budgetStatus || 'On Budget')}</span></div>
-          <div><div class="kpi-label">Forecast Variance (incl. commitment)</div><strong>${money(variance.forecastVarianceAmount)}</strong></div>
           <div><div class="kpi-label">RAG</div><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus)}</span></div>
         </div>
         <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
@@ -2804,9 +2803,16 @@ WTPages.switchProjView = function(view) {
         });
       }
       const targetBoqId = Number($('#boqMasterTarget')?.value) || null;
-      await WisetrackAPI.createBoqFromMaster(pid, lines, targetBoqId);
+      let revisionNotes = null;
+      if (targetBoqId) {
+        revisionNotes = prompt('Revision notes *', '');
+        if (revisionNotes === null) return;
+        revisionNotes = revisionNotes.trim();
+        if (!revisionNotes) { showToast('Revision notes are required.', 'danger'); return; }
+      }
+      await WisetrackAPI.createBoqFromMaster(pid, lines, targetBoqId, revisionNotes);
       closeModal(); showToast(`${lines.length} item(s) added${targetBoqId ? ' to a new BOQ revision' : ' to project BOQ'}`);
-      if (targetBoqId) await viewBoq(targetBoqId); else await pageBoq();
+      if (targetBoqId) await viewBoq(targetBoqId, true); else await pageBoq();
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -2909,7 +2915,7 @@ WTPages.switchProjView = function(view) {
     }
   }
 
-  async function viewBoq(id) {
+  async function viewBoq(id, editMode = false) {
     try {
       const b = await WisetrackAPI.getBoq(id);
       const versions = b.versions || b.Versions || [];
@@ -2918,12 +2924,13 @@ WTPages.switchProjView = function(view) {
       const items = latest?.items || latest?.Items || b.items || b.Items || [];
       const latestVersionId = latest?.id || latest?.Id;
       const latestIsBaseline = latest?.isCurrentBaseline || latest?.IsCurrentBaseline;
+      const canEditRevision = editMode;
       openModal(`BOQ — ${esc(b.title || b.name || '#' + id)}`, `
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn primary sm" onclick="WTPages.createBoqRevision(${id})">${latestIsBaseline ? 'Create revision to edit baseline' : 'Create new revision'}</button>
+        ${editMode ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn primary sm" onclick="WTPages.createBoqRevision(${id})">${!canEditRevision ? 'Create revision to edit baseline' : 'Create new revision'}</button>
           <button class="btn sm" onclick="WTPages.boqFromMaster(${id})">Add from Master Items</button>
           <button class="btn sm" onclick="WTPages.boqImport(${id})">Import vendor file</button>
-        </div>
+        </div>` : ''}
         <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <span class="badge blue">${esc(b.status || b.Status || 'Draft')}</span>
           <span class="badge gray">BOQ Version v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</span>
@@ -2945,25 +2952,25 @@ WTPages.switchProjView = function(view) {
             }).join('') || '<tr><td colspan="5">No versions found.</td></tr>'}
           </tbody></table></div>
         </div>
-        <p class="card-subtitle">Showing line items from latest version ${latest?.versionNo || latest?.VersionNo || 1}. Revisions are retained. ${latestIsBaseline ? 'Create a revision to make changes; baseline versions are locked.' : 'Edit this draft revision, then set it as the baseline when approved.'}</p>
-        ${!latestIsBaseline ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${latestVersionId})">Save all changes</button></div>` : ''}
+        <p class="card-subtitle">Showing line items from latest version ${latest?.versionNo || latest?.VersionNo || 1}. Revisions are retained. ${!canEditRevision ? 'Create a revision to make changes; baseline versions are locked.' : 'Edit this draft revision, then set it as the baseline when approved.'}</p>
+        ${canEditRevision ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${latestVersionId},true)">Save all changes</button></div>` : ''}
         <div class="table-wrap"><table class="table" id="boqRevisionItemsTable">
           <thead><tr><th>#</th><th>Item</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Action</th></tr></thead>
           <tbody>
             ${items.length ? items.map(it => `
-              <tr data-item-id="${it.id || it.Id}">
+              <tr data-item-id="${it.id || it.Id}" data-line-no="${it.lineNo ?? it.LineNo ?? ''}">
                 <td>${esc(it.displayLineNo || it.DisplayLineNo || it.lineNo || it.LineNo || it.id || '—')}</td>
                 <td>${esc(it.itemName || it.ItemName || it.itemCode || it.ItemCode || it.item?.name || it.Item?.name || '—')}</td>
                 <td>${esc(it.unit || it.Unit || it.item?.unit?.name || it.Item?.unit?.name || '—')}</td>
-                <td>${latestIsBaseline ? `MVR ${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-US')}` : `<input id="boqPrice-${it.id || it.Id}" type="number" min="0" step="0.01" value="${it.unitPrice ?? it.UnitPrice ?? 0}" style="width:110px">`}</td>
-                <td>${latestIsBaseline ? (it.quantity ?? it.Quantity ?? 0) : `<input id="boqQty-${it.id || it.Id}" type="number" min="0.0001" step="0.0001" value="${it.quantity ?? it.Quantity ?? 0}" style="width:92px">`}</td>
-                <td>${latestIsBaseline ? esc(it.description || it.Description || it.itemName || '—') : `<input id="boqDesc-${it.id || it.Id}" value="${esc(it.description || it.Description || '')}" style="min-width:150px">`}</td>
+                <td>${!canEditRevision ? `MVR ${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-US')}` : `<input id="boqPrice-${it.id || it.Id}" type="number" min="0" step="0.01" value="${it.unitPrice ?? it.UnitPrice ?? 0}" style="width:110px">`}</td>
+                <td>${!canEditRevision ? (it.quantity ?? it.Quantity ?? 0) : `<input id="boqQty-${it.id || it.Id}" type="number" min="0.0001" step="0.0001" value="${it.quantity ?? it.Quantity ?? 0}" style="width:92px">`}</td>
+                <td>${!canEditRevision ? esc(it.description || it.Description || it.itemName || '—') : `<input id="boqDesc-${it.id || it.Id}" value="${esc(it.description || it.Description || '')}" style="min-width:150px">`}</td>
                 <td>${(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl) ? `<a href="${esc(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
                 <td><strong>MVR ${Number(it.amount ?? it.Amount ?? 0).toLocaleString('en-US')}</strong></td>
                 <td>${esc(it.brand || it.Brand || it.item?.brand?.name || it.Item?.brand?.name || '—')}</td>
-                <td>${latestIsBaseline ? esc(it.remarks || it.Remarks || '—') : `<input id="boqRemark-${it.id || it.Id}" value="${esc(it.remarks || it.Remarks || '')}" style="min-width:120px">`}</td>
+                <td>${!canEditRevision ? esc(it.remarks || it.Remarks || '—') : `<input id="boqRemark-${it.id || it.Id}" value="${esc(it.remarks || it.Remarks || '')}" style="min-width:120px">`}</td>
                 <td>${(it.attachmentPath || it.AttachmentPath) ? `<button class="btn sm" onclick="WTPages.downloadBoqAttachment('${encodeURIComponent(it.attachmentPath || it.AttachmentPath)}','${encodeURIComponent(it.attachmentName || it.AttachmentName || 'boq-attachment')}')">${esc(it.attachmentName || it.AttachmentName || 'Download')}</button>` : '—'}</td>
-                <td>${latestIsBaseline ? '—' : `<button class="btn sm danger" onclick="WTPages.removeBoqRevisionItem(${id},${latestVersionId},${it.id || it.Id})">Remove</button>`}</td>
+                <td>${!canEditRevision ? '—' : `<button class="btn sm danger" onclick="WTPages.removeBoqRevisionItem(${id},${latestVersionId},${it.id || it.Id})">Remove</button>`}</td>
               </tr>`).join('') : `<tr><td colspan="12">No line items</td></tr>`}
           </tbody>
         </table></div>
@@ -2972,12 +2979,9 @@ WTPages.switchProjView = function(view) {
   }
 
   async function createBoqRevision(id) {
-    const remarks = prompt('Revision notes *', '');
-    if (remarks === null) return;
     try {
-      const version = await WisetrackAPI.createBoqRevision(id, remarks.trim() || null);
-      showToast(`Version ${version.versionNo || version.VersionNo} created. Previous versions are retained.`);
-      await viewBoq(id);
+      await viewBoq(id, true);
+      showToast('Revision draft opened. The new version will be created when you save it.');
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -2994,11 +2998,11 @@ WTPages.switchProjView = function(view) {
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
-  async function saveBoqRevisionItems(boqId, versionId) {
+  async function saveBoqRevisionItems(boqId, versionId, createVersionOnSave = false) {
     const rows = [...document.querySelectorAll('#boqRevisionItemsTable tbody tr[data-item-id]')];
     const lines = rows.map(row => {
       const itemId = Number(row.dataset.itemId);
-      return { itemId, values: {
+      return { itemId, lineNo: Number(row.dataset.lineNo), values: {
         quantity: Number($(`#boqQty-${itemId}`)?.value),
         unitPrice: Number($(`#boqPrice-${itemId}`)?.value),
         description: $(`#boqDesc-${itemId}`)?.value.trim() || '',
@@ -3007,8 +3011,25 @@ WTPages.switchProjView = function(view) {
     });
     if (!lines.length) { showToast('There are no line changes to save.', 'info'); return; }
     try {
-      await WisetrackAPI.updateBoqRevisionItems(boqId, versionId, lines);
-      showToast('All BOQ line changes saved together.');
+      let targetVersionId = versionId;
+      if (createVersionOnSave) {
+        const notes = prompt('Revision notes *', '');
+        if (notes === null) return;
+        if (!notes.trim()) { showToast('Revision notes are required.', 'danger'); return; }
+        const created = await WisetrackAPI.createBoqRevision(boqId, notes.trim());
+        targetVersionId = Number(created.id || created.Id);
+        let createdItems = created.items || created.Items || [];
+        if (!createdItems.length) {
+          const boq = await WisetrackAPI.getBoq(boqId);
+          const latest = [...(boq.versions || boq.Versions || [])].sort((a, b) => Number(b.versionNo || b.VersionNo) - Number(a.versionNo || a.VersionNo))[0];
+          targetVersionId = Number(latest.id || latest.Id);
+          createdItems = latest.items || latest.Items || [];
+        }
+        const newIdByLine = new Map(createdItems.map(item => [Number(item.lineNo ?? item.LineNo), Number(item.id || item.Id)]));
+        lines.forEach(line => { line.itemId = newIdByLine.get(line.lineNo) || line.itemId; });
+      }
+      await WisetrackAPI.updateBoqRevisionItems(boqId, targetVersionId, lines);
+      showToast(createVersionOnSave ? 'Revision saved and version created.' : 'All BOQ line changes saved together.');
       await viewBoq(boqId);
     } catch (e) { showToast(e.message || 'Could not save BOQ lines.', 'danger'); }
   }

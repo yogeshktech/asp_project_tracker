@@ -15,7 +15,7 @@ public interface IBOQService
     Task<Boq?> GetAsync(long id);
     Task<Boq?> UpdateAsync(long id, UpdateBoqRequest request, long userId);
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
-    Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId, long? boqId = null);
+    Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId, long? boqId = null, string? revisionNotes = null);
     Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId);
     Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId);
     Task<BoqItem?> UpdateRevisionItemAsync(long boqId, long versionId, long itemId, UpdateBoqVersionItemRequest request, long userId);
@@ -218,7 +218,7 @@ public class BOQService : IBOQService
         return result;
     }
 
-    public async Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> requestedLines, long? userId, long? boqId = null)
+    public async Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> requestedLines, long? userId, long? boqId = null, string? revisionNotes = null)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, projectId, "BOQ", "edit");
         if (requestedLines.Count == 0) throw new InvalidOperationException("Select at least one Item Master item.");
@@ -243,7 +243,7 @@ public class BOQService : IBOQService
             version = await _repository.AddVersionAsync(new BoqVersion
             {
                 BoqId = boq.Id, VersionNo = latest.VersionNo + 1, IsCurrentBaseline = false,
-                Remarks = "Revision from Item Master", CreatedBy = userId, CreatedAt = DateTime.UtcNow
+                Remarks = string.IsNullOrWhiteSpace(revisionNotes) ? null : revisionNotes.Trim(), CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
             lines.AddRange(latest.Items.Select(item => new BoqItem
             {
@@ -311,7 +311,7 @@ public class BOQService : IBOQService
         {
             BoqId = boqId,
             VersionNo = boq.Versions.Max(v => v.VersionNo) + 1,
-            Remarks = string.IsNullOrWhiteSpace(remarks) ? "Revision from version " + latest.VersionNo : remarks.Trim(),
+            Remarks = string.IsNullOrWhiteSpace(remarks) ? null : remarks.Trim(),
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow,
             IsCurrentBaseline = false

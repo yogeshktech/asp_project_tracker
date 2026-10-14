@@ -171,7 +171,7 @@ public class BOQController : ControllerBase
     [HttpPost("from-master")]
     public async Task<IActionResult> FromMaster([FromBody] BoqFromMasterRequest request)
     {
-        try { return Ok(await _boqService.CreateFromMasterAsync(request.ProjectId, request.Lines, UserId, request.BoqId)); }
+        try { return Ok(await _boqService.CreateFromMasterAsync(request.ProjectId, request.Lines, UserId, request.BoqId, request.RevisionNotes)); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
@@ -385,5 +385,6 @@ public class BoqFromMasterRequest
 {
     public long ProjectId { get; set; }
     public long? BoqId { get; set; }
+    public string? RevisionNotes { get; set; }
     public List<BoqFromMasterLineRequest> Lines { get; set; } = new();
 }
