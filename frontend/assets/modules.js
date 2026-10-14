@@ -2692,7 +2692,9 @@ WTPages.switchProjView = function(view) {
         <td>v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</td>
         <td>${(() => { const vs = b.versions || b.Versions || []; const latest = Math.max(0, ...vs.map(v => Number(v.versionNo || v.VersionNo || 0))); const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `Revision v${latest || '—'} / Baseline v${base?.versionNo || base?.VersionNo || '—'}`; })()}</td>
         <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '—')}</td>
-        <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button> <button class="btn sm" onclick="WTPages.createBoqRevision(${b.id})">Revision</button> <button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button></td></tr>`
+        <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button>
+        <button class="btn sm" onclick="WTPages.createBoqRevision(${b.id})">Revise Baseline</button> 
+        <button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button></td></tr>`
       ).join('') : emptyRow(7, 'No BOQ — import or create from master');
     } catch (e) { $('#boqBody').innerHTML = errRow(7, e); }
   }
@@ -2927,7 +2929,7 @@ WTPages.switchProjView = function(view) {
       const canEditRevision = editMode;
       openModal(`BOQ — ${esc(b.title || b.name || '#' + id)}`, `
         ${editMode ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn primary sm" onclick="WTPages.createBoqRevision(${id})">${!canEditRevision ? 'Create revision to edit baseline' : 'Create new revision'}</button>
+          <button class="btn primary sm" style="display:none;" onclick="WTPages.createBoqRevision(${id})">${!canEditRevision ? 'Create revision to edit baseline' : 'Create new revision'}</button>
           <button class="btn sm" onclick="WTPages.boqFromMaster(${id})">Add from Master Items</button>
           <button class="btn sm" onclick="WTPages.boqImport(${id})">Import vendor file</button>
         </div>` : ''}
