@@ -34,12 +34,18 @@ public class ClosureService : IClosureService
             throw new InvalidOperationException("Inventory description is required. Enter 'No leftover inventory' with quantity 0 when applicable.");
         if (request.Quantity < 0)
             throw new InvalidOperationException("Inventory quantity cannot be negative.");
+        if (request.OrderQuantity < 0)
+            throw new InvalidOperationException("Order quantity cannot be negative.");
+        if (request.TotalAmount < 0)
+            throw new InvalidOperationException("Total amount cannot be negative.");
         var inv = await _repository.AddInventoryAsync(new Inventory
         {
             ProjectId = request.ProjectId,
             ItemId = request.ItemId,
             Description = request.Description,
             Quantity = request.Quantity,
+            OrderQuantity = request.OrderQuantity,
+            TotalAmount = request.TotalAmount,
             UnitId = request.UnitId,
             Remarks = request.Remarks,
             AttachmentPath = request.AttachmentPath,
@@ -58,9 +64,13 @@ public class ClosureService : IClosureService
             throw new UnauthorizedAccessException("No permission.");
         if (string.IsNullOrWhiteSpace(request.Description)) throw new InvalidOperationException("Inventory description is required.");
         if (request.Quantity < 0) throw new InvalidOperationException("Inventory quantity cannot be negative.");
+        if (request.OrderQuantity < 0) throw new InvalidOperationException("Order quantity cannot be negative.");
+        if (request.TotalAmount < 0) throw new InvalidOperationException("Total amount cannot be negative.");
         inventory.ItemId = request.ItemId;
         inventory.Description = request.Description;
         inventory.Quantity = request.Quantity;
+        inventory.OrderQuantity = request.OrderQuantity;
+        inventory.TotalAmount = request.TotalAmount;
         inventory.Remarks = request.Remarks;
         inventory.AttachmentPath = request.AttachmentPath;
         inventory.AttachmentName = request.AttachmentName;

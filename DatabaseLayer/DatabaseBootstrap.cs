@@ -90,6 +90,8 @@ public static class DatabaseBootstrap
         await EnsureBoqBaselineColumnAsync(db);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE inventories ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE inventories ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE inventories ADD COLUMN IF NOT EXISTS order_quantity NUMERIC(18,2) NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE inventories ADD COLUMN IF NOT EXISTS total_amount NUMERIC(18,2) NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS field_permissions_json TEXT NULL""");
         await EnsureSubTaskNestingColumnAsync(db, logger);
         await EnsureTaskDependencyColumnsAsync(db, logger);

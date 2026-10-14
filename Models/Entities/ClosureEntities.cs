@@ -10,6 +10,8 @@ public class Inventory
     public long? ItemId { get; set; }
     public string? Description { get; set; }
     public decimal Quantity { get; set; }
+    public decimal? OrderQuantity { get; set; }
+    public decimal? TotalAmount { get; set; }
     public long? UnitId { get; set; }
     public string? Remarks { get; set; }
     public string? AttachmentPath { get; set; }

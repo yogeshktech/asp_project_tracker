@@ -2144,6 +2144,12 @@ WTPages.switchProjView = function(view) {
       // reconcile with the project funding summary.
       const budgetRows = budgets || [];
       const fundingHistory = funding?.history || funding?.History || [];
+      const projectFunding = Number(funding?.projectFunding ?? funding?.ProjectFunding ?? 0);
+      const visibleBudgetRows = [...budgetRows];
+      if (!budgetRows.length && projectFunding > 0) visibleBudgetRows.push({
+        id: null, name: 'Project funding received from parent', approvedAmount: projectFunding,
+        currency: fundingCurrency, _projectFunding: true
+      });
       let unassignedProjectTransfers = fundingHistory
         .filter(item => Number(item.fromProjectId ?? item.FromProjectId) === Number(pid))
         .reduce((sum, item) => sum + Number(item.amount ?? item.Amount ?? 0), 0);
@@ -2153,8 +2159,10 @@ WTPages.switchProjView = function(view) {
         unassignedProjectTransfers -= transfer;
         return legacy + transfer;
       });
-      $('#budgetBody').innerHTML = budgetRows.map((b, index) => {
-        const allocated = rowAllocations[index];
+      $('#budgetBody').innerHTML = visibleBudgetRows.map((b, index) => {
+        const allocated = b._projectFunding
+          ? Math.max(0, projectFunding - fundingValue('available', 'Available'))
+          : rowAllocations[index];
         const remaining = Number(b.approvedAmount ?? b.ApprovedAmount ?? 0) - allocated;
         const versions = b.versions || b.Versions || [];
         const latestVersion = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo) - Number(a.versionNo ?? a.VersionNo))[0];
@@ -2162,11 +2170,14 @@ WTPages.switchProjView = function(view) {
         const versionLabel = latestVersion?.versionLabel ?? latestVersion?.VersionLabel ?? (versionNo ? `v${versionNo}` : '—');
         const canUpdate = !wtCan || wtCan('Budgets', 'update', Number(pid));
         const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
-        return `<tr><td>${b.id}</td><td>${esc(b.name)}</td>
+        const actions = b._projectFunding
+          ? '<span class="badge">Parent allocation</span>'
+          : `<button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> <button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}`;
+        return `<tr><td>${b.id || '—'}</td><td>${esc(b.name)}</td>
           <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
           <td>${esc(b.currency || b.Currency || 'MVR')}</td><td>${esc(versionLabel)}</td>
-          <td class="table-actions"><button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> <button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
+          <td class="table-actions">${actions}</td></tr>`;
       }).join('') || emptyRow(8, 'No budgets');
       const allocationMap = new Map();
       const allocationSources = new Map();
@@ -4670,11 +4681,13 @@ WTPages.switchProjView = function(view) {
         const records = inventory.filter(i =>
           (itemId && String(i.itemId || i.ItemId) === String(itemId)) ||
           String(i.description || i.Description || '').trim().toLowerCase() === desc.trim().toLowerCase());
-        const orderQty = Number(line.quantity ?? line.Quantity ?? 0);
+        const baselineQty = Number(line.quantity ?? line.Quantity ?? 0);
+        const orderQty = Number((records[0] && (records[0].orderQuantity ?? records[0].OrderQuantity)) ?? baselineQty);
         const remaining = records.reduce((sum, i) => sum + Number(i.quantity ?? i.Quantity ?? 0), 0);
         const used = Math.max(0, orderQty - remaining);
         const price = line.unitPrice ?? line.UnitPrice;
-        const amount = line.amount ?? line.Amount ?? orderQty * Number(price || 0);
+        const baselineAmount = line.amount ?? line.Amount ?? baselineQty * Number(price || 0);
+        const amount = Number((records[0] && (records[0].totalAmount ?? records[0].TotalAmount)) ?? baselineAmount);
         const image = line.imageUrl || line.ImageUrl;
         const attachment = (records[0] && (records[0].attachmentPath || records[0].AttachmentPath)) || line.attachmentPath || line.AttachmentPath;
         const cell = value => '<td>' + value + '</td>';
@@ -4687,7 +4700,7 @@ WTPages.switchProjView = function(view) {
           cell(used) + cell('<strong>' + remaining + '</strong>') +
           cell(esc((records[0] && (records[0].remarks || records[0].Remarks)) || line.remarks || line.Remarks || '—')) +
           cell(attachment ? '<a href="' + esc(attachment) + '" target="_blank" rel="noopener">' + esc((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || line.attachmentName || line.AttachmentName || 'Open') + '</a>' : '—') +
-          cell('<button class="btn sm" onclick=\'WTPages.openInventoryModal(' + JSON.stringify(itemId || null) + ',' + JSON.stringify(desc) + ',' + JSON.stringify((records[0] && (records[0].id || records[0].Id)) || null) + ',' + JSON.stringify((records[0] && (records[0].quantity ?? records[0].Quantity)) ?? '') + ',' + JSON.stringify((records[0] && (records[0].remarks || records[0].Remarks)) || '') + ',' + JSON.stringify(attachment || '') + ',' + JSON.stringify((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || '') + ')\'>' + (records.length ? 'Edit' : 'Record remaining') + '</button>') +
+          cell('<button class="btn sm" onclick=\'WTPages.openInventoryModal(' + JSON.stringify(itemId || null) + ',' + JSON.stringify(desc) + ',' + JSON.stringify((records[0] && (records[0].id || records[0].Id)) || null) + ',' + JSON.stringify((records[0] && (records[0].quantity ?? records[0].Quantity)) ?? '') + ',' + JSON.stringify((records[0] && (records[0].remarks || records[0].Remarks)) || '') + ',' + JSON.stringify(attachment || '') + ',' + JSON.stringify((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || '') + ',' + JSON.stringify(orderQty) + ',' + JSON.stringify(amount) + ')\'>' + (records.length ? 'Edit' : 'Record remaining') + '</button>') +
           '</tr>';
       }).join('') : emptyRow(13, boqs.length ? 'No current BOQ baseline is set for this project.' : 'No BOQ baseline items found.');
     } catch (e) { $('#invBody').innerHTML = errRow(13, e); }
@@ -4707,7 +4720,7 @@ WTPages.switchProjView = function(view) {
         </div>`;
   }
 
-  async function openInventoryModal(itemId = null, description = '', inventoryId = null, quantity = '', remarks = '', attachmentPath = '', attachmentName = '') {
+  async function openInventoryModal(itemId = null, description = '', inventoryId = null, quantity = '', remarks = '', attachmentPath = '', attachmentName = '', orderQuantity = '', totalAmount = '') {
     const pid = await selectedProjectId();
     openModal('Add Inventory', `
       <form onsubmit="WTPages.saveInventory(event)">
@@ -4720,6 +4733,8 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field full"><label>Item Name *</label><input id="invName" value="${esc(description)}" required></div>
           <div class="field"><label>Remaining QTY * (0 when none remain)</label><input id="invQty" type="number" min="0" step="0.01" value="${quantity}" required></div>
+          <div class="field"><label>Order QTY *</label><input id="invOrderQty" type="number" min="0" step="0.01" value="${orderQuantity}" required></div>
+          <div class="field"><label>Total Amount *</label><input id="invTotalAmount" type="number" min="0" step="0.01" value="${totalAmount}" required></div>
           <div class="field"><label>Remark / Action</label><input id="invAct" value="${esc(remarks)}" placeholder="Transfer / Store"></div>
           <div class="field full"><label>Attachment</label><input id="invAttachment" type="file"><small id="invCurrentAttachment">${attachmentName ? `Current file: ${esc(attachmentName)}` : 'Optional file'}</small></div>
         </div>
@@ -4743,6 +4758,8 @@ WTPages.switchProjView = function(view) {
         itemId: Number($('#invItemId').value) || null,
         description: $('#invName').value.trim(),
         quantity: Number($('#invQty').value),
+        orderQuantity: Number($('#invOrderQty').value),
+        totalAmount: Number($('#invTotalAmount').value),
         remarks: $('#invAct').value.trim(),
         attachmentPath, attachmentName
       };
