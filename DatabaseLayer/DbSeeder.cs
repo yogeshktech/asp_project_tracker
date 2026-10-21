@@ -10,7 +10,7 @@ namespace project_tracker_madhu.DatabaseLayer;
 /// </summary>
 public static class DbSeeder
 {
-    private const string DemoPassword = "Admin@123";
+    private const string DemoPassword = "July@1234";
 
     public static async Task SeedAsync(AppDbContext db)
     {
@@ -121,13 +121,13 @@ public static class DbSeeder
         }
 
         // ── Users (PM-02 / PM-04) ──────────────────────────────────────────
-        var admin = await EnsureUserAsync(db, "admin@wisetrack.local", "System Admin", true, adminRole.Id, "+91-90000-00001");
-        var pm = await EnsureUserAsync(db, "pm@wisetrack.local", "Priya Mehta (PM)", true, pmRole.Id, "+91-90000-00002");
-        var site = await EnsureUserAsync(db, "site@wisetrack.local", "Ravi Site Engineer", true, siteRole.Id, "+91-90000-00003");
-        var finance = await EnsureUserAsync(db, "finance@wisetrack.local", "Ananya Finance", true, financeRole.Id, "+91-90000-00004");
-        var auditor = await EnsureUserAsync(db, "auditor@wisetrack.local", "Karan Auditor", true, auditorRole.Id, "+91-90000-00005");
+        var admin = await EnsureUserAsync(db, "it@workwise.in", "System Admin", true, adminRole.Id, "+91-90000-00001", "admin@wisetrack.local");
+        var pm = await EnsureUserAsync(db, "abhishekanand.ko@gmail.com", "Project Manager", true, pmRole.Id, "+91-90000-00002", "pm@wisetrack.local");
+        var site = await EnsureUserAsync(db, "y.kumar@wisetrack.in", "Site Engineer", true, siteRole.Id, "+91-90000-00003", "site@wisetrack.local");
+        var finance = await EnsureUserAsync(db, "d.kumar@wisetrack.in", "Finance Officer", true, financeRole.Id, "+91-90000-00004", "finance@wisetrack.local");
+        var auditor = await EnsureUserAsync(db, "a.pal@wisetrack.in", "External Project Owner", false, externalRole.Id, "+91-90000-00005", "owner@client.example");
         var gm = await EnsureUserAsync(db, "gm@wisetrack.local", "Resort GM — Sunita Rao", true, viewerRole.Id, "+91-90000-00006");
-        var external = await EnsureUserAsync(db, "owner@client.example", "External Project Owner", false, externalRole.Id, "+91-90000-00007");
+        var external = auditor;
 
         // Already have a full demo? skip portfolio insert
         if (await db.Resorts.AnyAsync(r => r.Code == "GPLR") && await db.SubTasks.AnyAsync() && await db.Boqs.AnyAsync())
@@ -955,9 +955,28 @@ public static class DbSeeder
         }
     }
 
-    private static async Task<User> EnsureUserAsync(AppDbContext db, string email, string fullName, bool isInternal, long roleId, string? phone)
+    public static async Task EnsureLoginAccountsAsync(AppDbContext db)
+    {
+        var adminRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "Admin");
+        var pmRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "ProjectManager");
+        var siteRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "SiteEngineer");
+        var financeRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "FinanceOfficer");
+        var externalRole = await db.Roles.FirstOrDefaultAsync(r => r.Name == "ExternalOwner");
+        if (adminRole == null || pmRole == null || siteRole == null || financeRole == null || externalRole == null)
+            return;
+
+        await EnsureUserAsync(db, "it@workwise.in", "System Admin", true, adminRole.Id, "+91-90000-00001", "admin@wisetrack.local");
+        await EnsureUserAsync(db, "abhishekanand.ko@gmail.com", "Project Manager", true, pmRole.Id, "+91-90000-00002", "pm@wisetrack.local");
+        await EnsureUserAsync(db, "y.kumar@wisetrack.in", "Site Engineer", true, siteRole.Id, "+91-90000-00003", "site@wisetrack.local");
+        await EnsureUserAsync(db, "d.kumar@wisetrack.in", "Finance Officer", true, financeRole.Id, "+91-90000-00004", "finance@wisetrack.local");
+        await EnsureUserAsync(db, "a.pal@wisetrack.in", "External Project Owner", false, externalRole.Id, "+91-90000-00005", "owner@client.example");
+    }
+
+    private static async Task<User> EnsureUserAsync(AppDbContext db, string email, string fullName, bool isInternal, long roleId, string? phone, string? legacyEmail = null)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null && legacyEmail != null)
+            user = await db.Users.FirstOrDefaultAsync(u => u.Email == legacyEmail);
         if (user == null)
         {
             user = new User
@@ -972,9 +991,18 @@ public static class DbSeeder
             };
             db.Users.Add(user);
             await db.SaveChangesAsync();
-            db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = roleId });
-            await db.SaveChangesAsync();
         }
+        user.Email = email;
+        user.FullName = fullName;
+        user.PasswordHash = PasswordUtility.Hash(DemoPassword);
+        user.IsActive = true;
+        user.IsInternal = isInternal;
+        user.Phone = phone;
+        var rolesToRemove = await db.UserRoles.Where(ur => ur.UserId == user.Id && ur.RoleId != roleId).ToListAsync();
+        db.UserRoles.RemoveRange(rolesToRemove);
+        if (!await db.UserRoles.AnyAsync(ur => ur.UserId == user.Id && ur.RoleId == roleId))
+            db.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = roleId });
+        await db.SaveChangesAsync();
         return user;
     }
 

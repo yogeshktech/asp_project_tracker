@@ -28,23 +28,26 @@
         <span style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Quick Demo Profiles</span>
       </div>
       <div class="demo-account-pills">
-        <button type="button" class="demo-pill active" onclick="selectRole('admin@wisetrack.local', this)" title="Full access to all modules and configurations">👑 Admin</button>
-        <button type="button" class="demo-pill" onclick="selectRole('pm@wisetrack.local', this)" title="Project execution, budget baselines & closure">📋 Project Manager</button>
-        <button type="button" class="demo-pill" onclick="selectRole('site@wisetrack.local', this)" title="Site logs, daily reports, issue reporting">👷 Site Engineer</button>
-        <button type="button" class="demo-pill" onclick="selectRole('finance@wisetrack.local', this)" title="Purchases, actuals, BOQ & R-A-G review">💼 Finance</button>
-        <button type="button" class="demo-pill" onclick="selectRole('owner@client.example', this)" title="Restricted external stakeholder view">🌐 External Owner</button>
+        <button type="button" class="demo-pill active" onclick="selectRole('it@workwise.in', this)" title="Full access to all modules and configurations">👑 Super Admin</button>
+        <button type="button" class="demo-pill" onclick="selectRole('abhishekanand.ko@gmail.com', this)" title="Project execution, budget baselines & closure">📋 Project Manager</button>
+        <button type="button" class="demo-pill" onclick="selectRole('y.kumar@wisetrack.in', this)" title="Site logs, daily reports, issue reporting">👷 Site Engineer</button>
+        <button type="button" class="demo-pill" onclick="selectRole('d.kumar@wisetrack.in', this)" title="Purchases, actuals, BOQ & R-A-G review">💼 Finance</button>
+        <button type="button" class="demo-pill" onclick="selectRole('a.pal@wisetrack.in', this)" title="Restricted external stakeholder view">🌐 External Owner</button>
       </div>
     </div>
 
     <form onsubmit="handleLogin(event)">
       <div class="field" style="margin-bottom:14px;">
         <label><i class="fa-solid fa-envelope" style="font-size:11px; color:var(--primary); margin-right:4px;"></i> Corporate Email</label>
-        <input type="email" id="loginEmail" value="admin@wisetrack.local" required placeholder="name@wisetrack.local">
+        <input type="email" id="loginEmail" value="it@workwise.in" required placeholder="name@workwise.in">
       </div>
 
       <div class="field" style="margin-bottom:16px;">
         <label><i class="fa-solid fa-lock" style="font-size:11px; color:var(--primary); margin-right:4px;"></i> Password</label>
-        <input type="password" id="loginPass" value="Admin@123" required placeholder="••••••••">
+        <div class="auth-password-wrap">
+          <input type="password" id="loginPass" value="July@1234" required placeholder="••••••••" autocomplete="current-password">
+          <button type="button" class="auth-password-toggle" onclick="togglePasswordVisibility()" aria-label="Show password" aria-pressed="false" title="Show password"><i class="fa-regular fa-eye" aria-hidden="true"></i></button>
+        </div>
       </div>
 
       <div id="loginError" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:12px;border-radius:var(--radius-sm);margin-bottom:16px;font-size:12.5px;line-height:1.5;"></div>
@@ -63,14 +66,23 @@
 <div class="toast" id="toast"></div>
 
 <script>
-document.getElementById('apiBaseLabel').textContent = API_BASE;
-
 function selectRole(email, btn) {
   document.getElementById('loginEmail').value = email;
-  document.getElementById('loginPass').value = 'Admin@123';
+  document.getElementById('loginPass').value = 'July@1234';
   document.querySelectorAll('.demo-pill').forEach(p => p.classList.remove('active'));
   btn.classList.add('active');
   showToast(`Profile selected: ${email}`, 'info');
+}
+
+function togglePasswordVisibility() {
+  const input = document.getElementById('loginPass');
+  const button = document.querySelector('.auth-password-toggle');
+  const visible = input.type === 'password';
+  input.type = visible ? 'text' : 'password';
+  button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+  button.setAttribute('aria-pressed', String(visible));
+  button.title = visible ? 'Hide password' : 'Show password';
+  button.innerHTML = `<i class="fa-regular fa-eye${visible ? '-slash' : ''}" aria-hidden="true"></i>`;
 }
 
 function showToast(message, type = 'success') {

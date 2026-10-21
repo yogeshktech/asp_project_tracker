@@ -114,6 +114,23 @@ if (builder.Configuration.GetValue<bool?>("Database:BootstrapOnStartup") ?? true
     }
 }
 
+// Keep the login accounts/passwords in sync even when the development environment
+// skips the full schema/data bootstrap.
+using (var scope = app.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("LoginAccounts");
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await DbSeeder.EnsureLoginAccountsAsync(db);
+        logger.LogInformation("Login demo accounts synchronized.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Login demo accounts could not be synchronized. Check database connectivity and schema.");
+    }
+}
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");

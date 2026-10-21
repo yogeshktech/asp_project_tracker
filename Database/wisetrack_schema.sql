@@ -1,4 +1,4 @@
--- =============================================================================
+﻿-- =============================================================================
 -- Wisetrack PostgreSQL schema
 -- Database: wisetrack
 -- Run in DBeaver:
@@ -591,7 +591,7 @@ CREATE INDEX ix_notifications_created ON notifications(created_at DESC);
 
 -- =============================================================================
 -- Seed data (lookup + default admin)
--- Password for admin@wisetrack.local is set by the API seeder (Admin@123).
+-- Demo accounts use the API seeder password July@1234.
 -- SQL stores a placeholder hash; run the API once after schema, or update hash.
 -- =============================================================================
 INSERT INTO roles (name, description) VALUES
@@ -633,19 +633,17 @@ INSERT INTO project_types (name, description) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- =============================================================================
--- Admin User Account (Password: Admin@123)
--- =============================================================================
+-- Demo accounts (Password: July@1234)
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 INSERT INTO users (email, password_hash, full_name, is_active, created_at)
-VALUES ('admin@wisetrack.local', crypt('Admin@123', gen_salt('bf', 11)), 'System Admin', TRUE, NOW())
-ON CONFLICT (email) DO UPDATE SET password_hash = crypt('Admin@123', gen_salt('bf', 11)), is_active = TRUE;
+VALUES ('it@workwise.in', crypt('July@1234', gen_salt('bf', 11)), 'System Admin', TRUE, NOW())
+ON CONFLICT (email) DO UPDATE SET password_hash = crypt('July@1234', gen_salt('bf', 11)), is_active = TRUE;
 
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.id, r.id FROM users u, roles r
-WHERE u.email = 'admin@wisetrack.local' AND r.name = 'Admin'
+WHERE u.email = 'it@workwise.in' AND r.name = 'Admin'
 ON CONFLICT (user_id, role_id) DO NOTHING;
-
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'Admin'

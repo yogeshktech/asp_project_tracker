@@ -2459,6 +2459,33 @@ button.btn[disabled] {
   transform: translateY(-1px);
 }
 
+.auth-password-wrap {
+  position: relative;
+}
+
+.auth-password-wrap input {
+  width: 100%;
+  padding-right: 46px;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  padding: 7px;
+  font-size: 15px;
+}
+
+.auth-password-toggle:hover,
+.auth-password-toggle:focus-visible {
+  color: var(--primary);
+}
+
 /* ==========================================================================
    20. PERMISSIONS MATRIX & GRANULAR ACCESS (PM-03)
    ========================================================================== */
