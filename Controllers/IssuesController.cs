@@ -59,7 +59,7 @@ public class IssuesController : ControllerBase
     [HttpPost("{id:long}/escalate")]
     public async Task<IActionResult> Escalate(long id)
     {
-        await _issueService.EscalateHighPriorityAsync(id);
+        await _issueService.EscalateHighPriorityAsync(UserId, id);
         return Ok();
     }
 }

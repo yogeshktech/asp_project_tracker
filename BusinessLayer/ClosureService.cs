@@ -60,8 +60,7 @@ public class ClosureService : IClosureService
     {
         var inventory = await _repository.GetInventoryItemAsync(id);
         if (inventory == null) return null;
-        if (!await _permissions.CanEditModuleAsync(userId, inventory.ProjectId, "Closure"))
-            throw new UnauthorizedAccessException("No permission.");
+        await _permissions.EnsureModuleAsync(userId, inventory.ProjectId, "Closure", "update");
         if (string.IsNullOrWhiteSpace(request.Description)) throw new InvalidOperationException("Inventory description is required.");
         if (request.Quantity < 0) throw new InvalidOperationException("Inventory quantity cannot be negative.");
         if (request.OrderQuantity < 0) throw new InvalidOperationException("Order quantity cannot be negative.");
@@ -87,6 +86,7 @@ public class ClosureService : IClosureService
 
     public async Task<ProjectCompletionReport> CloseProjectAsync(ProjectClosureDto dto, long userId)
     {
+        await _permissions.EnsureModuleAsync(userId, dto.ProjectId, "Closure", "update");
         if (!await _permissions.IsProjectManagerAsync(userId, dto.ProjectId))
             throw new UnauthorizedAccessException("Only Project Manager can close a project.");
 

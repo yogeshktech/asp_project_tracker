@@ -14,6 +14,7 @@ public interface IProjectService
 {
     Task<List<Resort>> GetResortsAsync(long userId);
     Task<bool> CanAccessResortAsync(long userId, long resortId);
+    Task<bool> CanCreateRootProjectAsync(long userId, long resortId);
     Task<Resort?> GetResortAsync(long id);
     Task<Resort> CreateResortAsync(CreateResortRequest request, long? userId);
     Task<Resort?> UpdateResortAsync(long id, UpdateResortRequest request, long? userId);
@@ -67,6 +68,7 @@ public class ProjectService : IProjectService
         return (await _repository.GetResortsAsync()).Where(r => allowed.Contains(r.Id)).ToList();
     }
     public Task<bool> CanAccessResortAsync(long userId, long resortId) => _permissions.CanAccessResortAsync(userId, resortId);
+    public Task<bool> CanCreateRootProjectAsync(long userId, long resortId) => _permissions.CanCreateRootProjectAsync(userId, resortId);
     public Task<Resort?> GetResortAsync(long id) => _repository.GetResortAsync(id);
 
     public async Task<Resort> CreateResortAsync(CreateResortRequest request, long? userId)
@@ -262,18 +264,19 @@ public class ProjectService : IProjectService
 
     public async Task<ProjectResponseDto> CreateAsync(long userId, CreateProjectDto dto)
     {
-        if (!await _permissions.CanAccessResortAsync(userId, dto.ResortId))
-            throw new UnauthorizedAccessException("No access to this resort.");
+        if (dto.ParentProjectId.HasValue)
+        {
+            if (!await _permissions.CanEditModuleAsync(userId, dto.ParentProjectId.Value, "Projects"))
+                throw new UnauthorizedAccessException("No create permission on the parent project.");
+        }
+        else if (!await _permissions.CanCreateRootProjectAsync(userId, dto.ResortId))
+            throw new UnauthorizedAccessException("No create permission for projects in this resort.");
         if (dto.ParentProjectId.HasValue)
         {
             var parentProject = await _repository.GetProjectAsync(dto.ParentProjectId.Value)
                 ?? throw new InvalidOperationException("Parent project not found.");
             dto.Currency = parentProject.Currency;
         }
-        if (!await _permissions.IsAdminAsync(userId) && dto.ParentProjectId.HasValue &&
-            !await _permissions.CanEditModuleAsync(userId, dto.ParentProjectId.Value, "Projects"))
-            throw new UnauthorizedAccessException("No edit permission on parent project.");
-
         var entity = FromDto(dto);
         entity.OwnerId ??= userId;
         entity.Code = string.IsNullOrWhiteSpace(dto.Code) ? await NextProjectCodeAsync(dto.ParentProjectId) : dto.Code.Trim();
@@ -430,8 +433,8 @@ public class ProjectService : IProjectService
         if (varianceType is not ("Cost" or "Schedule"))
             throw new InvalidOperationException("Variance type must be Cost or Schedule.");
         var canEdit = varianceType == "Cost"
-            ? await _permissions.CanEditModuleAsync(userId, request.ProjectId, "Costs")
-            : await _permissions.CanEditModuleAsync(userId, request.ProjectId, "Tasks");
+            ? await _permissions.CanUpdateModuleAsync(userId, request.ProjectId, "Costs")
+            : await _permissions.CanUpdateModuleAsync(userId, request.ProjectId, "Tasks");
         if (!canEdit)
             throw new UnauthorizedAccessException("No permission.");
         if (string.IsNullOrWhiteSpace(request.Explanation))

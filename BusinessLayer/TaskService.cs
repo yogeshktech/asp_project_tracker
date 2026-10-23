@@ -87,7 +87,7 @@ public class TaskService : ITaskService
         var milestone = (await _repository.GetMilestonesAsync(request.ProjectId))
             .FirstOrDefault(m => m.Id == milestoneId)
             ?? throw new InvalidOperationException("Milestone not found in this project.");
-        await _permissions.EnsureModuleAsync(userId, request.ProjectId, "Tasks", "edit");
+        await _permissions.EnsureModuleAsync(userId, request.ProjectId, "Tasks", "update");
         await EnsureMilestoneDependencyAsync(request.ProjectId, milestoneId, request.DependsOnMilestoneId);
         await EnsureMilestoneCanStartAsync(request.ProjectId, request.DependsOnMilestoneId, request.Status);
         milestone.Name = request.Name.Trim();
@@ -211,7 +211,7 @@ public class TaskService : ITaskService
             CompletionPercent = t.CompletionPercent,
             Remarks = t.Remarks,
             CanDelete = canDeleteTask,
-            CanEdit = isAdmin || canEdit,
+            CanEdit = isAdmin || canUpdate,
             CanEditPercent = canEditPercent,
             DependsOnTaskId = t.DependsOnTaskId,
             DependsOnSubTaskId = t.DependsOnSubTaskId,
@@ -319,7 +319,7 @@ public class TaskService : ITaskService
     {
         var task = await _repository.GetTaskAsync(taskId) ?? throw new InvalidOperationException("Task not found.");
         if (task.ProjectId != request.ProjectId) throw new InvalidOperationException("Task project cannot be changed.");
-        await _permissions.EnsureModuleAsync(userId, task.ProjectId, "Tasks", "edit");
+        await _permissions.EnsureModuleAsync(userId, task.ProjectId, "Tasks", "update");
         if (string.IsNullOrWhiteSpace(request.Title)) throw new InvalidOperationException("Task title is required.");
         if (request.StartDate.HasValue && request.DueDate.HasValue && request.StartDate.Value > request.DueDate.Value)
             throw new InvalidOperationException("Task start date must be on or before its due date.");

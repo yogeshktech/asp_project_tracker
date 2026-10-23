@@ -54,7 +54,7 @@ public class BOQService : IBOQService
     {
         var boq = await _repository.GetAsync(id);
         if (boq == null) return null;
-        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "update");
         var title = request.Title?.Trim() ?? string.Empty;
         var status = request.Status?.Trim() ?? string.Empty;
         var allowedStatuses = new[] { "Draft", "Imported", "Under Review", "Submitted", "Approved", "Rejected", "Completed", "Cancelled", "Baseline" };
@@ -345,7 +345,7 @@ public class BOQService : IBOQService
     {
         var boq = await _repository.GetAsync(boqId);
         if (boq == null) return null;
-        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "update");
         var selected = boq.Versions.SingleOrDefault(v => v.Id == versionId);
         if (selected == null) return null;
         await _repository.SetCurrentBaselineAsync(boqId, versionId);
@@ -358,7 +358,7 @@ public class BOQService : IBOQService
     {
         var boq = await _repository.GetAsync(boqId);
         if (boq == null) return null;
-        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "update");
         var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
         if (latest == null || latest.Id != versionId || latest.IsCurrentBaseline)
             throw new InvalidOperationException("Only the latest non-baseline revision can be edited. Create a new revision first.");
@@ -416,7 +416,7 @@ public class BOQService : IBOQService
     {
         var boq = await _repository.GetAsync(boqId);
         if (boq == null) return false;
-        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "update");
         var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
         if (latest == null || latest.Id != versionId || latest.IsCurrentBaseline)
             throw new InvalidOperationException("Only lines in the latest draft revision can be removed.");

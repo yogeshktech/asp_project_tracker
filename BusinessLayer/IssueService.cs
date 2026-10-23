@@ -16,7 +16,7 @@ public interface IIssueService
     Task<Issue> UpdateAsync(long id, CreateIssueRequest request, long userId);
     Task DeleteAsync(long id, long userId);
     Task AddCommentAsync(long userId, long issueId, string comment);
-    Task EscalateHighPriorityAsync(long issueId);
+    Task EscalateHighPriorityAsync(long userId, long issueId);
     Task<List<IssuePriority>> GetPrioritiesAsync();
 }
 
@@ -113,8 +113,7 @@ public class IssueService : IIssueService
     public async Task AddCommentAsync(long userId, long issueId, string comment)
     {
         var issue = await _repository.GetAsync(issueId) ?? throw new InvalidOperationException("Issue not found");
-        if (!await _permissions.CanViewProjectAsync(userId, issue.ProjectId))
-            throw new UnauthorizedAccessException("No permission.");
+        await _permissions.EnsureModuleAsync(userId, issue.ProjectId, "Issues", "update");
         await _repository.AddCommentAsync(new IssueComment
         {
             IssueId = issueId,
@@ -124,10 +123,11 @@ public class IssueService : IIssueService
         });
     }
 
-    public async Task EscalateHighPriorityAsync(long issueId)
+    public async Task EscalateHighPriorityAsync(long userId, long issueId)
     {
         var issue = await _repository.GetAsync(issueId);
         if (issue == null) return;
+        await _permissions.EnsureModuleAsync(userId, issue.ProjectId, "Issues", "update");
         issue.IsEscalated = true;
         issue.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(issue);

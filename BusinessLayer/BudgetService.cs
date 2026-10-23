@@ -262,7 +262,7 @@ public class BudgetService : IBudgetService
         if (!belongsToBudgetProject && !isChildProjectCenter)
             throw new InvalidOperationException("A budget can only be allocated to its project or a direct sub-project cost center.");
         if (request.AllocatedAmount <= 0) throw new InvalidOperationException("Allocated amount must be greater than zero.");
-        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, budget.ProjectId, "Budgets", "edit");
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, budget.ProjectId, "Budgets", "update");
         var alreadyAllocated = await _db.BudgetAllocations.Where(a => a.BudgetId == budget.Id).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
         if (alreadyAllocated + request.AllocatedAmount > budget.ApprovedAmount)
             throw new InvalidOperationException("Allocations cannot exceed the approved budget baseline.");
@@ -358,7 +358,7 @@ public class BudgetService : IBudgetService
             ?? throw new InvalidOperationException("Target project not found.");
         if (target.ParentProjectId != source.Id)
             throw new InvalidOperationException("Budget can only be allocated to a direct child project.");
-        await _permissions.EnsureModuleAsync(userId, source.Id, "Budgets", "edit");
+        await _permissions.EnsureModuleAsync(userId, source.Id, "Budgets", "update");
 
         var summary = await GetProjectAllocationSummaryAsync(userId, source.Id);
         if (amount > summary.Available)

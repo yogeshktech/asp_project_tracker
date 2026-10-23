@@ -350,7 +350,8 @@ async function updateParentDropdown(resortId) {
   const resortProjects = (resortId === 'all' || !resortId)
     ? projects
     : projects.filter(p => String(p.resortId) === String(resortId) || String(p.resortId) === `RES-${resortId}`);
-  const parentOptions = buildHierarchyOptions(resortProjects);
+  const creatableProjects = resortProjects.filter(p => typeof wtCan !== 'function' || wtCan('Projects', 'edit', Number(p.id)));
+  const parentOptions = buildHierarchyOptions(creatableProjects);
   const parentSel = document.getElementById('projectParentId');
   if (parentSel) {
     parentSel.innerHTML = parentOptions;
@@ -1147,6 +1148,10 @@ async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
   const { pid, tasks, owners, projects } = await wtLoadLiveTasksAndOwners();
   if (!pid) {
     showToast('Select a project first, then create a main task.', 'danger');
+    return;
+  }
+  if (typeof wtCan === 'function' && !wtCan('Tasks', 'edit', Number(pid))) {
+    showToast('You do not have permission to create tasks in this project.', 'danger');
     return;
   }
   if (!tasks.length) {

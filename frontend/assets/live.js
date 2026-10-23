@@ -623,14 +623,18 @@ async function handleAddUser(e) {
 }
 
 async function openCreateProjectModal(preselectedParentId = null) {
+  const canCreateUnder = projectId => typeof wtCan !== 'function' || wtCan('Projects', 'edit', Number(projectId));
+  if (preselectedParentId && !canCreateUnder(preselectedParentId)) {
+    showToast('You do not have permission to create a project under this project.', 'danger');
+    return;
+  }
   let resorts = [];
   let projects = [];
   let users = [];
   try {
     resorts = await WisetrackAPI.getResorts();
-    const rid = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] && resorts[0].id);
     // All projects (roots + nested) so any node can be chosen as parent → N-level WBS
-    projects = await WisetrackAPI.getProjects(rid || undefined);
+    projects = await WisetrackAPI.getProjects();
     users = await WisetrackAPI.getUsers();
   } catch (err) {
     showToast(err.message, 'danger');
@@ -640,8 +644,13 @@ async function openCreateProjectModal(preselectedParentId = null) {
   projects = typeof computeProjectLevels === 'function' ? computeProjectLevels(projects) : projects;
   window.__modalProjects = projects;
 
-  const selectedResort = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] && String(resorts[0].id)) || '';
-  const resortOptions = resorts.map(r =>
+  const creatableResorts = resorts.filter(r => projects.some(p =>
+    String(p.resortId || p.ResortId) === String(r.id) && canCreateUnder(p.id || p.Id)));
+  const savedResort = localStorage.getItem('WISETRACK_SELECTED_RESORT');
+  const selectedResort = creatableResorts.some(r => String(r.id) === String(savedResort))
+    ? String(savedResort)
+    : String(creatableResorts[0]?.id || '');
+  const resortOptions = creatableResorts.map(r =>
     `<option value="${r.id}" ${String(r.id) === String(selectedResort) ? 'selected' : ''}>${esc(r.name)}</option>`
   ).join('');
   const currentUserId = Number(localStorage.getItem('WISETRACK_USER_ID'));
@@ -652,8 +661,8 @@ async function openCreateProjectModal(preselectedParentId = null) {
   ).join('');
 
   const resortProjects = selectedResort
-    ? projects.filter(p => String(p.resortId) === String(selectedResort))
-    : projects;
+    ? projects.filter(p => String(p.resortId || p.ResortId) === String(selectedResort) && canCreateUnder(p.id || p.Id))
+    : projects.filter(p => canCreateUnder(p.id || p.Id));
   const parentOptions = typeof buildHierarchyOptions === 'function'
     ? buildHierarchyOptions(resortProjects, preselectedParentId)
     : (`<option value="">-- None (Root Project) --</option>` +

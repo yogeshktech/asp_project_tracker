@@ -8,6 +8,7 @@ public interface IPermissionService
     Task<bool> IsAdminAsync(long userId);
     Task<bool> CanViewProjectAsync(long userId, long projectId);
     Task<bool> CanAccessResortAsync(long userId, long resortId);
+    Task<bool> CanCreateRootProjectAsync(long userId, long resortId);
     Task<List<long>> GetAccessibleResortIdsAsync(long userId);
     Task<bool> CanViewModuleAsync(long userId, long projectId, string module);
     Task<bool> CanEditModuleAsync(long userId, long projectId, string module);
@@ -63,6 +64,15 @@ public class PermissionService : IPermissionService
     {
         if (await IsAdminAsync(userId)) return true;
         return await _db.UserResorts.AnyAsync(x => x.UserId == userId && x.ResortId == resortId);
+    }
+
+    public async Task<bool> CanCreateRootProjectAsync(long userId, long resortId)
+    {
+        if (await IsAdminAsync(userId)) return true;
+        if (!await CanAccessResortAsync(userId, resortId)) return false;
+        return await _db.ProjectPermissions.AnyAsync(p =>
+            p.UserId == userId && p.Module == "Projects" && p.CanEdit && p.ProjectId != null &&
+            _db.Projects.Any(project => project.Id == p.ProjectId && project.ResortId == resortId));
     }
 
     public async Task<List<long>> GetAccessibleResortIdsAsync(long userId)

@@ -195,11 +195,15 @@
     const label = has ? 'Remove dependency' : 'Set dependency';
     return `<button class="btn sm icon-action" data-tooltip="${label}" aria-label="${label}" title="${label}" onclick="event.stopPropagation(); WTPages.openDependencyModal('${kind}', ${id})"><i class="fa-solid ${has ? 'fa-link-slash' : 'fa-link'}"></i></button>`;
   }
-  function wtUpdateBtnHtml(taskId, subId, row) {
+  function wtUpdateBtnHtml(taskId, subId, row, projectId) {
     if (wtRowBlocked(row)) {
       const reason = esc(wtRowBlockReason(row) || 'Waiting on dependency');
       return `<button class="btn sm icon-action" disabled data-tooltip="Waiting: ${reason}" aria-label="Waiting: ${reason}" title="${reason}"><i class="fa-solid fa-hourglass-half"></i></button>`;
     }
+    const currentUserId = Number(localStorage.getItem('WISETRACK_USER_ID'));
+    const rowOwnerId = Number(row?.assignedTo || row?.AssignedTo || 0);
+    const canUpdate = typeof wtCan !== 'function' || wtCan('Tasks', 'update', Number(projectId || row?.projectId || row?.ProjectId));
+    if (!canUpdate && rowOwnerId !== currentUserId) return '';
     const extra = subId ? `, ${subId}` : '';
     return `<button class="btn sm icon-action" data-tooltip="Update progress" aria-label="Update progress" title="Update progress" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${taskId}${extra})"><i class="fa-solid fa-chart-line"></i></button>`;
   }
@@ -762,9 +766,10 @@
   // ---------- DASHBOARD ----------
   async function pageDashboard() {
     const el = root();
+    const canCreateProject = typeof wtCan !== 'function' || wtCan('Projects', 'edit');
     el.innerHTML = pageHead('Resort Portfolio & All-Projects Progress Control', 'Live cross-resort progress tracking, package status counts, 80% CapEx threshold alerts, and real-time field telemetry',
       `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
-       <button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>`)
+       ${canCreateProject ? `<button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>` : ''}`)
       + `
         <!-- Global Project Counts & Financial Metrics -->
         <div class="kpis">
@@ -861,7 +866,7 @@
             <div class="btn-group">
               <a href="projects.html" class="btn sm"><i class="fa-solid fa-folder-tree"></i> WBS Hierarchy</a>
               <button class="btn sm" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Export Custom Report</button>
-              <button class="btn sm primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> Add Work Package</button>
+              ${canCreateProject ? `<button class="btn sm primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> Add Work Package</button>` : ''}
             </div>
           </div>
           ${tableWrap(['Resort & Code', 'Project / Package Title', 'Discipline', 'Project Manager', 'Approved Budget', 'Committed Spend', 'Physical Progress', '80% RAG Status', 'Active Roadblock', 'Target Opening', 'Action'], 'dashRecent')}
@@ -907,9 +912,9 @@
               </div>
 
               <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
-                <button class="btn primary" onclick="openCreateProjectModal()" style="justify-content:flex-start; text-align:left;">
+                ${canCreateProject ? `<button class="btn primary" onclick="openCreateProjectModal()" style="justify-content:flex-start; text-align:left;">
                   <span>🗂️</span> <span>Create Project Package</span>
-                </button>
+                </button>` : ''}
                 <button class="btn" onclick="openAddDailyReportModal()" style="justify-content:flex-start; text-align:left;">
                   <span>📝</span> <span>Log Daily Site Progress (DSR)</span>
                 </button>
@@ -1359,6 +1364,7 @@
     const el = root();
     const selectedProjectIds = new Set();
     let currentProjects = [];
+    const canProject = (projectId, right) => typeof wtCan !== 'function' || wtCan('Projects', right, Number(projectId));
     const resorts = await WisetrackAPI.getResorts().catch(() => []);
     const selectedResortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || (resorts[0] ? String(resorts[0].id) : '1');
 
@@ -1375,8 +1381,8 @@
               <span id="projectSelectionCount" style="font-size:12px;color:var(--text-muted)">0 selected</span>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;">
                 <button class="btn sm" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
-                <button class="btn sm primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>
-                <button class="btn sm danger" id="deleteSelectedProjectsBtn" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
+                <button class="btn sm primary" id="createRootProjectBtn" style="display:none" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>
+                <button class="btn sm danger" id="deleteSelectedProjectsBtn" style="display:none" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
               </div>
           </div>
         </div>
@@ -1468,6 +1474,8 @@ WTPages.switchProjView = function(view) {
 
       // Filter by resort
       const filteredProjects = filterVal === 'all' ? projects : projects.filter(p => String(p.resortId) === String(filterVal) || String(p.resortId) === `RES-${filterVal}`);
+      const createRootButton = document.getElementById('createRootProjectBtn');
+      if (createRootButton) createRootButton.style.display = filteredProjects.some(p => canProject(p.id, 'edit')) ? '' : 'none';
       const matchedResort = allResortsRaw.find(r => String(r.id) === String(filterVal)) || { name: 'Grand Oasis Resort & Spa, Goa', code: 'RES-GOA-01' };
       filteredProjects.forEach(p => { p.projectBudgetDisplay = projectBudgetLabel(p); });
       const rootBudgetRows = filteredProjects.filter(p => !(p.parentProjectId ?? p.parentId));
@@ -1484,7 +1492,7 @@ WTPages.switchProjView = function(view) {
       // 1. Render Recursive N-Level Tree View
       const treeRoot = $('#wbsTreeView');
       if (!filteredProjects.length) {
-        treeRoot.innerHTML = `<div style="padding:32px; text-align:center; color:var(--text-muted);">No projects found for this resort. Click <b>+ Create Project</b> above to add one.</div>`;
+        treeRoot.innerHTML = `<div style="padding:32px; text-align:center; color:var(--text-muted);">No projects found for this resort.</div>`;
       } else {
         // Group by parent ID using normalized String IDs
         const normalized = filteredProjects.map(p => ({
@@ -1539,9 +1547,9 @@ WTPages.switchProjView = function(view) {
                   <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>
                   <span>${prog}%</span>
                   <span class="badge ${node.healthBadge || (prog>=80?'green':prog>=50?'blue':'amber')}">${esc(node.health || node.status || 'Active')}</span>
-                  <button class="btn sm primary" title="Add Child Sub-Package" onclick="event.stopPropagation(); openCreateProjectModal('${node.id}');"><i class="fa-solid fa-plus"></i> ${addBtnTxt}</button>
-                  <button class="btn sm" title="Edit Package" onclick="event.stopPropagation(); openEditProjectModal('${node.id}');"><i class="fa-solid fa-pen"></i></button>
-                  <button class="btn sm danger" title="Delete Package" onclick="event.stopPropagation(); confirmDeleteProject('${node.id}');"><i class="fa-solid fa-trash"></i></button>
+                  ${canProject(node.id, 'edit') ? `<button class="btn sm primary" title="Add Child Sub-Package" onclick="event.stopPropagation(); openCreateProjectModal('${node.id}');"><i class="fa-solid fa-plus"></i> ${addBtnTxt}</button>` : ''}
+                  ${canProject(node.id, 'update') ? `<button class="btn sm" title="Edit Package" onclick="event.stopPropagation(); openEditProjectModal('${node.id}');"><i class="fa-solid fa-pen"></i></button>` : ''}
+                  ${canProject(node.id, 'delete') ? `<button class="btn sm danger" title="Delete Package" onclick="event.stopPropagation(); confirmDeleteProject('${node.id}');"><i class="fa-solid fa-trash"></i></button>` : ''}
                   <a href="project-detail.html" class="btn sm" title="Open project details" onclick="event.stopPropagation(); localStorage.setItem('WISETRACK_SELECTED_PROJECT','${node.id}');">Details</a>
                 </div>
               </div>
@@ -1592,9 +1600,9 @@ WTPages.switchProjView = function(view) {
             <td><span class="badge ${p.healthBadge || 'green'}">${esc(p.health || p.status || 'On Track')}</span></td>
             <td>
               <div class="btn-group">
-                <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
-                <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
-                <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>
+                ${canProject(p.id, 'edit') ? `<button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>` : ''}
+                ${canProject(p.id, 'update') ? `<button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>` : ''}
+                ${canProject(p.id, 'delete') ? `<button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
                 <button class="btn sm" onclick="localStorage.setItem('WISETRACK_SELECTED_PROJECT','${p.id}');location.href='project-detail.html'">Details</button>
               </div>
             </td>
@@ -1627,9 +1635,9 @@ WTPages.switchProjView = function(view) {
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:10px;">
               <div class="btn-group">
-                <button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>
-                <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>
-                <button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>
+                ${canProject(p.id, 'edit') ? `<button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>` : ''}
+                ${canProject(p.id, 'update') ? `<button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i></button>` : ''}
+                ${canProject(p.id, 'delete') ? `<button class="btn sm danger" onclick="confirmDeleteProject('${p.id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
               </div>
               <a href="project-detail.html" class="btn sm primary" onclick="localStorage.setItem('WISETRACK_SELECTED_PROJECT','${p.id}')">Details</a>
             </div>
@@ -1644,7 +1652,8 @@ WTPages.switchProjView = function(view) {
       const count = document.getElementById('projectSelectionCount');
       const button = document.getElementById('deleteSelectedProjectsBtn');
       if (count) count.textContent = `${selectedProjectIds.size} selected`;
-      if (button) button.disabled = selectedProjectIds.size === 0;
+      const canDeleteSelected = [...selectedProjectIds].some(id => canProject(id, 'delete'));
+      if (button) { button.disabled = !canDeleteSelected; button.style.display = canDeleteSelected ? '' : 'none'; }
     }
 
     WTPages.openProjectBudgetAllocation = async (projectId) => {
@@ -1709,7 +1718,7 @@ WTPages.switchProjView = function(view) {
     };
 
     WTPages.deleteSelectedProjects = async () => {
-      const ids = [...selectedProjectIds];
+      const ids = [...selectedProjectIds].filter(id => canProject(id, 'delete'));
       if (!ids.length) return;
       const selected = new Set(ids);
       const children = new Map();
@@ -1901,8 +1910,8 @@ WTPages.switchProjView = function(view) {
       <div style="margin-top:12px"><strong style="font-size:12px;color:var(--text-muted);text-transform:uppercase">Attachments</strong>${profileFiles.length ? `<ul>${profileFiles.map(f => `<li>${detailValue(f.fileName)} <button class="btn sm" onclick="WisetrackAPI.downloadProjectFile(${f.id}).catch(e=>showToast(e.message,'danger'))">Download</button></li>`).join('')}</ul>` : '<p>N/A</p>'}</div>
       
       <div style="margin-top:16px; border-top:1px solid var(--border-color); padding-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn sm primary" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i> + Add Sub-Package</button>
-        <button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i> Edit Profile</button>
+        ${typeof wtCan !== 'function' || wtCan('Projects', 'edit', numericPid) ? `<button class="btn sm primary" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i> + Add Sub-Package</button>` : ''}
+        ${typeof wtCan !== 'function' || wtCan('Projects', 'update', numericPid) ? `<button class="btn sm" onclick="openEditProjectModal('${p.id}')"><i class="fa-solid fa-pen"></i> Edit Profile</button>` : ''}
       </div>
       <div id="wsExtra" style="margin-top:16px;"></div>
     `;
@@ -2143,6 +2152,8 @@ WTPages.switchProjView = function(view) {
   async function pageBudget() {
     const el = root();
     const pid = await selectedProjectId();
+    const canCreateBudget = !wtCan || wtCan('Budgets', 'edit', Number(pid));
+    const canUpdateBudget = !wtCan || wtCan('Budgets', 'update', Number(pid));
     if (!WTPages.openProjectBudgetAllocation) {
       WTPages.openProjectBudgetAllocation = async (projectId) => {
         try {
@@ -2169,9 +2180,9 @@ WTPages.switchProjView = function(view) {
       };
     }
     el.innerHTML = pageHead('Budgets & Cost Centers', '/api/budgets',
-      ` ${pid ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
-        <button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
-        <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>`)
+      ` ${pid && canUpdateBudget ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
+        ${canCreateBudget ? `<button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
+        <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Actions'], 'budgetBody')
       + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Actions'], 'ccBody', 'cost-center-table-wrap');
@@ -2220,11 +2231,11 @@ WTPages.switchProjView = function(view) {
         const latestVersion = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo) - Number(a.versionNo ?? a.VersionNo))[0];
         const versionNo = latestVersion?.versionNo ?? latestVersion?.VersionNo;
         const versionLabel = latestVersion?.versionLabel ?? latestVersion?.VersionLabel ?? (versionNo ? `v${versionNo}` : '—');
-        const canUpdate = !wtCan || wtCan('Budgets', 'update', Number(pid));
+        const canUpdate = canUpdateBudget;
         const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
         const actions = b._projectFunding
           ? '<span class="badge">Parent allocation</span>'
-          : `<button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> <button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}`;
+          : `<button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> ${canUpdate ? `<button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> <button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}`;
         return `<tr><td>${b.id || '—'}</td><td>${esc(b.name)}</td>
           <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
@@ -2544,8 +2555,8 @@ WTPages.switchProjView = function(view) {
     const el = root();
     const pid = await selectedProjectId();
     el.innerHTML = pageHead('Purchases, Actuals & Variance', '/api/costs',
-      ` <button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
-        <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>`)
+      ` ${(!wtCan || wtCan('Costs', 'edit', Number(pid))) ? `<button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
+        <button class="btn" onclick="WTPages.openPurchaseModal()">+ Purchase</button><button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>` : ''}`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
       + tableWrap(['Cost Center', 'Budget', 'Actual Spend', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)'], 'costCenterFinanceBody')
       + tableWrap(['ID', 'Type', 'Capture Level', 'Amount', 'Date', 'Notes', 'Actions'], 'costsBody');
@@ -2579,7 +2590,7 @@ WTPages.switchProjView = function(view) {
             <div class="field"><label>Type</label><select id="varType"><option>Cost</option><option>Schedule</option></select></div>
             <div class="field full"><label>Explanation *</label><textarea id="varText" rows="2" placeholder="e.g. MEP CC exceeded 80% after ducting redesign"></textarea></div>
           </div>
-          <button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveVarianceExplanation()">Save explanation</button>
+          ${(!wtCan || wtCan('Costs', 'update', Number(pid))) ? `<button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveVarianceExplanation()">Save explanation</button>` : ''}
         </div>`;
       $('#costCenterFinanceBody').innerHTML = (variance.costCenters || []).length ? variance.costCenters.map(c => {
         const status = c.ragStatus || 'Green';
@@ -2617,6 +2628,7 @@ WTPages.switchProjView = function(view) {
 
   async function openPurchaseModal(id = null) {
     const pid = await selectedProjectId();
+    if (typeof wtCan === 'function' && !wtCan('Costs', id ? 'update' : 'edit', Number(pid))) { showToast('You do not have permission for this action.', 'danger'); return; }
     const existing = id ? (await WisetrackAPI.getPurchases(pid)).find(x => Number(x.id) === Number(id)) : null;
     if (id && !existing) { showToast('Purchase not found', 'danger'); return; }
     const [centers, boqs] = await Promise.all([
@@ -2666,6 +2678,7 @@ WTPages.switchProjView = function(view) {
 
   async function openActualModal(id = null) {
     const pid = await selectedProjectId();
+    if (typeof wtCan === 'function' && !wtCan('Costs', id ? 'update' : 'edit', Number(pid))) { showToast('You do not have permission for this action.', 'danger'); return; }
     const existing = id ? (await WisetrackAPI.getActuals(pid)).find(x => Number(x.id) === Number(id)) : null;
     if (id && !existing) { showToast('Actual cost not found', 'danger'); return; }
     const [centers, boqs] = await Promise.all([
@@ -2725,9 +2738,11 @@ WTPages.switchProjView = function(view) {
   async function pageBoq() {
     const el = root();
     const pid = await selectedProjectId();
+    const canCreateBoq = !wtCan || wtCan('BOQ', 'edit', Number(pid));
+    const canUpdateBoq = !wtCan || wtCan('BOQ', 'update', Number(pid));
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
-      ` <button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>
-        <button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>`)
+      ` ${canCreateBoq ? `<button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>
+        <button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>` : ''}`)
       + tableWrap(['SR NO', 'Title', 'Status', 'BOQ Version', 'Latest / Current Baseline', 'Created', 'Actions'], 'boqBody');
     if (!pid) {
       $('#boqBody').innerHTML = emptyRow(7, 'No project available.');
@@ -2737,16 +2752,16 @@ WTPages.switchProjView = function(view) {
       const scopeIds = await projectScopeIds(pid);
       const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id)));
       const list = batches.flat();
-      const canCreateBoq = list.length === 0;
-      ['boqFromMasterButton', 'boqImportButton'].forEach(id => { const button = document.getElementById(id); if (button) button.disabled = !canCreateBoq; });
+      const canCreateFirstBoq = list.length === 0;
+      ['boqFromMasterButton', 'boqImportButton'].forEach(id => { const button = document.getElementById(id); if (button) button.disabled = !canCreateFirstBoq; });
       $('#boqBody').innerHTML = list.length ? list.map(b => `
         <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || b.Status || '—')}</td>
         <td>v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</td>
         <td>${(() => { const vs = b.versions || b.Versions || []; const latest = Math.max(0, ...vs.map(v => Number(v.versionNo || v.VersionNo || 0))); const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `Revision v${latest || '—'} / Baseline v${base?.versionNo || base?.VersionNo || '—'}`; })()}</td>
         <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '—')}</td>
         <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button>
-        <button class="btn sm" onclick="WTPages.createBoqRevision(${b.id})">Revise Baseline</button> 
-        <button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button></td></tr>`
+        ${canCreateBoq ? `<button class="btn sm" onclick="WTPages.createBoqRevision(${b.id})">Revise Baseline</button>` : ''} 
+        ${canUpdateBoq ? `<button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button>` : ''}</td></tr>`
       ).join('') : emptyRow(7, 'No BOQ — import or create from master');
     } catch (e) { $('#boqBody').innerHTML = errRow(7, e); }
   }
@@ -2972,15 +2987,18 @@ WTPages.switchProjView = function(view) {
   async function viewBoq(id, editMode = false) {
     try {
       const b = await WisetrackAPI.getBoq(id);
+      const projectId = Number(b.projectId || b.ProjectId);
+      const canCreate = !wtCan || wtCan('BOQ', 'edit', projectId);
+      const canUpdate = !wtCan || wtCan('BOQ', 'update', projectId);
       const versions = b.versions || b.Versions || [];
       const latest = versions.slice().sort((a, c) => (c.versionNo || c.VersionNo || 0) - (a.versionNo || a.VersionNo || 0))[0];
       const currentBaseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline);
       const items = latest?.items || latest?.Items || b.items || b.Items || [];
       const latestVersionId = latest?.id || latest?.Id;
       const latestIsBaseline = latest?.isCurrentBaseline || latest?.IsCurrentBaseline;
-      const canEditRevision = editMode;
+      const canEditRevision = editMode && canUpdate;
       openModal(`BOQ — ${esc(b.title || b.name || '#' + id)}`, `
-        ${editMode ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        ${editMode && canCreate ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <button class="btn primary sm" style="display:none;" onclick="WTPages.createBoqRevision(${id})">${!canEditRevision ? 'Create revision to edit baseline' : 'Create new revision'}</button>
           <button class="btn sm" onclick="WTPages.boqFromMaster(${id})">Add from Master Items</button>
           <button class="btn sm" onclick="WTPages.boqImport(${id})">Import vendor file</button>
@@ -3002,7 +3020,7 @@ WTPages.switchProjView = function(view) {
               const isBaseline = v.isCurrentBaseline || v.IsCurrentBaseline;
               return `<tr><td>Version ${versionNo}</td><td>${esc((v.createdAt || v.CreatedAt || '').toString().slice(0, 10) || '—')}</td><td>${esc(v.remarks || v.Remarks || '—')}</td>
                 <td>${isBaseline ? '<span class="badge green">Current Baseline</span>' : '—'}</td>
-                <td>${isBaseline ? '—' : `<button class="btn sm" onclick="WTPages.setBoqBaseline(${id},${v.id || v.Id})">Set as baseline</button>`}</td></tr>`;
+                <td>${isBaseline || !canUpdate ? '—' : `<button class="btn sm" onclick="WTPages.setBoqBaseline(${id},${v.id || v.Id})">Set as baseline</button>`}</td></tr>`;
             }).join('') || '<tr><td colspan="5">No versions found.</td></tr>'}
           </tbody></table></div>
         </div>
@@ -3142,6 +3160,9 @@ WTPages.switchProjView = function(view) {
     const pid = await selectedProjectId(projects);
     const title = kind === 'milestones' ? 'Milestones' : kind === 'daily' ? 'Daily Site Progress Report (DSR)' : 'Tasks & Planning';
     const selectedMeta = projects.find(p => String(p.id) === String(pid));
+    const canCreateTask = typeof wtCan !== 'function' || wtCan('Tasks', 'edit', Number(pid));
+    const canEditTask = typeof wtCan !== 'function' || wtCan('Tasks', 'update', Number(pid));
+    const canCreateMilestone = typeof wtCan !== 'function' || wtCan('Tasks', 'edit', Number(pid));
     const selectedLabel = kind === 'daily'
       ? (dailyResortIds.map(id => resorts.find(r => String(r.id) === id)?.name || `Resort ${id}`).join(', ') || 'No resorts selected')
       : selectedMeta
@@ -3150,9 +3171,9 @@ WTPages.switchProjView = function(view) {
 
     el.innerHTML = pageHead(title, `Showing ${selectedLabel} `,
       (kind === 'milestones'
-        ? ` <button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>
-            <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>
-            <button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>`
+        ? ` ${canCreateMilestone ? `<button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>
+            <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>` : ''}
+            ${canCreateMilestone ? `<button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>` : ''}`
         : kind === 'daily'
         ? ` <div class="daily-resort-filter" style="position:relative;display:inline-block;margin-right:6px;">
               <button class="btn" type="button" onclick="WTPages.toggleDailyResortMenu()"><i class="fa-solid fa-hotel"></i> Resorts (${dailyResortIds.length}) <i class="fa-solid fa-chevron-down"></i></button>
@@ -3166,9 +3187,9 @@ WTPages.switchProjView = function(view) {
             <button class="btn" onclick="WTPages.loadDailyTaskReport()">Load report</button>
             <button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
-        : ` <button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub / Child</button>
-            <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>
-            <button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>`))
+        : ` ${canCreateTask ? `<button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub / Child</button>
+            <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}
+            ${canEditTask ? `<button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>` : ''}`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
       + (kind === 'daily' ? `<div class="card" style="margin-bottom:16px"><h3 class="card-title">Daily progress report</h3><div id="dailyReportContent">Loading report...</div></div>` : '')
       + tableWrap(kind === 'milestones'
@@ -3237,7 +3258,7 @@ WTPages.switchProjView = function(view) {
             <td>${esc(m.startDate || '—')} → ${esc(m.dueDate || '—')}</td>
             <td>${esc(m.status || '—')}</td>
           <td>${pct}%</td><td class="table-actions">${taskRowActionMenu(`
-            ${(!wtCan || wtCan('Tasks', 'edit', Number(pid))) ? `<button class="btn sm" title="Edit milestone" aria-label="Edit milestone" onclick="WTPages.openMilestoneModal(${m.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
+            ${(!wtCan || wtCan('Tasks', 'update', Number(pid))) ? `<button class="btn sm" title="Edit milestone" aria-label="Edit milestone" onclick="WTPages.openMilestoneModal(${m.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
             ${wtCan && wtCan('Tasks', 'delete', Number(pid)) ? `<button class="btn sm danger" title="Delete milestone" aria-label="Delete milestone" onclick="WTPages.deleteMilestone(${m.id}, '${esc(m.name || m.title)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
           `)}</td>
           </tr>`;
@@ -3352,10 +3373,10 @@ WTPages.switchProjView = function(view) {
               ${progressCell(t, pct)}
               ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(t)}` : ''}
               <td class="table-actions">${taskRowActionMenu(`
-                ${wtUpdateBtnHtml(t.id, null, t)}
+                ${wtUpdateBtnHtml(t.id, null, t, t._projectId || pid)}
                 ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>` : ''}
-                ${kind === 'planning' && (t.canEdit || t.CanEdit) ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
-                ${kind === 'planning' ? `<button class="btn sm primary icon-action" data-tooltip="Add sub-task" aria-label="Add sub-task" title="Add sub-task" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-layer-group"></i></button>` : ''}
+                ${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
+                ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add sub-task" aria-label="Add sub-task" title="Add sub-task" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-layer-group"></i></button>` : ''}
                 ${kind === 'planning' ? wtDepBtnHtml('task', t.id, t) : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
               `)}</td>
@@ -3374,9 +3395,9 @@ WTPages.switchProjView = function(view) {
                 ${progressCell(s, spct)}
                 ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(s)}` : ''}
                 <td class="table-actions">${taskRowActionMenu(`
-                  ${wtUpdateBtnHtml(t.id, s.id, s)}
+                  ${wtUpdateBtnHtml(t.id, s.id, s, t._projectId || pid)}
                   <button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                  ${kind === 'planning' ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel.toLowerCase()} task" aria-label="Add ${addLabel.toLowerCase()} task" title="Add ${addLabel.toLowerCase()} task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}
+                  ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel.toLowerCase()} task" aria-label="Add ${addLabel.toLowerCase()} task" title="Add ${addLabel.toLowerCase()} task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}
                   ${kind === 'planning' ? wtDepBtnHtml('sub', s.id, s) : ''}
                   ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
                 `)}</td>
@@ -3456,6 +3477,11 @@ WTPages.switchProjView = function(view) {
 
   async function openMilestoneModal(milestoneId = null) {
     const pid = await selectedProjectId();
+    const requiredRight = milestoneId ? 'update' : 'edit';
+    if (typeof wtCan === 'function' && !wtCan('Tasks', requiredRight, Number(pid))) {
+      showToast(milestoneId ? 'You do not have permission to edit milestones in this project.' : 'You do not have permission to create milestones in this project.', 'danger');
+      return;
+    }
     let milestone = null;
     let milestones = [];
     let users = [];
@@ -3716,6 +3742,11 @@ WTPages.switchProjView = function(view) {
 
   async function openTaskModal(taskId = null) {
     const pid = await selectedProjectId();
+    const requiredRight = taskId ? 'update' : 'edit';
+    if (typeof wtCan === 'function' && !wtCan('Tasks', requiredRight, Number(pid))) {
+      showToast(taskId ? 'You do not have permission to edit tasks in this project.' : 'You do not have permission to create tasks in this project.', 'danger');
+      return;
+    }
     const currentUserId = localStorage.getItem('WISETRACK_USER_ID') || '';
     let editingTask = null;
     let loadedTasks = [];
@@ -4093,8 +4124,9 @@ WTPages.switchProjView = function(view) {
   async function pageIssues() {
     const el = root();
     const pid = await selectedProjectId();
+    const canCreateIssue = !wtCan || wtCan('Issues', 'edit', Number(pid));
     el.innerHTML = pageHead('Issues & Escalation', '',
-      ` <button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>`)
+      ` ${canCreateIssue ? `<button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>` : ''}`)
       + tableWrap(['ID', 'What', 'Where', 'When', 'Impact', 'Reported By', 'Priority', 'Status', 'Actions'], 'issuesBody');
     if (!pid) {
       $('#issuesBody').innerHTML = emptyRow(9, 'No project available. Create / open a project first.');
@@ -4117,8 +4149,8 @@ WTPages.switchProjView = function(view) {
           <td>${esc(i.priority?.name || i.priorityName || i.priority || '—')}</td>
           <td>${esc(i.status || '—')}</td>
           <td class="table-actions">${taskRowActionMenu(`
-            <button class="btn sm" onclick="WTPages.commentIssue(${i.id})"><i class="fa-regular fa-comment"></i> Comment</button>
-            <button class="btn sm danger" onclick="WTPages.escalateIssue(${i.id})"><i class="fa-solid fa-arrow-up"></i> Escalate</button>
+            ${canUpdateIssues ? `<button class="btn sm" onclick="WTPages.commentIssue(${i.id})"><i class="fa-regular fa-comment"></i> Comment</button>
+            <button class="btn sm danger" onclick="WTPages.escalateIssue(${i.id})"><i class="fa-solid fa-arrow-up"></i> Escalate</button>` : ''}
             ${canUpdateIssues ? `<button class="btn sm" title="Edit issue" onclick="WTPages.openIssueModal(${i.id})"><i class="fa-solid fa-pen"></i> Edit</button>` : ''}
             ${canDeleteIssues ? `<button class="btn sm danger" title="Delete issue" onclick="WTPages.deleteIssue(${i.id}, '${esc(i.title || i.what)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
           `)}</td>
@@ -4128,6 +4160,7 @@ WTPages.switchProjView = function(view) {
 
   async function openIssueModal(id = null) {
     const pid = await selectedProjectId();
+    if (typeof wtCan === 'function' && !wtCan('Issues', id ? 'update' : 'edit', Number(pid))) { showToast('You do not have permission for this action.', 'danger'); return; }
     const existing = id ? await WisetrackAPI.getIssue(id) : null;
     let priorities = [];
     try { priorities = await WisetrackAPI.getIssuePriorities(); } catch { /* optional */ }
@@ -4729,9 +4762,11 @@ WTPages.switchProjView = function(view) {
   async function pageInventory() {
     const el = root();
     const pid = await selectedProjectId();
+    const canCreateInventory = !wtCan || wtCan('Closure', 'edit', Number(pid));
+    const canUpdateInventory = !wtCan || wtCan('Closure', 'update', Number(pid));
     const headers = ['Baseline', 'Unit', 'Purchase Price', 'Order QTY', 'Description', 'Image', 'Total Amount', 'Brand', 'Used QTY', 'Remaining QTY', 'Remark', 'Attachment', 'Action'];
     el.innerHTML = pageHead('Project Inventory', 'Inventory items come from the current BOQ baseline.',
-      ' <button class="btn primary" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>') +
+      ` ${canCreateInventory ? '<button class="btn primary" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>' : ''}`) +
       '<div class="card"><div class="table-wrap" style="overflow-x:auto"><table class="table"><thead><tr>' +
       headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody id="invBody"><tr><td colspan="13">Loading...</td></tr></tbody></table></div></div>';
     if (!pid) { $('#invBody').innerHTML = emptyRow(13, 'No project available.'); return; }
@@ -4775,16 +4810,19 @@ WTPages.switchProjView = function(view) {
           cell(used) + cell('<strong>' + remaining + '</strong>') +
           cell(esc((records[0] && (records[0].remarks || records[0].Remarks)) || line.remarks || line.Remarks || '—')) +
           cell(attachment ? '<a href="' + esc(attachment) + '" target="_blank" rel="noopener">' + esc((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || line.attachmentName || line.AttachmentName || 'Open') + '</a>' : '—') +
-          cell('<button class="btn sm" onclick=\'WTPages.openInventoryModal(' + JSON.stringify(itemId || null) + ',' + JSON.stringify(desc) + ',' + JSON.stringify((records[0] && (records[0].id || records[0].Id)) || null) + ',' + JSON.stringify((records[0] && (records[0].quantity ?? records[0].Quantity)) ?? '') + ',' + JSON.stringify((records[0] && (records[0].remarks || records[0].Remarks)) || '') + ',' + JSON.stringify(attachment || '') + ',' + JSON.stringify((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || '') + ',' + JSON.stringify(orderQty) + ',' + JSON.stringify(amount) + ')\'>' + (records.length ? 'Edit' : 'Record remaining') + '</button>') +
+          cell((records.length ? canUpdateInventory : canCreateInventory) ? '<button class="btn sm" onclick=\'WTPages.openInventoryModal(' + JSON.stringify(itemId || null) + ',' + JSON.stringify(desc) + ',' + JSON.stringify((records[0] && (records[0].id || records[0].Id)) || null) + ',' + JSON.stringify((records[0] && (records[0].quantity ?? records[0].Quantity)) ?? '') + ',' + JSON.stringify((records[0] && (records[0].remarks || records[0].Remarks)) || '') + ',' + JSON.stringify(attachment || '') + ',' + JSON.stringify((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || '') + ',' + JSON.stringify(orderQty) + ',' + JSON.stringify(amount) + ')\'>' + (records.length ? 'Edit' : 'Record remaining') + '</button>' : '—') +
           '</tr>';
       }).join('') : emptyRow(13, boqs.length ? 'No current BOQ baseline is set for this project.' : 'No BOQ baseline items found.');
     } catch (e) { $('#invBody').innerHTML = errRow(13, e); }
   }
   async function pageClosure() {
     const el = root();
+    const pid = await selectedProjectId();
+    const canViewClosure = !wtCan || wtCan('Closure', 'view', Number(pid));
+    const canUpdateClosure = !wtCan || wtCan('Closure', 'update', Number(pid));
     el.innerHTML = pageHead('Project Closure', 'Complete the handover requirements before closing the selected project.',
-      ` <button class="btn" onclick="WTPages.generateHandoverReport()">Generate Handover Report</button>
-        <button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>`)
+      ` ${canViewClosure ? '<button class="btn" onclick="WTPages.generateHandoverReport()">Generate Handover Report</button>' : ''}
+        ${canUpdateClosure ? '<button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>' : ''}`)
       + `<div class="card" style="max-width:900px">
           <div class="card-header"><div><h3 class="card-title">Mandatory closure checklist</h3><div class="card-subtitle">Project closure is available to an authorized Project Manager.</div></div></div>
           <ol style="margin:8px 0 0;padding-left:22px;line-height:2;color:var(--text-main)">
@@ -4797,6 +4835,7 @@ WTPages.switchProjView = function(view) {
 
   async function openInventoryModal(itemId = null, description = '', inventoryId = null, quantity = '', remarks = '', attachmentPath = '', attachmentName = '', orderQuantity = '', totalAmount = '') {
     const pid = await selectedProjectId();
+    if (typeof wtCan === 'function' && !wtCan('Closure', inventoryId ? 'update' : 'edit', Number(pid))) { showToast('You do not have permission for this action.', 'danger'); return; }
     openModal('Add Inventory', `
       <form onsubmit="WTPages.saveInventory(event)">
         <input type="hidden" id="invProj" value="${pid}">
@@ -4846,6 +4885,8 @@ WTPages.switchProjView = function(view) {
   }
 
   async function generateHandoverReport() {
+    const selectedId = await selectedProjectId();
+    if (typeof wtCan === 'function' && !wtCan('Closure', 'view', Number(selectedId))) { showToast('You do not have permission to view project closure.', 'danger'); return; }
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to generate the handover report.', 'danger'); return; }
     const pid = await selectedProjectId();
@@ -4882,6 +4923,7 @@ WTPages.switchProjView = function(view) {
 
   async function closeProject() {
     const pid = await selectedProjectId();
+    if (typeof wtCan === 'function' && !wtCan('Closure', 'update', Number(pid))) { showToast('You do not have permission to close this project.', 'danger'); return; }
     openModal('Close project (PM only)', `
       <form onsubmit="WTPages.saveCloseProject(event)">
         <input type="hidden" id="clProj" value="${pid}">
@@ -5319,7 +5361,7 @@ WTPages.switchProjView = function(view) {
   async function pageDashboard() {
     const el = root();
     el.innerHTML = pageHead('Portfolio Dashboard', 'Authorized projects · status, milestone, schedule risk, budget position, and unresolved exceptions',
-      `<a class="btn" href="reports.html">Reports</a> <button class="btn primary" onclick="openCreateProjectModal()">+ Create Project</button>`)
+      `<a class="btn" href="reports.html">Reports</a> ${typeof wtCan !== 'function' || wtCan('Projects', 'edit') ? `<button class="btn primary" onclick="openCreateProjectModal()">+ Create Project</button>` : ''}`)
       + `<div class="kpis">
           <div class="kpi"><span class="kpi-label">Authorized Projects</span><span class="kpi-value" id="pm25ProjectCount">…</span></div>
           <div class="kpi success"><span class="kpi-label">On Track</span><span class="kpi-value" id="pm25OnTrack">…</span></div>
