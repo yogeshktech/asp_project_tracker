@@ -15,6 +15,13 @@ public class Resort
     public ICollection<Project> Projects { get; set; } = new List<Project>();
 }
 
+[Table("user_resorts")]
+public class UserResort
+{
+    public long UserId { get; set; }
+    public long ResortId { get; set; }
+}
+
 [Table("projects")]
 public class Project
 {

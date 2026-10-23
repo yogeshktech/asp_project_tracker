@@ -140,7 +140,12 @@ public class UserService : IUserService
                 CanDelete = p.CanDelete,
                 FieldPermissions = string.IsNullOrWhiteSpace(p.FieldPermissionsJson) ? new() : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(p.FieldPermissionsJson) ?? new()
             }).ToList();
-        return new UserAccessDto { IsAdmin = isAdmin, Permissions = perms };
+        return new UserAccessDto
+        {
+            IsAdmin = isAdmin,
+            ResortIds = isAdmin ? new() : await _repository.GetResortIdsAsync(userId),
+            Permissions = perms
+        };
     }
 
     public async Task SetProjectPermissionAsync(UserProjectPermissionDto dto, long? actorId)
@@ -158,6 +163,7 @@ public class UserService : IUserService
         var roleIds = await RoleIdsForAdminFlagAsync(request.IsAdmin);
         await _repository.UpdateAsync(user, roleIds);
         await ApplyPermissionsAsync(userId, request.IsAdmin, request.Permissions);
+        await _repository.ReplaceResortAccessAsync(userId, request.IsAdmin ? new List<long>() : request.ResortIds ?? new());
         await _audit.LogAsync(actorId, "Permission", "User", userId, request.IsAdmin ? "Admin" : "User-based matrix");
     }
 

@@ -386,8 +386,8 @@
   const GLOBAL_PERM_MODULES = PERM_TABS.filter(t => t.global).map(t => t.id);
   const PERM_RIGHTS = [
     { id: 'view', label: 'View' },
-    { id: 'edit', label: 'Edit' },
-    { id: 'update', label: 'Update' },
+    { id: 'edit', label: 'Create' },
+    { id: 'update', label: 'Edit' },
     { id: 'delete', label: 'Delete' }
   ];
   const PROJECT_FIELDS = [
@@ -426,10 +426,10 @@
     const el = root();
     if (typeof wtIsAdmin === 'function' && !wtIsAdmin()) {
       el.innerHTML = pageHead('Users & Access', 'Only Admin can manage users') +
-        `<div class="card"><p>Aapke paas user management ka access nahi hai. Admin se rights maange.</p></div>`;
+        `<div class="card"><p>You do not have access to user management. Please ask an administrator to grant you access.</p></div>`;
       return;
     }
-    el.innerHTML = pageHead('Users & Access', 'Admin = full access. Other users = selected projects + View / Edit / Update / Delete.',
+    el.innerHTML = pageHead('Users & Access', 'Admin = full access. Other users = selected projects + View / Create / Edit / Delete.',
       `<button class="btn primary" onclick="WTPages.openUserModal()"><i class="fa-solid fa-plus"></i> New User</button>`)
       + tableWrap(['ID', 'Name', 'Email', 'Access', 'Internal', 'Status', 'Permissions'], 'usersBody');
     await refreshUsers();
@@ -480,7 +480,7 @@
     const box = document.getElementById('permChips');
     if (!box) return;
     if (!st.assigned.length) {
-      box.innerHTML = '<span style="color:var(--text-muted);font-size:12px">50 projects me se sirf jinhe access dena hai, unhe Add project se chune.</span>';
+      box.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Choose only the projects you want to grant access to from the 50 available using Add project.</span>';
       return;
     }
     box.innerHTML = st.assigned.map(id => {
@@ -488,6 +488,34 @@
       const label = p ? projectLabel(p) : `Project #${id}`;
       return `<span class="perm-chip">${esc(label)} <button type="button" onclick="WTPages.removeUserPermProject(${id})" title="Remove">×</button></span>`;
     }).join('');
+  }
+
+  function renderResortPermChips() {
+    const st = getPermState();
+    const chips = document.getElementById('permResortChips');
+    const select = document.getElementById('permResortSelect');
+    if (!chips || !select) return;
+    const selected = st.assignedResorts || [];
+    chips.innerHTML = selected.map(id => {
+      const resort = (st.resortCatalog || []).find(r => Number(r.id) === Number(id));
+      return `<span class="perm-chip">${esc(resort?.name || `Resort #${id}`)} <button type="button" onclick="WTPages.removeUserPermResort(${id})" title="Remove">&times;</button></span>`;
+    }).join('') || '<span style="color:var(--text-muted);font-size:12px">No resorts assigned.</span>';
+    const available = (st.resortCatalog || []).filter(r => !selected.includes(Number(r.id)));
+    select.innerHTML = `<option value="">${available.length ? 'Select resort' : 'All available resorts assigned'}</option>` +
+      available.map(r => `<option value="${r.id}">${esc(r.name || `Resort ${r.id}`)}</option>`).join('');
+  }
+
+  function addUserPermResort() {
+    const st = getPermState();
+    const id = Number(document.getElementById('permResortSelect')?.value || 0);
+    if (id && !(st.assignedResorts || []).includes(id)) st.assignedResorts.push(id);
+    renderResortPermChips();
+  }
+
+  function removeUserPermResort(id) {
+    const st = getPermState();
+    st.assignedResorts = (st.assignedResorts || []).filter(x => Number(x) !== Number(id));
+    renderResortPermChips();
   }
 
   function renderPermTabs() {
@@ -514,7 +542,7 @@
       });
     }
     if (!rows.length) {
-      box.innerHTML = `<div style="padding:24px;color:var(--text-muted);text-align:center">Is tab ke liye pehle upar se 1 ya 2 project add karein.</div>`;
+      box.innerHTML = `<div style="padding:24px;color:var(--text-muted);text-align:center">Add one or two projects above to use this tab.</div>`;
       return;
     }
     box.innerHTML = `
@@ -541,6 +569,7 @@
   }
 
   function refreshPermPanel() {
+    renderResortPermChips();
     renderPermChips();
     renderPermTabs();
     renderPermTable();
@@ -633,6 +662,15 @@
 
     const rights = {};
     const assigned = [];
+    let resortCatalog = [];
+    let assignedResorts = [];
+    if (id) {
+      try {
+        const access = await WisetrackAPI.getUserAccess(id);
+        assignedResorts = (access.resortIds || access.ResortIds || []).map(Number);
+      } catch (_) { /* optional for older API deployments */ }
+    }
+    try { resortCatalog = await WisetrackAPI.getResorts(); } catch (_) { /* optional */ }
     (perms || []).forEach(p => {
       const module = p.module || p.Module;
       const pid = Number(p.projectId ?? p.ProjectId ?? 0);
@@ -646,7 +684,7 @@
       };
       if (pid && !GLOBAL_PERM_MODULES.includes(module) && !assigned.includes(pid)) assigned.push(pid);
     });
-    window._wtPerm = { tab: 'Projects', catalog: projects || [], assigned, rights };
+    window._wtPerm = { tab: 'Projects', catalog: projects || [], assigned, rights, resortCatalog, assignedResorts };
 
     openModal('User Permissions Manager', `
       <p class="perm-manager-intro">Easily review and modify each user’s detailed access permissions across key system modules. Ensure every team member has the appropriate rights.</p>
@@ -667,6 +705,12 @@
         </div>
         <div id="userPermMatrix" style="${isAdmin ? 'display:none' : ''}">
           <div class="perm-project-bar">
+            <strong>Resort access</strong>
+            <select id="permResortSelect"></select>
+            <button type="button" class="btn primary" onclick="WTPages.addUserPermResort()"><i class="fa-solid fa-plus"></i> Add resort</button>
+          </div>
+          <div id="permResortChips" class="perm-chips"></div>
+          <div class="perm-project-bar">
             <input id="permProjectSearch" type="search" placeholder="Search among all projects…" oninput="WTPages.fillPermProjectSelect()">
             <select id="permProjectSelect"></select>
             <button type="button" class="btn primary" onclick="WTPages.addUserPermProject()"><i class="fa-solid fa-plus"></i> Add project</button>
@@ -684,6 +728,7 @@
     e.preventDefault();
     const isAdmin = !!(document.getElementById('uAdmin')?.checked);
     const permissions = isAdmin ? [] : collectUserPermissions();
+    const resortIds = isAdmin ? [] : (getPermState().assignedResorts || []);
     try {
       let userId = id;
       if (id) {
@@ -707,7 +752,7 @@
         userId = created.id || created.Id;
       }
       if (userId) {
-        await WisetrackAPI.replaceUserAccess(userId, { isAdmin, permissions });
+        await WisetrackAPI.replaceUserAccess(userId, { isAdmin, permissions, resortIds });
       }
       closeModal(); showToast(isAdmin ? 'Admin saved — full access' : 'User access saved'); await pageUsers();
     } catch (err) { showToast(err.message, 'danger'); }
@@ -953,7 +998,7 @@
             </div>
             <a class="btn sm" href="${target}" onclick="localStorage.setItem('WISETRACK_SELECTED_PROJECT','${Number.isFinite(projectId) ? projectId : 0}')">Open</a>
           </div>`;
-        }).join('') : '<div style="padding:12px;border:1px solid #bbf7d0;border-radius:8px;color:#166534;background:#f0fdf4;">Koi active task exception nahi hai.</div>';
+        }).join('') : '<div style="padding:12px;border:1px solid #bbf7d0;border-radius:8px;color:#166534;background:#f0fdf4;">There are no active task exceptions.</div>';
       }
 
       // Update KPI Cards
@@ -1096,10 +1141,11 @@
   // ---------- RESORTS + PROPERTIES + TYPES ----------
   async function pageResorts() {
     const el = root();
+    const canCreate = !window.wtCan || window.wtCan('Resorts', 'edit');
     el.innerHTML = pageHead('', '',
-      `<button class="btn" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-building"></i>  Add Property</button>
+      `${canCreate ? `<button class="btn" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-building"></i>  Add Property</button>
        <button class="btn" onclick="WTPages.openTypeModal()"><i class="fa-solid fa-tags"></i>  Add Project Type</button>
-       <button class="btn primary" onclick="openCreateResortModal()"><i class="fa-solid fa-plus"></i>  Add Resort</button>`)
+       <button class="btn primary" onclick="openCreateResortModal()"><i class="fa-solid fa-plus"></i>  Add Resort</button>` : ''}`)
       + `
         <!-- Section 1: Master Resorts Directory -->
         <div class="card" style="margin-bottom:20px;">
@@ -1114,7 +1160,7 @@
               <div>
                 <h3 class="card-title">🏢 2. Resort Properties Master</h3>
               </div>
-              <button class="btn sm primary" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-plus"></i> Add Property</button>
+              ${canCreate ? `<button class="btn sm primary" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-plus"></i> Add Property</button>` : ''}
             </div>
             ${tableWrap(['ID', 'Parent Resort ID', 'Property Name', 'Property Code', 'Actions'], 'propsBody')}
           </div>
@@ -1125,7 +1171,7 @@
               <div>
                 <h3 class="card-title">🏷️ 3. Project Types & Disciplines</h3>
               </div>
-              <button class="btn sm primary" onclick="WTPages.openTypeModal()"><i class="fa-solid fa-plus"></i> Add Type</button>
+              ${canCreate ? `<button class="btn sm primary" onclick="WTPages.openTypeModal()"><i class="fa-solid fa-plus"></i> Add Type</button>` : ''}
             </div>
             ${tableWrap(['ID', 'Type / Discipline Name', 'Classification Description', 'Actions'], 'typesBody')}
           </div>
@@ -1139,14 +1185,16 @@
     const body = $('#resortsBody');
     try {
       const list = await WisetrackAPI.getResorts();
+      const canEdit = !window.wtCan || window.wtCan('Resorts', 'update');
+      const canDelete = !window.wtCan || window.wtCan('Resorts', 'delete');
       body.innerHTML = list.length ? list.map(r => `
         <tr>
           <td>${r.id}</td><td><strong>${esc(r.name)}</strong></td><td>${esc(r.code || '—')}</td>
           <td>${esc(r.location || '—')}</td>
           <td><span class="badge ${r.isActive ? 'green' : 'red'}">${r.isActive ? 'Yes' : 'No'}</span></td>
           <td class="table-actions">
-            <button class="btn sm" onclick="openEditResortModal('${r.id}')"><i class="fa-solid fa-pen"></i></button>
-            <button class="btn sm danger" onclick="confirmDeleteResort('${r.id}')"><i class="fa-solid fa-trash"></i></button>
+            ${canEdit ? `<button class="btn sm" onclick="openEditResortModal('${r.id}')"><i class="fa-solid fa-pen"></i></button>` : ''}
+            ${canDelete ? `<button class="btn sm danger" onclick="confirmDeleteResort('${r.id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
           </td>
         </tr>`).join('') : emptyRow(6, 'No resorts');
     } catch (e) { body.innerHTML = errRow(6, e); }
@@ -1157,10 +1205,12 @@
     if (!body) return;
     try {
       const list = await WisetrackAPI.getProperties();
+      const canEdit = !window.wtCan || window.wtCan('Resorts', 'update');
+      const canDelete = !window.wtCan || window.wtCan('Resorts', 'delete');
       body.innerHTML = list.length ? list.map(p => `
         <tr>
           <td>${p.id}</td><td>${p.resortId}</td><td>${esc(p.name)}</td><td>${esc(p.code || '—')}</td>
-          <td class="table-actions"><button class="btn sm" title="Edit property" onclick="WTPages.openEditPropertyModal(${p.id})"><i class="fa-solid fa-pen"></i></button><button class="btn sm danger" title="Delete property" onclick="WTPages.deleteProperty(${p.id})"><i class="fa-solid fa-trash"></i></button></td>
+          <td class="table-actions">${canEdit ? `<button class="btn sm" title="Edit property" onclick="WTPages.openEditPropertyModal(${p.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete property" onclick="WTPages.deleteProperty(${p.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td>
         </tr>`).join('') : emptyRow(5, 'No properties');
     } catch (e) { body.innerHTML = errRow(5, e); }
   }
@@ -1170,13 +1220,15 @@
     if (!body) return;
     try {
       const list = await WisetrackAPI.getProjectTypes();
+      const canEdit = !window.wtCan || window.wtCan('Resorts', 'update');
+      const canDelete = !window.wtCan || window.wtCan('Resorts', 'delete');
       body.innerHTML = list.length ? list.map(t => `
         <tr>
           <td>${t.id}</td><td><strong>${esc(t.name)}</strong></td><td>${esc(t.description || '—')}</td>
           <td>
             <div class="table-actions">
-              <button class="btn sm" onclick="WTPages.openEditTypeModal(${t.id}, '${esc(t.name).replace(/'/g, "\\'")}', '${esc(t.description || '').replace(/'/g, "\\'")}')" title="Modify"><i class="fa-solid fa-pen"></i> Edit</button>
-              <button class="btn sm danger" onclick="WTPages.deleteType(${t.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>
+              ${canEdit ? `<button class="btn sm" onclick="WTPages.openEditTypeModal(${t.id}, '${esc(t.name).replace(/'/g, "\\'")}', '${esc(t.description || '').replace(/'/g, "\\'")}')" title="Modify"><i class="fa-solid fa-pen"></i> Edit</button>` : ''}
+              ${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteType(${t.id})" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
             </div>
           </td>
         </tr>`).join('') : emptyRow(4, 'No types');
@@ -4410,7 +4462,7 @@ WTPages.switchProjView = function(view) {
               <option value="TaskOverdue">Task overdue</option>
             </select>
           </div>
-          <div class="field"><label>Delay / advance window (hours)</label><input id="erDelay" type="number" min="0" value="0"><small id="erDelayHint">Approaching milestone के लिए पहले से alert भेजने का समय; 168 hours = 7 days.</small></div>
+          <div class="field"><label>Delay / advance window (hours)</label><input id="erDelay" type="number" min="0" value="0"><small id="erDelayHint">How far in advance to send an alert for an approaching milestone; 168 hours = 7 days.</small></div>
           <div class="field full"><label>Target Role</label>
             <select id="erRole">${(roles || []).map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('') || '<option value="">—</option>'}</select>
           </div>
@@ -5418,7 +5470,7 @@ WTPages.switchProjView = function(view) {
       if (typeof wtPageAllowed === 'function' && page && !wtPageAllowed(page) && page !== 'login.html') {
         root().innerHTML = `<div class="card" style="padding:24px">
           <h2 style="margin:0 0 8px">Access denied</h2>
-          <p style="margin:0">Is module ke liye aapke user par checkbox nahi hai. Admin se project × module rights assign karwayein.</p>
+          <p style="margin:0">You do not have access to this module for the selected project. Ask an administrator to assign project and module permissions.</p>
         </div>`;
         return;
       }
@@ -5467,7 +5519,7 @@ WTPages.switchProjView = function(view) {
     saveMyProfile, changeMyPassword, previewProfileImage,
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
-    openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
+    openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, addUserPermResort, removeUserPermResort, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
     openPropertyModal, openEditPropertyModal, saveProperty, updateProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
     refreshResorts: refreshResortsTable,
     addTeam, saveWorkspaceVariance,

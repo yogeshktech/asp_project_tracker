@@ -18,11 +18,12 @@ public class ProjectsController : ControllerBase
     private long UserId => UserContext.GetUserId(User)!.Value;
 
     [HttpGet("resorts")]
-    public async Task<IActionResult> Resorts() => Ok(await _projectService.GetResortsAsync());
+    public async Task<IActionResult> Resorts() => Ok(await _projectService.GetResortsAsync(UserId));
 
     [HttpGet("resorts/{id:long}")]
     public async Task<IActionResult> GetResort(long id)
     {
+        if (!await _projectService.CanAccessResortAsync(UserId, id)) return NotFound();
         var resort = await _projectService.GetResortAsync(id);
         return resort == null ? NotFound() : Ok(resort);
     }
@@ -47,7 +48,7 @@ public class ProjectsController : ControllerBase
 
     [HttpGet("properties")]
     public async Task<IActionResult> Properties([FromQuery] long? resortId) =>
-        Ok(await _projectService.GetPropertiesAsync(resortId));
+        Ok(await _projectService.GetPropertiesAsync(UserId, resortId));
 
     [HttpPost("properties")]
     public async Task<IActionResult> CreateProperty([FromBody] CreatePropertyRequest request) =>

@@ -16,6 +16,8 @@ public interface IUserRepository
     Task SetProjectPermissionAsync(ProjectPermission permission);
     Task ReplaceProjectPermissionsAsync(long userId, IEnumerable<ProjectPermission> permissions);
     Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId);
+    Task<List<long>> GetResortIdsAsync(long userId);
+    Task ReplaceResortAccessAsync(long userId, IEnumerable<long> resortIds);
     Task AssignToProjectAsync(long userId, long projectId, string? teamRole);
     Task RemoveFromProjectsExceptAsync(long userId, IEnumerable<long> keepProjectIds);
 }
@@ -92,6 +94,19 @@ public class UserRepository : IUserRepository
 
     public Task<List<ProjectPermission>> GetProjectPermissionsAsync(long userId) =>
         _db.ProjectPermissions.Where(p => p.UserId == userId).AsNoTracking().ToListAsync();
+
+    public Task<List<long>> GetResortIdsAsync(long userId) =>
+        _db.UserResorts.Where(x => x.UserId == userId).Select(x => x.ResortId).ToListAsync();
+
+    public async Task ReplaceResortAccessAsync(long userId, IEnumerable<long> resortIds)
+    {
+        var existing = await _db.UserResorts.Where(x => x.UserId == userId).ToListAsync();
+        _db.UserResorts.RemoveRange(existing);
+        var existingResortIds = await _db.Resorts.Where(r => resortIds.Contains(r.Id)).Select(r => r.Id).Distinct().ToListAsync();
+        foreach (var resortId in existingResortIds)
+            _db.UserResorts.Add(new UserResort { UserId = userId, ResortId = resortId });
+        await _db.SaveChangesAsync();
+    }
 
     public async Task AssignToProjectAsync(long userId, long projectId, string? teamRole)
     {

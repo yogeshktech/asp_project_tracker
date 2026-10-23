@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
     public DbSet<Resort> Resorts => Set<Resort>();
+    public DbSet<UserResort> UserResorts => Set<UserResort>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectBudgetAllocation> ProjectBudgetAllocations => Set<ProjectBudgetAllocation>();
     public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
@@ -83,6 +84,7 @@ public class AppDbContext : DbContext
             .HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<ProjectUser>().HasKey(x => new { x.ProjectId, x.UserId });
+        modelBuilder.Entity<UserResort>().HasKey(x => new { x.UserId, x.ResortId });
         modelBuilder.Entity<BudgetVersion>()
             .HasOne(x => x.Approver).WithMany().HasForeignKey(x => x.ApproverId).OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<Project>()

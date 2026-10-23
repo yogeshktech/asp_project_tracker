@@ -94,4 +94,7 @@ public class UsersController : ControllerBase
         await _userService.ReplaceAccessAsync(id, request, UserId);
         return Ok(await _userService.GetAccessAsync(id));
     }
+
+    [HttpGet("{id:long}/access")]
+    public async Task<IActionResult> GetAccess(long id) => Ok(await _userService.GetAccessAsync(id));
 }

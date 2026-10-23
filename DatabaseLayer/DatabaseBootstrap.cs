@@ -100,7 +100,42 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
         await DbSeeder.SeedAsync(db);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
+        await EnsureUserResortAccessSchemaAsync(db);
         logger.LogInformation("Database seed completed.");
+    }
+
+    private static async Task EnsureUserResortAccessSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            DO $$
+            BEGIN
+                IF to_regclass('public.user_resorts') IS NULL THEN
+                    CREATE TABLE user_resorts (
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        resort_id BIGINT NOT NULL REFERENCES resorts(id) ON DELETE CASCADE,
+                        PRIMARY KEY (user_id, resort_id)
+                    );
+                    INSERT INTO user_resorts (user_id, resort_id)
+                    SELECT DISTINCT user_id, resort_id
+                    FROM (
+                        SELECT pp.user_id, p.resort_id
+                        FROM project_permissions pp
+                        JOIN projects p ON p.id = pp.project_id
+                        WHERE pp.project_id IS NOT NULL
+                        UNION
+                        SELECT pu.user_id, p.resort_id
+                        FROM project_users pu
+                        JOIN projects p ON p.id = pu.project_id
+                        UNION
+                        SELECT p.owner_id AS user_id, p.resort_id
+                        FROM projects p
+                        WHERE p.owner_id IS NOT NULL
+                    ) existing_access
+                    ON CONFLICT (user_id, resort_id) DO NOTHING;
+                END IF;
+            END $$;
+            """);
     }
 
     private static async Task EnsureReportProjectCascadeAsync(AppDbContext db, ILogger logger)

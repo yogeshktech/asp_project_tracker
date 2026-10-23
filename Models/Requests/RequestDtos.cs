@@ -172,12 +172,14 @@ public class UserProjectPermissionDto
 public class ReplaceUserAccessRequest
 {
     public bool IsAdmin { get; set; }
+    public List<long> ResortIds { get; set; } = new();
     public List<UserProjectPermissionDto> Permissions { get; set; } = new();
 }
 
 public class UserAccessDto
 {
     public bool IsAdmin { get; set; }
+    public List<long> ResortIds { get; set; } = new();
     public List<UserProjectPermissionDto> Permissions { get; set; } = new();
 }
 

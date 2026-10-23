@@ -12,12 +12,13 @@ namespace project_tracker_madhu.BusinessLayer.Projects;
 
 public interface IProjectService
 {
-    Task<List<Resort>> GetResortsAsync();
+    Task<List<Resort>> GetResortsAsync(long userId);
+    Task<bool> CanAccessResortAsync(long userId, long resortId);
     Task<Resort?> GetResortAsync(long id);
     Task<Resort> CreateResortAsync(CreateResortRequest request, long? userId);
     Task<Resort?> UpdateResortAsync(long id, UpdateResortRequest request, long? userId);
     Task DeleteResortAsync(long id, long? userId);
-    Task<List<Property>> GetPropertiesAsync(long? resortId);
+    Task<List<Property>> GetPropertiesAsync(long userId, long? resortId);
     Task<Property> CreatePropertyAsync(CreatePropertyRequest request, long? userId);
     Task<Property?> UpdatePropertyAsync(long id, UpdatePropertyRequest request, long? userId);
     Task DeletePropertyAsync(long id, long? userId);
@@ -60,7 +61,12 @@ public class ProjectService : IProjectService
         _db = db;
     }
 
-    public Task<List<Resort>> GetResortsAsync() => _repository.GetResortsAsync();
+    public async Task<List<Resort>> GetResortsAsync(long userId)
+    {
+        var allowed = await _permissions.GetAccessibleResortIdsAsync(userId);
+        return (await _repository.GetResortsAsync()).Where(r => allowed.Contains(r.Id)).ToList();
+    }
+    public Task<bool> CanAccessResortAsync(long userId, long resortId) => _permissions.CanAccessResortAsync(userId, resortId);
     public Task<Resort?> GetResortAsync(long id) => _repository.GetResortAsync(id);
 
     public async Task<Resort> CreateResortAsync(CreateResortRequest request, long? userId)
@@ -82,6 +88,7 @@ public class ProjectService : IProjectService
     public async Task<Resort?> UpdateResortAsync(long id, UpdateResortRequest request, long? userId)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "update");
+        if (userId.HasValue && !await _permissions.CanAccessResortAsync(userId.Value, id)) throw new UnauthorizedAccessException("No access to this resort.");
         var resort = await _repository.GetResortAsync(id);
         if (resort == null) return null;
         resort.Name = request.Name;
@@ -98,14 +105,25 @@ public class ProjectService : IProjectService
     public async Task DeleteResortAsync(long id, long? userId)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "delete");
+        if (userId.HasValue && !await _permissions.CanAccessResortAsync(userId.Value, id)) throw new UnauthorizedAccessException("No access to this resort.");
         await _repository.DeleteResortAsync(id);
         await _audit.LogAsync(userId, "Delete", "Resort", id);
     }
 
-    public Task<List<Property>> GetPropertiesAsync(long? resortId) => _repository.GetPropertiesAsync(resortId);
+    public async Task<List<Property>> GetPropertiesAsync(long userId, long? resortId)
+    {
+        var allowed = await _permissions.GetAccessibleResortIdsAsync(userId);
+        if (resortId.HasValue && !allowed.Contains(resortId.Value)) return new();
+        return (await _repository.GetPropertiesAsync(resortId)).Where(p => allowed.Contains(p.ResortId)).ToList();
+    }
 
     public async Task<Property> CreatePropertyAsync(CreatePropertyRequest request, long? userId)
     {
+        if (userId.HasValue)
+        {
+            await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "edit");
+            if (!await _permissions.CanAccessResortAsync(userId.Value, request.ResortId)) throw new UnauthorizedAccessException("No access to this resort.");
+        }
         var code = EntityCodes.Next((await _repository.GetPropertiesAsync(null)).Select(p => p.Code), EntityCodes.Property);
         var property = await _repository.AddPropertyAsync(new Property
         {
@@ -125,6 +143,11 @@ public class ProjectService : IProjectService
     {
         var property = await _repository.GetPropertyAsync(id);
         if (property == null) return null;
+        if (userId.HasValue)
+        {
+            await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "update");
+            if (!await _permissions.CanAccessResortAsync(userId.Value, property.ResortId) || !await _permissions.CanAccessResortAsync(userId.Value, request.ResortId)) throw new UnauthorizedAccessException("No access to this resort.");
+        }
         property.ResortId = request.ResortId;
         property.Name = request.Name;
         if (string.IsNullOrWhiteSpace(property.Code))
@@ -140,6 +163,13 @@ public class ProjectService : IProjectService
 
     public async Task DeletePropertyAsync(long id, long? userId)
     {
+        var property = await _repository.GetPropertyAsync(id);
+        if (property == null) return;
+        if (userId.HasValue)
+        {
+            await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "delete");
+            if (!await _permissions.CanAccessResortAsync(userId.Value, property.ResortId)) throw new UnauthorizedAccessException("No access to this resort.");
+        }
         await _repository.DeletePropertyAsync(id);
         await _audit.LogAsync(userId, "Delete", "Property", id);
     }
@@ -232,6 +262,8 @@ public class ProjectService : IProjectService
 
     public async Task<ProjectResponseDto> CreateAsync(long userId, CreateProjectDto dto)
     {
+        if (!await _permissions.CanAccessResortAsync(userId, dto.ResortId))
+            throw new UnauthorizedAccessException("No access to this resort.");
         if (dto.ParentProjectId.HasValue)
         {
             var parentProject = await _repository.GetProjectAsync(dto.ParentProjectId.Value)
