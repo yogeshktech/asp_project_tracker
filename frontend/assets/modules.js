@@ -2568,19 +2568,32 @@ WTPages.switchProjView = function(view) {
       return;
     }
     try {
-      const [purchases, actuals, variance] = await Promise.all([
-        WisetrackAPI.getPurchases(pid), WisetrackAPI.getActuals(pid), WisetrackAPI.getVariance(pid)
+      const [purchases, actuals, variance, boqs, costCenters] = await Promise.all([
+        WisetrackAPI.getPurchases(pid), WisetrackAPI.getActuals(pid), WisetrackAPI.getVariance(pid),
+        WisetrackAPI.getBoqs(pid).catch(() => []), WisetrackAPI.getCostCenters(pid).catch(() => [])
       ]);
+      const boqItemNames = new Map();
+      (boqs || []).forEach(boq => (boq.versions || boq.Versions || []).forEach(version =>
+        (version.items || version.Items || []).forEach(item => {
+          const itemId = item.id ?? item.Id;
+          const itemName = item.itemName || item.ItemName || item.item?.name || item.Item?.Name || item.description || item.Description;
+          if (itemId != null && itemName) boqItemNames.set(String(itemId), itemName);
+        })
+      ));
+      const costCenterNames = new Map((costCenters || []).map(center => [String(center.id ?? center.Id), center.name || center.Name]));
       const explanations = await WisetrackAPI.getVarianceExplanations(pid).catch(() => []);
       const currency = esc(variance.currency || 'MVR');
       const money = amount => `${currency} ${Number(amount || 0).toLocaleString('en-US')}`;
+      const budget = Number(variance.budget ?? variance.approvedBudget ?? 0);
+      const forecast = Number(variance.forecastTotal ?? (Number(variance.purchaseTotal || 0) + Number(variance.actualSpend ?? variance.actualTotal ?? 0)));
+      const ragStatus = forecast > budget ? 'Red' : budget > 0 && forecast >= budget * 0.8 ? 'Amber' : 'Green';
       $('#varianceBox').innerHTML = `
         <div class="grid g4">
           <div><div class="kpi-label">Budget</div><strong>${money(variance.budget ?? variance.approvedBudget)}</strong></div>
           <div><div class="kpi-label">Actual Spend</div><strong>${money(variance.actualSpend ?? variance.actualTotal)}</strong></div>
           <div><div class="kpi-label">Variance (Budget - Actual)</div><strong>${money(variance.varianceAmount)}</strong></div>
           <div><div class="kpi-label">Budget Status</div><span class="badge ${variance.budgetStatus === 'Over Budget' ? 'red' : variance.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(variance.budgetStatus || 'On Budget')}</span></div>
-          <div><div class="kpi-label">RAG</div><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus)}</span></div>
+          <div><div class="kpi-label">RAG</div><span class="badge ${ragStatus === 'Red' ? 'red' : ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(ragStatus)}</span></div>
         </div>
         <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
           <strong>Variance explanations (PM-24)</strong>
@@ -2607,7 +2620,10 @@ WTPages.switchProjView = function(view) {
       $('#costsBody').innerHTML = rows.length ? rows.map(r => {
         const canUpdate = !wtCan || wtCan('Costs', 'update', Number(pid));
         const canDelete = !wtCan || wtCan('Costs', 'delete', Number(pid));
-        return `<tr><td>${r.id}</td><td>${r._t}</td><td>${r.boqItemId && r.costCenterId ? `BOQ #${r.boqItemId} / CC #${r.costCenterId}` : r.costCenterId ? `Cost Center #${r.costCenterId}` : r.boqItemId ? `BOQ Line #${r.boqItemId}` : 'Project'}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
+        const boqName = r.boqItemId ? boqItemNames.get(String(r.boqItemId)) : '';
+        const costCenterName = r.costCenterId ? costCenterNames.get(String(r.costCenterId)) : '';
+        const captureLevel = [boqName, costCenterName].filter(Boolean).join(' / ') || (r.boqItemId ? `BOQ Line #${r.boqItemId}` : r.costCenterId ? `Cost Center #${r.costCenterId}` : 'Project');
+        return `<tr><td>${r.id}</td><td>${r._t}</td><td>${esc(captureLevel)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
           <td>${esc(r.costDate || r.purchaseDate || r.createdAt || 'N/A')}</td><td>${esc(r.remarks || r.description || r.notes || 'N/A')}</td><td class="table-actions">${canUpdate ? `<button class="btn sm" title="Edit ${r._t.toLowerCase()}" aria-label="Edit ${r._t.toLowerCase()}" onclick="WTPages.open${r._t}Modal(${r.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete ${r._t.toLowerCase()}" aria-label="Delete ${r._t.toLowerCase()}" onclick="WTPages.deleteCost('${r._t}', ${r.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') : emptyRow(7, 'No cost entries');
     } catch (e) { showToast(e.message, 'danger'); }
@@ -4775,12 +4791,12 @@ WTPages.switchProjView = function(view) {
     const pid = await selectedProjectId();
     const canCreateInventory = !wtCan || wtCan('Closure', 'edit', Number(pid));
     const canUpdateInventory = !wtCan || wtCan('Closure', 'update', Number(pid));
-    const headers = ['Baseline', 'Unit', 'Purchase Price', 'Order QTY', 'Description', 'Image', 'Total Amount', 'Brand', 'Used QTY', 'Remaining QTY', 'Remark', 'Attachment', 'Action'];
+    const headers = ['Baseline', 'Item Name', 'Unit', 'Purchase Price', 'Ordered QTY', 'Description', 'Image', 'Total Amount', 'Brand', 'Used QTY', 'Remaining QTY', 'Remark', 'Attachment', 'Action'];
     el.innerHTML = pageHead('Project Inventory', 'Inventory items come from the current BOQ baseline.',
       ` ${canCreateInventory ? '<button class="btn primary" onclick="WTPages.openInventoryModal()">+ Inventory Item</button>' : ''}`) +
       '<div class="card"><div class="table-wrap" style="overflow-x:auto"><table class="table"><thead><tr>' +
-      headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody id="invBody"><tr><td colspan="13">Loading...</td></tr></tbody></table></div></div>';
-    if (!pid) { $('#invBody').innerHTML = emptyRow(13, 'No project available.'); return; }
+      headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody id="invBody"><tr><td colspan="14">Loading...</td></tr></tbody></table></div></div>';
+    if (!pid) { $('#invBody').innerHTML = emptyRow(14, 'No project available.'); return; }
     try {
       const scopeIds = await projectScopeIds(pid);
       const batches = await Promise.all(scopeIds.map(id => Promise.all([
@@ -4814,6 +4830,7 @@ WTPages.switchProjView = function(view) {
         const cell = value => '<td>' + value + '</td>';
         return '<tr>' +
           cell(esc(line._title) + ' v' + esc(line._version)) +
+          cell(esc(line.itemName || line.ItemName || line.item?.name || line.Item?.Name || '—')) +
           cell(esc(line.unit || line.Unit || '—')) +
           cell(formatBudgetValue(price, 'MVR')) + cell(orderQty) + cell(esc(desc || '—')) +
           cell(image ? '<a href="' + esc(image) + '" target="_blank" rel="noopener">View</a>' : '—') +
@@ -4821,10 +4838,10 @@ WTPages.switchProjView = function(view) {
           cell(used) + cell('<strong>' + remaining + '</strong>') +
           cell(esc((records[0] && (records[0].remarks || records[0].Remarks)) || line.remarks || line.Remarks || '—')) +
           cell(attachment ? '<a href="' + esc(attachment) + '" target="_blank" rel="noopener">' + esc((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || line.attachmentName || line.AttachmentName || 'Open') + '</a>' : '—') +
-          cell((records.length ? canUpdateInventory : canCreateInventory) ? '<button class="btn sm" onclick=\'WTPages.openInventoryModal(' + JSON.stringify(itemId || null) + ',' + JSON.stringify(desc) + ',' + JSON.stringify((records[0] && (records[0].id || records[0].Id)) || null) + ',' + JSON.stringify((records[0] && (records[0].quantity ?? records[0].Quantity)) ?? '') + ',' + JSON.stringify((records[0] && (records[0].remarks || records[0].Remarks)) || '') + ',' + JSON.stringify(attachment || '') + ',' + JSON.stringify((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || '') + ',' + JSON.stringify(orderQty) + ',' + JSON.stringify(amount) + ')\'>' + (records.length ? 'Edit' : 'Record remaining') + '</button>' : '—') +
+          cell((records.length ? canUpdateInventory : canCreateInventory) ? '<button class="btn sm" onclick=\'WTPages.openInventoryModal(' + JSON.stringify(itemId || null) + ',' + JSON.stringify(desc) + ',' + JSON.stringify((records[0] && (records[0].id || records[0].Id)) || null) + ',' + JSON.stringify((records[0] && (records[0].quantity ?? records[0].Quantity)) ?? '') + ',' + JSON.stringify((records[0] && (records[0].remarks || records[0].Remarks)) || '') + ',' + JSON.stringify(attachment || '') + ',' + JSON.stringify((records[0] && (records[0].attachmentName || records[0].AttachmentName)) || '') + ',' + JSON.stringify(orderQty) + ',' + JSON.stringify(amount) + ',' + JSON.stringify(used) + ')\'>' + (records.length ? 'Edit' : 'Record remaining') + '</button>' : '—') +
           '</tr>';
-      }).join('') : emptyRow(13, boqs.length ? 'No current BOQ baseline is set for this project.' : 'No BOQ baseline items found.');
-    } catch (e) { $('#invBody').innerHTML = errRow(13, e); }
+      }).join('') : emptyRow(14, boqs.length ? 'No current BOQ baseline is set for this project.' : 'No BOQ baseline items found.');
+    } catch (e) { $('#invBody').innerHTML = errRow(14, e); }
   }
   async function pageClosure() {
     const el = root();
@@ -4844,27 +4861,85 @@ WTPages.switchProjView = function(view) {
         </div>`;
   }
 
-  async function openInventoryModal(itemId = null, description = '', inventoryId = null, quantity = '', remarks = '', attachmentPath = '', attachmentName = '', orderQuantity = '', totalAmount = '') {
+  async function openInventoryModal(itemId = null, description = '', inventoryId = null, quantity = '', remarks = '', attachmentPath = '', attachmentName = '', orderQuantity = '', totalAmount = '', usedQuantity = 0) {
     const pid = await selectedProjectId();
     if (typeof wtCan === 'function' && !wtCan('Closure', inventoryId ? 'update' : 'edit', Number(pid))) { showToast('You do not have permission for this action.', 'danger'); return; }
-    openModal('Add Inventory', `
+    const scopeIds = await projectScopeIds(pid).catch(() => [Number(pid)]);
+    const boqBatches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id).catch(() => [])));
+    const itemChoices = new Map();
+    boqBatches.flat().forEach(boq => (boq.versions || boq.Versions || []).filter(v => v.isCurrentBaseline || v.IsCurrentBaseline).forEach(version =>
+      (version.items || version.Items || []).forEach(line => {
+        const id = line.itemId ?? line.ItemId;
+        const name = line.itemName || line.ItemName || line.item?.name || line.Item?.Name || line.description || line.Description;
+        if (id && name && !itemChoices.has(String(id))) itemChoices.set(String(id), { id, name, description: line.description || line.Description || name });
+      })
+    ));
+    const itemOptions = [...itemChoices.values()].map(item => `<option value="${esc(item.id)}" data-description="${esc(item.description)}">${esc(item.name)}</option>`).join('');
+    const modalTitle = inventoryId ? 'Update Inventory' : itemId ? 'Record Remaining' : 'Add Inventory';
+    openModal(modalTitle, `
       <form onsubmit="WTPages.saveInventory(event)">
         <input type="hidden" id="invProj" value="${pid}">
         <input type="hidden" id="invItemId" value="${itemId || ''}">
+        <input type="hidden" id="invName" value="${esc(description)}">
         <input type="hidden" id="invRecordId" value="${inventoryId || ''}">
         <input type="hidden" id="invAttachmentPath" value="${esc(attachmentPath)}">
         <input type="hidden" id="invAttachmentName" value="${esc(attachmentName)}">
         <p class="card-subtitle">Record all leftovers before closure. If none remain, enter “No leftover inventory” with quantity 0.</p>
         <div class="form-grid">
-          <div class="field full"><label>Item Name *</label><input id="invName" value="${esc(description)}" required></div>
-          <div class="field"><label>Remaining QTY * (0 when none remain)</label><input id="invQty" type="number" min="0" step="0.01" value="${quantity}" required></div>
-          <div class="field"><label>Order QTY *</label><input id="invOrderQty" type="number" min="0" step="0.01" value="${orderQuantity}" required></div>
+          <div class="field full" style="position:relative"><label>Item Name *</label><input id="invItemSearch" type="text" autocomplete="off" placeholder="Search or select an item"><select id="invItemSelect" style="display:none"><option value="">-- Select item --</option>${itemOptions}</select><div id="invItemDropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;right:0;max-height:220px;overflow-y:auto;background:var(--surface,#fff);border:1px solid var(--border,#d1d5db);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.14)"></div></div>
+          <div class="field"><label>Ordered QTY *</label><input id="invOrderQty" type="number" min="0" step="0.01" value="${orderQuantity}" required></div>
+          <div class="field"><label>Used QTY *</label><input id="invUsedQty" type="number" min="0" step="0.01" value="${usedQuantity ?? 0}" required></div>
           <div class="field"><label>Total Amount *</label><input id="invTotalAmount" type="number" min="0" step="0.01" value="${totalAmount}" required></div>
           <div class="field"><label>Remark / Action</label><input id="invAct" value="${esc(remarks)}" placeholder="Transfer / Store"></div>
           <div class="field full"><label>Attachment</label><input id="invAttachment" type="file"><small id="invCurrentAttachment">${attachmentName ? `Current file: ${esc(attachmentName)}` : 'Optional file'}</small></div>
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">${inventoryId ? 'Update' : 'Save'} Inventory</button></div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">${modalTitle}</button></div>
       </form>`);
+    const itemSelect = $('#invItemSelect');
+    const itemSearch = $('#invItemSearch');
+    const itemDropdown = $('#invItemDropdown');
+    if (itemId) itemSelect.value = String(itemId);
+    const selectedItem = itemSelect.selectedOptions[0];
+    if (selectedItem?.value) {
+      itemSearch.value = selectedItem.textContent;
+      $('#invName').value = selectedItem.dataset.description || selectedItem.textContent;
+    }
+    const renderItemDropdown = (query = itemSearch.value) => {
+      const search = query.trim().toLowerCase();
+      const matches = [...itemSelect.options].slice(1).filter(option => option.textContent.toLowerCase().includes(search));
+      itemDropdown.innerHTML = matches.length
+        ? matches.map(option => `<button type="button" data-item-id="${esc(option.value)}" style="display:block;width:100%;padding:9px 12px;text-align:left;border:0;background:transparent;cursor:pointer">${esc(option.textContent)}</button>`).join('')
+        : '<div style="padding:10px 12px;color:var(--text-muted)">No matching items</div>';
+      itemDropdown.style.display = 'block';
+    };
+    itemSearch.addEventListener('focus', () => renderItemDropdown(''));
+    itemSearch.addEventListener('input', () => {
+      const selected = itemSelect.selectedOptions[0];
+      if (selected?.value && itemSearch.value !== selected.textContent) {
+        itemSelect.value = '';
+        $('#invItemId').value = '';
+        $('#invName').value = '';
+      }
+      renderItemDropdown();
+    });
+    itemSearch.addEventListener('blur', () => setTimeout(() => { itemDropdown.style.display = 'none'; }, 120));
+    itemDropdown.addEventListener('mousedown', event => event.preventDefault());
+    itemDropdown.addEventListener('click', event => {
+      const optionButton = event.target.closest('[data-item-id]');
+      if (!optionButton) return;
+      itemSelect.value = optionButton.dataset.itemId;
+      const selected = itemSelect.selectedOptions[0];
+      $('#invItemId').value = selected.value;
+      $('#invName').value = selected.dataset.description || selected.textContent;
+      itemSearch.value = selected.textContent;
+      itemDropdown.style.display = 'none';
+    });
+    itemSearch.addEventListener('keydown', event => {
+      if (event.key === 'Escape') itemDropdown.style.display = 'none';
+      if (event.key === 'Enter' && itemDropdown.querySelector('[data-item-id]')) {
+        event.preventDefault(); itemDropdown.querySelector('[data-item-id]').click();
+      }
+    });
   }
 
   async function saveInventory(e) {
@@ -4873,6 +4948,10 @@ WTPages.switchProjView = function(view) {
       let attachmentPath = $('#invAttachmentPath').value;
       let attachmentName = $('#invAttachmentName').value;
       const file = $('#invAttachment').files[0];
+      const orderQuantity = Number($('#invOrderQty').value);
+      const usedQuantity = Number($('#invUsedQty').value);
+      if (!Number($('#invItemId').value)) { showToast('Select an item from the dropdown.', 'danger'); return; }
+      if (usedQuantity > orderQuantity) { showToast('Used quantity cannot exceed ordered quantity.', 'danger'); return; }
       if (file) {
         const uploaded = await WisetrackAPI.uploadFile(file, 'Inventory', Number($('#invProj').value));
         attachmentPath = uploaded.filePath || uploaded.FilePath;
@@ -4882,8 +4961,8 @@ WTPages.switchProjView = function(view) {
         projectId: Number($('#invProj').value),
         itemId: Number($('#invItemId').value) || null,
         description: $('#invName').value.trim(),
-        quantity: Number($('#invQty').value),
-        orderQuantity: Number($('#invOrderQty').value),
+        quantity: orderQuantity - usedQuantity,
+        orderQuantity,
         totalAmount: Number($('#invTotalAmount').value),
         remarks: $('#invAct').value.trim(),
         attachmentPath, attachmentName

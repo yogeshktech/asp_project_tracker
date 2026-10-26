@@ -192,9 +192,10 @@ public class CostService : ICostService
         var forecastVariance = approved - forecast;
         var percent = approved == 0 ? 0 : Math.Abs(actualVariance) / approved * 100;
         var ccRollups = await _repository.GetCostCenterRollupsAsync(projectId);
-        var worstRag = ccRollups.Count == 0 ? "Green" :
-            ccRollups.Any(c => c.RagStatus == "Red") ? "Red" :
-            ccRollups.Any(c => c.RagStatus == "Amber") ? "Amber" : "Green";
+        var (amberThreshold, redThreshold) = await _repository.GetRagAsync(projectId);
+        var forecastPercent = approved == 0 ? (forecast > 0 ? decimal.MaxValue : 0) : forecast / approved * 100;
+        var projectRag = forecastPercent >= redThreshold ? "Red" :
+            forecastPercent >= amberThreshold ? "Amber" : "Green";
 
         return new CostVarianceDto
         {
@@ -212,7 +213,7 @@ public class CostService : ICostService
             VariancePercent = Math.Round(percent, 2),
             ForecastVarianceAmount = forecastVariance,
             BudgetStatus = actuals > approved ? "Over Budget" : actuals < approved ? "Under Budget" : "On Budget",
-            RagStatus = worstRag,
+            RagStatus = projectRag,
             CostCenters = ccRollups
         };
     }
