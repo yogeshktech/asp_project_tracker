@@ -1475,7 +1475,8 @@ WTPages.switchProjView = function(view) {
       // Filter by resort
       const filteredProjects = filterVal === 'all' ? projects : projects.filter(p => String(p.resortId) === String(filterVal) || String(p.resortId) === `RES-${filterVal}`);
       const createRootButton = document.getElementById('createRootProjectBtn');
-      if (createRootButton) createRootButton.style.display = filteredProjects.some(p => canProject(p.id, 'edit')) ? '' : 'none';
+      const canCreateRootProject = typeof wtCan !== 'function' || wtCan('Projects', 'edit');
+      if (createRootButton) createRootButton.style.display = canCreateRootProject || filteredProjects.some(p => canProject(p.id, 'edit')) ? '' : 'none';
       const matchedResort = allResortsRaw.find(r => String(r.id) === String(filterVal)) || { name: 'Grand Oasis Resort & Spa, Goa', code: 'RES-GOA-01' };
       filteredProjects.forEach(p => { p.projectBudgetDisplay = projectBudgetLabel(p); });
       const rootBudgetRows = filteredProjects.filter(p => !(p.parentProjectId ?? p.parentId));
@@ -2686,11 +2687,16 @@ WTPages.switchProjView = function(view) {
     ]);
     const ccOptions = (centers || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
     const boqLines = (boqs || []).flatMap(b => {
-      const versions = b.versions || [];
-      const version = versions.find(v => v.isCurrentBaseline) || [...versions].sort((a, z) => (z.versionNo || 0) - (a.versionNo || 0))[0];
-      return (version?.items || []).map(i => ({ ...i, boqTitle: b.title }));
+      const versions = b.versions || b.Versions || [];
+      const version = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo ?? 0) - Number(a.versionNo ?? a.VersionNo ?? 0))[0];
+      return (version?.items || version?.Items || []).map(i => ({ ...i, boqTitle: b.title || b.Title }));
     });
-    const lineOptions = boqLines.map(i => `<option value="${i.id}">${esc(i.boqTitle)} · ${esc(i.lineNo || '')} ${esc(i.itemCode || i.description || i.itemName || 'BOQ line')}</option>`).join('');
+    const lineOptions = boqLines.map(i => {
+      const itemName = i.itemName || i.ItemName || i.item?.name || i.Item?.name || i.description || i.Description || i.itemCode || i.ItemCode || 'BOQ line';
+      const price = i.unitPrice ?? i.UnitPrice ?? i.unitRate ?? i.UnitRate ?? i.rate ?? i.Rate ?? i.price ?? i.Price;
+      const label = [i.boqTitle, i.lineNo || i.displayLineNo, itemName].filter(Boolean).join(' · ');
+      return `<option value="${i.id}" data-price="${Number(price) || 0}">${esc(label)}</option>`;
+    }).join('');
     openModal(existing ? 'Edit Actual Cost' : 'Add Actual Cost', `
       <form onsubmit="WTPages.saveActual(event)">
         <input type="hidden" id="aProj" value="${pid}">
@@ -2705,6 +2711,11 @@ WTPages.switchProjView = function(view) {
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
     if (existing) { $('#aBoq').value = existing.boqItemId || ''; $('#aCC').value = existing.costCenterId || ''; }
+    $('#aBoq').addEventListener('change', () => {
+      const selected = $('#aBoq').selectedOptions[0];
+      const price = Number(selected?.dataset.price || 0);
+      if (price > 0) $('#aAmt').value = price;
+    });
   }
 
   async function saveActual(e) {
