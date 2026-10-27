@@ -87,25 +87,22 @@ const WisetrackAPI = {
     }
   },
 
-  async openFile(url, fileName, download = false) {
-    const viewer = download ? null : window.open('about:blank', '_blank');
-    let response;
-    try { response = await fetch(`${API_BASE}${url}`, { headers: this._headers(false) }); }
-    catch (error) { if (viewer) viewer.close(); throw error; }
-    if (!response.ok) { if (viewer) viewer.close(); throw new Error(response.status === 404 ? 'Attachment not found.' : 'Could not open attachment.'); }
+  async fetchFile(url) {
+    const response = await fetch(`${API_BASE}${url}`, { headers: this._headers(false) });
+    if (!response.ok) throw new Error(response.status === 404 ? 'Attachment not found.' : 'Could not open attachment.');
     const disposition = response.headers.get('content-disposition') || '';
     const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
     const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
-    fileName = fileName || (encodedName ? decodeURIComponent(encodedName) : plainName) || 'attachment';
-    const blobUrl = URL.createObjectURL(await response.blob());
-    if (download) {
-      const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'attachment';
-      document.body.appendChild(link); link.click(); link.remove();
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-    } else {
-      if (viewer) viewer.location.href = blobUrl;
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-    }
+    const fileName = (encodedName ? decodeURIComponent(encodedName) : plainName) || 'attachment';
+    return { blob: await response.blob(), fileName, contentType: response.headers.get('content-type') || 'application/octet-stream' };
+  },
+
+  async openFile(url, fileName = null) {
+    const { blob, fileName: serverName } = await this.fetchFile(url);
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || serverName || 'attachment';
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
   },
 
   get(url) { return this._fetch(url); },

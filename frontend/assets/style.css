@@ -1323,6 +1323,15 @@ button.btn[disabled] {
   box-shadow: var(--shadow-sm);
 }
 
+.attachment-history-table { min-width: 640px; }
+.attachment-history-table th:nth-child(2),
+.attachment-history-table td:nth-child(2) { white-space: nowrap; }
+.attachment-history-table td:last-child { white-space: nowrap; }
+.attachment-preview-modal { width: min(1100px, 96vw); }
+.attachment-preview-frame { display: block; width: 100%; height: min(72vh, 780px); border: 0; background: #fff; }
+.attachment-text-preview { max-height: 70vh; overflow: auto; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--border-light); border-radius: var(--radius-md); }
+.attachment-preview-table { max-height: 68vh; }
+
 .table {
   width: 100%;
   border-collapse: collapse;

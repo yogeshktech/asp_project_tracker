@@ -2496,14 +2496,65 @@ WTPages.switchProjView = function(view) {
         const uploadedAt = file.uploadedAt || file.UploadedAt;
         return `<tr><td>${esc(fileName)}</td><td>${esc(uploadedAt ? new Date(uploadedAt).toLocaleString() : '—')}</td><td><button class="btn sm" title="View" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, true)"><i class="fa-solid fa-download"></i></button>${canDelete ? ` <button class="btn sm danger" title="Delete file" onclick="WTPages.deleteAttachment('${kind}', ${id}, ${fileId})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('');
-      openModal(`Attachment History · ${esc(owner.name || owner.Name || 'Record')}`, `<div class="table-wrap"><table><thead><tr><th>File name</th><th>Uploaded date & time</th><th>Options</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No files uploaded.</td></tr>'}</tbody></table></div>`);
+      openModal(`Attachment History · ${esc(owner.name || owner.Name || 'Record')}`, `<div class="table-wrap"><table class="table attachment-history-table"><thead><tr><th>File name</th><th>Uploaded date & time</th><th>Options</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No files uploaded.</td></tr>'}</tbody></table></div>`);
     } catch (e) { showToast(e.message || 'Could not load attachment history.', 'danger'); }
   }
 
   async function openAttachmentFile(kind, id, attachmentId, download) {
     const baseUrl = kind === 'budget' ? `/budgets/${id}/attachments/${attachmentId}/file` : `/budgets/cost-centers/${id}/attachments/${attachmentId}/file`;
-    try { await WisetrackAPI.openFile(download ? `${baseUrl}?download=true` : baseUrl, null, download); }
+    try {
+      if (download) { await WisetrackAPI.openFile(`${baseUrl}?download=true`); return; }
+      const file = await WisetrackAPI.fetchFile(`${baseUrl}?download=true`);
+      const extension = file.fileName.split('.').pop().toLowerCase();
+      if (extension === 'pdf') {
+        const objectUrl = URL.createObjectURL(file.blob);
+        openModal(`Preview · ${esc(file.fileName)}`, `<iframe class="attachment-preview-frame" src="${objectUrl}" title="${esc(file.fileName)}"></iframe>`, '', 'attachment-preview-modal');
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 10 * 60 * 1000);
+      } else if (extension === 'csv' || extension === 'txt') {
+        const content = await file.blob.text();
+        if (extension === 'txt') {
+          openModal(`Preview · ${esc(file.fileName)}`, `<pre class="attachment-text-preview">${esc(content.slice(0, 1_000_000))}${content.length > 1_000_000 ? '\n\nPreview limited to first 1 MB.' : ''}</pre>`, '', 'attachment-preview-modal');
+        } else if (content.length > 1_000_000) {
+          openModal(`Preview · ${esc(file.fileName)}`, '<p>This CSV is larger than 1 MB. Download it to view the full file.</p>', '', 'attachment-preview-modal');
+        } else {
+          const records = parseAttachmentCsv(content).slice(0, 500);
+          const columns = records[0] || [];
+          const tableRows = records.slice(1).map(record => `<tr>${columns.map((_, index) => `<td>${esc(record[index] || '')}</td>`).join('')}</tr>`).join('');
+          const truncation = records.length > 500 ? '<p class="card-subtitle">Preview limited to first 500 rows.</p>' : '';
+          openModal(`Preview · ${esc(file.fileName)}`, `${truncation}<div class="table-wrap"><table class="table attachment-preview-table"><thead><tr>${columns.map(column => `<th>${esc(column)}</th>`).join('')}</tr></thead><tbody>${tableRows || `<tr><td colspan="${columns.length || 1}">No data rows.</td></tr>`}</tbody></table></div>`, '', 'attachment-preview-modal');
+        }
+      } else if (extension === 'xlsx' || extension === 'xls') {
+        if (!window.XLSX) await loadMilestoneImportScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+        const workbook = XLSX.read(await file.blob.arrayBuffer(), { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const records = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false }).slice(0, 501);
+        const columns = records[0] || [];
+        const tableRows = records.slice(1, 501).map(record => `<tr>${columns.map((_, index) => `<td>${esc(record[index] ?? '')}</td>`).join('')}</tr>`).join('');
+        const truncation = records.length > 500 ? '<p class="card-subtitle">Preview limited to first 500 rows.</p>' : '';
+        openModal(`Preview · ${esc(file.fileName)}`, `${truncation}<div class="table-wrap"><table class="table attachment-preview-table"><thead><tr>${columns.map(column => `<th>${esc(column ?? '')}</th>`).join('')}</tr></thead><tbody>${tableRows || `<tr><td colspan="${columns.length || 1}">No data rows.</td></tr>`}</tbody></table></div>`, '', 'attachment-preview-modal');
+      } else {
+        openModal(`Preview · ${esc(file.fileName)}`, '<p>This file format cannot be previewed in the browser. Use Download to open it in the appropriate application.</p>', '', 'attachment-preview-modal');
+      }
+    }
     catch (e) { showToast(e.message || 'Could not open attachment.', 'danger'); }
+  }
+
+  function parseAttachmentCsv(text) {
+    const rows = []; let row = []; let cell = ''; let quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (char === '"' && quoted && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (char === '"') quoted = !quoted;
+      else if (char === ',' && !quoted) { row.push(cell); cell = ''; }
+      else if ((char === '\n' || char === '\r') && !quoted) {
+        if (char === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); if (row.some(value => value !== '')) rows.push(row);
+        row = []; cell = '';
+      } else cell += char;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    if (rows[0]?.[0]?.charCodeAt(0) === 0xFEFF) rows[0][0] = rows[0][0].slice(1);
+    return rows;
   }
 
   async function deleteAttachment(kind, id, attachmentId) {
