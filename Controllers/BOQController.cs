@@ -147,7 +147,7 @@ public class BOQController : ControllerBase
             return BadRequest(new { message = "A non-empty CSV or XLSX file is required." });
         try
         {
-            var lines = await BOQSpreadsheetReader.ReadAsync(request.File);
+            var lines = await BOQSpreadsheetReader.ReadAsync(request.File, request.Worksheet);
             var result = await _boqService.ImportAsync(new BOQImportDto
             {
                 ProjectId = request.ProjectId,
@@ -213,6 +213,7 @@ public sealed class BOQFileImportRequest
     public long? BoqId { get; set; }
     public string? Title { get; set; }
     public bool Commit { get; set; }
+    public string? Worksheet { get; set; }
     public IFormFile File { get; set; } = null!;
 }
 
@@ -233,7 +234,7 @@ internal static class BOQSpreadsheetReader
     private static readonly string[] BrandHeaders = ["brand", "make", "manufacturer"];
     private static readonly string[] RemarkHeaders = ["remark", "remarks", "notes", "specification", "specifications"];
 
-    public static async Task<List<BOQImportLineDto>> ReadAsync(IFormFile file)
+    public static async Task<List<BOQImportLineDto>> ReadAsync(IFormFile file, string? worksheetName = null)
     {
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         List<List<string>> rows;
@@ -243,7 +244,7 @@ internal static class BOQSpreadsheetReader
             var content = await reader.ReadToEndAsync();
             rows = ParseDelimited(content, ext == ".tsv" ? '\t' : DetectDelimiter(content));
         }
-        else if (ext == ".xlsx") rows = ReadXlsx(file);
+        else if (ext == ".xlsx") rows = ReadXlsx(file, worksheetName);
         else throw new InvalidDataException("Supported formats are .csv, .tsv, .txt, and .xlsx.");
 
         if (rows.Count < 2) throw new InvalidDataException("The spreadsheet must contain a header row and at least one data row.");
@@ -264,6 +265,7 @@ internal static class BOQSpreadsheetReader
             string.Equals(h, a, StringComparison.OrdinalIgnoreCase) ||
             (a.Length >= 4 && h.StartsWith(a, StringComparison.OrdinalIgnoreCase))));
         var code = Find(CodeHeaders); var description = Find(DescriptionHeaders);
+        var serial = Find(["slno", "serialno", "serialnumber", "sno"]);
         var qty = Find(QtyHeaders); var price = Find(PriceHeaders); var unit = Find(UnitHeaders);
         var total = Find(TotalHeaders); var brand = Find(BrandHeaders); var remarks = Find(RemarkHeaders);
         var additionalQty = Find(["additionalconsumption", "additionalqty", "additionalquantity", "additionalconsumptionqty"]);
@@ -275,10 +277,29 @@ internal static class BOQSpreadsheetReader
 
         string Cell(List<string> row, int index) => index >= 0 && index < row.Count ? row[index].Trim() : "";
         var result = new List<BOQImportLineDto>();
+        string? sectionTitle = null;
+        string? sectionNote = null;
         for (var i = headerRow + 1; i < rows.Count; i++)
         {
             var row = rows[i];
             if (row.All(string.IsNullOrWhiteSpace)) continue;
+            var quantityText = Cell(row, qty);
+            var priceText = Cell(row, price);
+            var descriptionText = Cell(row, description);
+            var serialText = Cell(row, serial);
+            if (string.IsNullOrWhiteSpace(quantityText) && string.IsNullOrWhiteSpace(priceText))
+            {
+                if (!string.IsNullOrWhiteSpace(descriptionText))
+                {
+                    if (!string.IsNullOrWhiteSpace(serialText) && !serialText.Contains('.'))
+                    {
+                        sectionTitle = descriptionText;
+                        sectionNote = null;
+                    }
+                    else sectionNote = string.IsNullOrWhiteSpace(sectionNote) ? descriptionText : $"{sectionNote}; {descriptionText}";
+                }
+                continue;
+            }
             var resultLineErrors = new List<string>();
             decimal Number(string value, string field, bool required)
             {
@@ -292,15 +313,16 @@ internal static class BOQSpreadsheetReader
                 resultLineErrors.Add($"{field}: '{value}' is not a valid number.");
                 return 0;
             }
-            var quantity = Number(Cell(row, qty), "Quantity", true);
-            var unitPrice = Number(Cell(row, price), "Price", true);
+            var quantity = Number(quantityText, "Quantity", true);
+            var unitPrice = Number(priceText, "Price", true);
             decimal? totalAmount = null;
             if (total >= 0 && !string.IsNullOrWhiteSpace(Cell(row, total))) totalAmount = Number(Cell(row, total), "Total amount", false);
             result.Add(new BOQImportLineDto
             {
-                LineNo = i + 1,
+                LineNo = result.Count + 1,
+                DisplayLineNo = Empty(serialText),
                 ItemCode = Empty(Cell(row, code)),
-                Description = Empty(Cell(row, description)),
+                Description = Empty(descriptionText),
                 Quantity = quantity,
                 UnitPrice = unitPrice,
                 TotalAmount = totalAmount,
@@ -309,7 +331,7 @@ internal static class BOQSpreadsheetReader
                 ImportErrors = resultLineErrors,
                 Unit = Empty(Cell(row, unit)),
                 Brand = Empty(Cell(row, brand)),
-                Remarks = Empty(Cell(row, remarks))
+                Remarks = Empty(string.Join("; ", new[] { sectionTitle, sectionNote, Cell(row, remarks) }.Where(value => !string.IsNullOrWhiteSpace(value))))
             });
         }
         if (result.Count == 0) throw new InvalidDataException("No data rows were found.");
@@ -357,13 +379,67 @@ internal static class BOQSpreadsheetReader
         return rows;
     }
 
-    private static List<List<string>> ReadXlsx(IFormFile file)
+    private static List<List<string>> ReadXlsx(IFormFile file, string? worksheetName)
     {
         using var archive = new ZipArchive(file.OpenReadStream(), ZipArchiveMode.Read);
         var shared = new List<string>();
         var sharedEntry = archive.GetEntry("xl/sharedStrings.xml");
         if (sharedEntry != null) { using var s = sharedEntry.Open(); var doc = XDocument.Load(s); shared = doc.Root!.Elements().Select(si => string.Concat(si.Descendants().Where(e => e.Name.LocalName == "t").Select(t => t.Value))).ToList(); }
-        var sheet = archive.GetEntry("xl/worksheets/sheet1.xml") ?? throw new InvalidDataException("The workbook has no first worksheet.");
+        var workbookEntry = archive.GetEntry("xl/workbook.xml") ?? throw new InvalidDataException("The workbook has no worksheet information.");
+        var relationshipsEntry = archive.GetEntry("xl/_rels/workbook.xml.rels") ?? throw new InvalidDataException("The workbook has no worksheet relationships.");
+        XDocument workbook; XDocument relationships;
+        using (var stream = workbookEntry.Open()) workbook = XDocument.Load(stream);
+        using (var stream = relationshipsEntry.Open()) relationships = XDocument.Load(stream);
+        var relationshipTargets = relationships.Descendants().Where(element => element.Name.LocalName == "Relationship")
+            .Where(element => (string?)element.Attribute("Id") != null)
+            .ToDictionary(element => (string)element.Attribute("Id")!, element => (string?)element.Attribute("Target") ?? "");
+        XNamespace officeRelationships = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        var worksheets = workbook.Descendants().Where(element => element.Name.LocalName == "sheet")
+            .Select(element =>
+            {
+                var name = (string?)element.Attribute("name") ?? "";
+                var relationshipId = (string?)element.Attribute(officeRelationships + "id") ?? "";
+                if (!relationshipTargets.TryGetValue(relationshipId, out var target)) return (Name: name, Entry: (ZipArchiveEntry?)null);
+                var path = target.TrimStart('/');
+                if (!path.StartsWith("xl/", StringComparison.OrdinalIgnoreCase)) path = "xl/" + path;
+                return (Name: name, Entry: archive.GetEntry(path));
+            })
+            .Where(sheet => sheet.Entry != null)
+            .ToList();
+        if (worksheets.Count == 0) throw new InvalidDataException("The workbook has no readable worksheets.");
+        if (!string.IsNullOrWhiteSpace(worksheetName))
+        {
+            var selected = worksheets.FirstOrDefault(sheet => string.Equals(sheet.Name, worksheetName.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (selected.Entry == null)
+                throw new InvalidDataException($"Worksheet '{worksheetName}' was not found. Available sheets: {string.Join(", ", worksheets.Select(sheet => sheet.Name))}.");
+            return ReadXlsxSheet(selected.Entry, shared);
+        }
+        var best = worksheets.Select(sheet => (sheet.Name, Rows: ReadXlsxSheet(sheet.Entry!, shared)))
+            .Select(sheet => (sheet.Rows, Score: ScoreBoqWorksheet(sheet.Rows)))
+            .OrderByDescending(sheet => sheet.Score)
+            .First();
+        if (best.Score < 0) throw new InvalidDataException("No worksheet contains a BOQ header with Description, Qty, and Rate columns.");
+        return best.Rows;
+    }
+
+    private static int ScoreBoqWorksheet(List<List<string>> rows)
+    {
+        var headerRow = -1;
+        for (var i = 0; i < Math.Min(rows.Count - 1, 25); i++)
+        {
+            var headers = rows[i].Select(Normalize).ToList();
+            bool Has(string[] aliases) => headers.Any(header => aliases.Any(alias => string.Equals(header, alias, StringComparison.OrdinalIgnoreCase) || (alias.Length >= 4 && header.StartsWith(alias, StringComparison.OrdinalIgnoreCase))));
+            if ((Has(DescriptionHeaders) || Has(CodeHeaders)) && Has(QtyHeaders) && Has(PriceHeaders)) { headerRow = i; break; }
+        }
+        if (headerRow < 0) return -1;
+        var headerValues = rows[headerRow].Select(Normalize).ToList();
+        int IndexOf(string[] aliases) => headerValues.FindIndex(header => aliases.Any(alias => string.Equals(header, alias, StringComparison.OrdinalIgnoreCase) || (alias.Length >= 4 && header.StartsWith(alias, StringComparison.OrdinalIgnoreCase))));
+        var qty = IndexOf(QtyHeaders); var price = IndexOf(PriceHeaders);
+        return 100 + rows.Skip(headerRow + 1).Count(row => qty < row.Count && price < row.Count && !string.IsNullOrWhiteSpace(row[qty]) && !string.IsNullOrWhiteSpace(row[price]));
+    }
+
+    private static List<List<string>> ReadXlsxSheet(ZipArchiveEntry sheet, List<string> shared)
+    {
         using var stream = sheet.Open(); var xml = XDocument.Load(stream); var output = new List<List<string>>();
         foreach (var row in xml.Descendants().Where(e => e.Name.LocalName == "row"))
         {

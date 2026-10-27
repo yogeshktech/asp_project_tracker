@@ -3087,6 +3087,7 @@ WTPages.switchProjView = function(view) {
         <div class="field"><label>Excel / CSV / TSV from 3rd party (flexible column names)</label>
           <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv">
         </div>
+        <div class="field"><label>Worksheet name (optional for Excel)</label><input id="boqWorksheet" placeholder="For example: Civil. Leave blank to auto-detect the BOQ sheet."></div>
         <div class="field"><label>Or paste rows</label>
           <textarea id="boqJson" rows="8" placeholder="Item Code,Description,Qty,Rate&#10;ITM-1,Cable tray,10,1500"></textarea>
         </div>
@@ -3109,6 +3110,7 @@ WTPages.switchProjView = function(view) {
         form.append('projectId', $('#boqProj').value);
         if ($('#boqTargetId')?.value) form.append('boqId', $('#boqTargetId').value);
         form.append('title', $('#boqTitle').value.trim());
+        if ($('#boqWorksheet')?.value.trim()) form.append('worksheet', $('#boqWorksheet').value.trim());
         form.append('commit', String(commit));
         form.append('file', file);
         result = await WisetrackAPI.importBoqFile(form);

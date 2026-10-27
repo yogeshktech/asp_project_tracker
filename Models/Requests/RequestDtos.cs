@@ -266,6 +266,7 @@ public class BOQImportLineDto
     public long? ItemId { get; set; }
     public string? ItemCode { get; set; }
     public int? LineNo { get; set; }
+    public string? DisplayLineNo { get; set; }
     public string? Description { get; set; }
     public string? Unit { get; set; }
     public decimal Quantity { get; set; }

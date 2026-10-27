@@ -206,7 +206,7 @@ public class BOQService : IBOQService
                 ItemCode = masterItem?.ItemCode ?? l.ItemCode,
                 ItemName = masterItem?.Name ?? l.Description,
                 LineNo = dto.BoqId.HasValue ? lines.Count + 1 : l.LineNo ?? lines.Count + 1,
-                DisplayLineNo = (dto.BoqId.HasValue ? lines.Count + 1 : l.LineNo ?? lines.Count + 1).ToString(),
+                DisplayLineNo = l.DisplayLineNo ?? (dto.BoqId.HasValue ? lines.Count + 1 : l.LineNo ?? lines.Count + 1).ToString(),
                 Description = l.Description,
                 Quantity = l.Quantity,
                 UnitPrice = l.UnitPrice,
