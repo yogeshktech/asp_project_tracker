@@ -107,6 +107,12 @@ public class BOQService : IBOQService
             if (row.UnitPrice < 0)
                 result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "UnitPrice", Message = "Unit price cannot be negative." });
 
+            if (row.AdditionalConsumption < 0)
+                result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "AdditionalConsumption", Message = "Additional consumption cannot be negative." });
+
+            if (row.AdditionalConsumptionUnitPrice < 0)
+                result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "AdditionalConsumptionUnitPrice", Message = "Price for additional consumption cannot be negative." });
+
             if (row.TotalAmount.HasValue && row.TotalAmount.Value < 0)
                 result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "TotalAmount", Message = "Total amount cannot be negative." });
 
@@ -160,7 +166,9 @@ public class BOQService : IBOQService
             {
                 BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
                 LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
-                Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount, Unit = item.Unit,
+                Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount,
+                AdditionalConsumption = item.AdditionalConsumption, AdditionalConsumptionUnitPrice = item.AdditionalConsumptionUnitPrice,
+                AdditionalConsumptionAmount = item.AdditionalConsumptionAmount, AllTotal = item.AllTotal, Unit = item.Unit,
                 Brand = item.Brand, ImageUrl = item.ImageUrl, Remarks = item.Remarks,
                 AttachmentPath = item.AttachmentPath, AttachmentName = item.AttachmentName
             }).ToList();
@@ -203,6 +211,10 @@ public class BOQService : IBOQService
                 Quantity = l.Quantity,
                 UnitPrice = l.UnitPrice,
                 Amount = l.Quantity * l.UnitPrice,
+                AdditionalConsumption = l.AdditionalConsumption,
+                AdditionalConsumptionUnitPrice = l.AdditionalConsumptionUnitPrice,
+                AdditionalConsumptionAmount = l.AdditionalConsumption * l.AdditionalConsumptionUnitPrice,
+                AllTotal = (l.Quantity * l.UnitPrice) + (l.AdditionalConsumption * l.AdditionalConsumptionUnitPrice),
                 Unit = l.Unit ?? masterItem?.Unit?.Name,
                 Brand = l.Brand ?? masterItem?.Brand?.Name,
                 ImageUrl = masterItem?.ImageUrl,
@@ -227,7 +239,8 @@ public class BOQService : IBOQService
         foreach (var line in requestedLines)
         {
             if (line.Quantity <= 0) throw new InvalidOperationException($"Quantity must be greater than zero for item {line.ItemId}.");
-            if (line.UnitPrice < 0) throw new InvalidOperationException($"Price cannot be negative for item {line.ItemId}.");
+            if (line.AdditionalConsumption < 0) throw new InvalidOperationException($"Additional consumption cannot be negative for item {line.ItemId}.");
+            if (line.AdditionalConsumptionUnitPrice < 0) throw new InvalidOperationException($"Additional consumption price cannot be negative for item {line.ItemId}.");
             var item = await _items.GetAsync(line.ItemId) ?? throw new InvalidOperationException($"Item {line.ItemId} was not found in Item Master.");
             items.Add((line, item));
         }
@@ -251,7 +264,9 @@ public class BOQService : IBOQService
             {
                 BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
                 LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
-                Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount, Unit = item.Unit,
+                Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount,
+                AdditionalConsumption = item.AdditionalConsumption, AdditionalConsumptionUnitPrice = item.AdditionalConsumptionUnitPrice,
+                AdditionalConsumptionAmount = item.AdditionalConsumptionAmount, AllTotal = item.AllTotal, Unit = item.Unit,
                 Brand = item.Brand, ImageUrl = item.ImageUrl, Remarks = item.Remarks,
                 AttachmentPath = item.AttachmentPath, AttachmentName = item.AttachmentName
             }));
@@ -283,10 +298,14 @@ public class BOQService : IBOQService
                 ItemName = item.Name,
                 LineNo = lineNo,
                 DisplayLineNo = (lineNo++).ToString(),
-                Description = string.IsNullOrWhiteSpace(request.Description) ? item.Description ?? item.Name : request.Description.Trim(),
+                Description = item.Description ?? item.Name,
                 Quantity = request.Quantity,
-                UnitPrice = request.UnitPrice,
-                Amount = request.Quantity * request.UnitPrice,
+                UnitPrice = item.UnitPrice,
+                Amount = request.Quantity * item.UnitPrice,
+                AdditionalConsumption = request.AdditionalConsumption,
+                AdditionalConsumptionUnitPrice = request.AdditionalConsumptionUnitPrice,
+                AdditionalConsumptionAmount = request.AdditionalConsumption * request.AdditionalConsumptionUnitPrice,
+                AllTotal = (request.Quantity * item.UnitPrice) + (request.AdditionalConsumption * request.AdditionalConsumptionUnitPrice),
                 Unit = item.Unit?.Name,
                 Brand = item.Brand?.Name,
                 ImageUrl = item.ImageUrl,
@@ -332,6 +351,10 @@ public class BOQService : IBOQService
             Quantity = item.Quantity,
             UnitPrice = item.UnitPrice,
             Amount = item.Amount,
+            AdditionalConsumption = item.AdditionalConsumption,
+            AdditionalConsumptionUnitPrice = item.AdditionalConsumptionUnitPrice,
+            AdditionalConsumptionAmount = item.AdditionalConsumptionAmount,
+            AllTotal = item.AllTotal,
             Unit = item.Unit,
             Brand = item.Brand,
             ImageUrl = item.ImageUrl,
@@ -395,19 +418,30 @@ public class BOQService : IBOQService
         if (latest == null || latest.Id != versionId || latest.IsCurrentBaseline)
             throw new InvalidOperationException("Only the latest non-baseline revision can be edited. Create a new revision first.");
         if (request.Quantity <= 0) throw new InvalidOperationException("Quantity must be greater than zero.");
-        if (request.UnitPrice < 0) throw new InvalidOperationException("Purchase price cannot be negative.");
+        if (request.AdditionalConsumption < 0) throw new InvalidOperationException("Additional consumption cannot be negative.");
+        if (request.AdditionalConsumptionUnitPrice < 0) throw new InvalidOperationException("Price for additional consumption cannot be negative.");
         var item = await _repository.GetItemAsync(itemId);
         if (item == null || item.BoqVersionId != versionId) return null;
+        var isItemMaster = item.ItemId.HasValue;
+        if (!isItemMaster && request.UnitPrice < 0) throw new InvalidOperationException("Purchase price cannot be negative.");
+        var unitPrice = isItemMaster ? item.UnitPrice : request.UnitPrice;
+        var description = isItemMaster ? item.Description : request.Description?.Trim();
         var previousVersion = boq.Versions.Where(v => v.VersionNo < latest.VersionNo).OrderByDescending(v => v.VersionNo).FirstOrDefault();
         var previousItem = previousVersion?.Items.FirstOrDefault(i => i.LineNo == item.LineNo);
-        var description = request.Description?.Trim();
         var remarks = request.Remarks?.Trim();
         var lineChanged = previousItem != null &&
-            (previousItem.Quantity != request.Quantity || previousItem.UnitPrice != request.UnitPrice ||
-             !string.Equals(previousItem.Description, description, StringComparison.Ordinal) ||
+            (previousItem.Quantity != request.Quantity || (!isItemMaster && previousItem.UnitPrice != unitPrice) ||
+             previousItem.AdditionalConsumption != request.AdditionalConsumption ||
+             previousItem.AdditionalConsumptionUnitPrice != request.AdditionalConsumptionUnitPrice ||
+             (!isItemMaster && !string.Equals(previousItem.Description, description, StringComparison.Ordinal)) ||
              !string.Equals(previousItem.Remarks, remarks, StringComparison.Ordinal));
-        decimal amount;
-        try { amount = request.Quantity * request.UnitPrice; }
+        decimal amount, additionalAmount, allTotal;
+        try
+        {
+            amount = request.Quantity * unitPrice;
+            additionalAmount = request.AdditionalConsumption * request.AdditionalConsumptionUnitPrice;
+            allTotal = amount + additionalAmount;
+        }
         catch (OverflowException) { throw new InvalidOperationException("Quantity × purchase price exceeds the supported amount range."); }
         if (previousItem != null)
         {
@@ -421,8 +455,12 @@ public class BOQService : IBOQService
             else item.DisplayLineNo = previousSerial;
         }
         item.Quantity = request.Quantity;
-        item.UnitPrice = request.UnitPrice;
+        item.UnitPrice = unitPrice;
         item.Amount = amount;
+        item.AdditionalConsumption = request.AdditionalConsumption;
+        item.AdditionalConsumptionUnitPrice = request.AdditionalConsumptionUnitPrice;
+        item.AdditionalConsumptionAmount = additionalAmount;
+        item.AllTotal = allTotal;
         item.Description = description;
         item.Remarks = remarks;
         await _repository.UpdateItemAsync(item);

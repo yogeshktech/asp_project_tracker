@@ -46,6 +46,10 @@ public class BoqItem
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal Amount { get; set; }
+    public decimal AdditionalConsumption { get; set; }
+    public decimal AdditionalConsumptionUnitPrice { get; set; }
+    public decimal AdditionalConsumptionAmount { get; set; }
+    public decimal AllTotal { get; set; }
     public string? Unit { get; set; }
     public string? Brand { get; set; }
     public string? ImageUrl { get; set; }

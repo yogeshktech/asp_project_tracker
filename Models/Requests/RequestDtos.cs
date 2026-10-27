@@ -271,6 +271,8 @@ public class BOQImportLineDto
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal? TotalAmount { get; set; }
+    public decimal AdditionalConsumption { get; set; }
+    public decimal AdditionalConsumptionUnitPrice { get; set; }
     public List<string> ImportErrors { get; set; } = new();
     public string? Brand { get; set; }
     public string? Remarks { get; set; }
@@ -283,6 +285,8 @@ public class BoqFromMasterLineRequest
     public long ItemId { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal AdditionalConsumption { get; set; }
+    public decimal AdditionalConsumptionUnitPrice { get; set; }
     public string? Description { get; set; }
     public string? Remarks { get; set; }
     public string? AttachmentPath { get; set; }
@@ -304,6 +308,8 @@ public class UpdateBoqVersionItemRequest
 {
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
+    public decimal AdditionalConsumption { get; set; }
+    public decimal AdditionalConsumptionUnitPrice { get; set; }
     public string? Description { get; set; }
     public string? Remarks { get; set; }
 }

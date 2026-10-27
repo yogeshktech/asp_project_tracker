@@ -223,6 +223,11 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ALTER COLUMN remarks TYPE TEXT""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS attachment_path TEXT""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS attachment_name TEXT""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS additional_consumption NUMERIC(18,4) NOT NULL DEFAULT 0""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS additional_consumption_unit_price NUMERIC(18,2) NOT NULL DEFAULT 0""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS additional_consumption_amount NUMERIC(18,2) NOT NULL DEFAULT 0""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS all_total NUMERIC(18,2) NOT NULL DEFAULT 0""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE boq_items SET additional_consumption_amount = additional_consumption * additional_consumption_unit_price, all_total = amount + additional_consumption * additional_consumption_unit_price WHERE all_total = 0 AND amount <> 0""");
     }
 
     private static async Task EnsureBoqProjectVersionColumnAsync(AppDbContext db)

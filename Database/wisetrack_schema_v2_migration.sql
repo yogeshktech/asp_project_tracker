@@ -1,6 +1,14 @@
 
 -- Run this on existing wisetrack database after wisetrack_schema.sql
 
+ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS additional_consumption NUMERIC(18,4) NOT NULL DEFAULT 0;
+ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS additional_consumption_unit_price NUMERIC(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS additional_consumption_amount NUMERIC(18,2) NOT NULL DEFAULT 0;
+ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS all_total NUMERIC(18,2) NOT NULL DEFAULT 0;
+UPDATE boq_items SET additional_consumption_amount = additional_consumption * additional_consumption_unit_price,
+    all_total = amount + additional_consumption * additional_consumption_unit_price
+WHERE all_total = 0 AND amount <> 0;
+
 ALTER TABLE boq_versions ADD COLUMN IF NOT EXISTS version_label TEXT NULL;
 UPDATE boq_versions SET version_label = version_no::TEXT WHERE version_label IS NULL OR version_label = '';
 

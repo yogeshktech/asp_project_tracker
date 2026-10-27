@@ -266,6 +266,8 @@ internal static class BOQSpreadsheetReader
         var code = Find(CodeHeaders); var description = Find(DescriptionHeaders);
         var qty = Find(QtyHeaders); var price = Find(PriceHeaders); var unit = Find(UnitHeaders);
         var total = Find(TotalHeaders); var brand = Find(BrandHeaders); var remarks = Find(RemarkHeaders);
+        var additionalQty = Find(["additionalconsumption", "additionalqty", "additionalquantity", "additionalconsumptionqty"]);
+        var additionalPrice = Find(["priceforadditionalconsumption", "additionalconsumptionprice", "additionalunitprice"]);
         if (description < 0 && code < 0) throw new InvalidDataException("Could not identify an item code or description column.");
         if (qty < 0) throw new InvalidDataException("Could not identify a quantity column (for example Qty or Quantity).");
         if (price < 0) throw new InvalidDataException("Could not identify a price column (for example Rate or Unit Price).");
@@ -302,6 +304,8 @@ internal static class BOQSpreadsheetReader
                 Quantity = quantity,
                 UnitPrice = unitPrice,
                 TotalAmount = totalAmount,
+                AdditionalConsumption = Number(Cell(row, additionalQty), "Additional consumption", false),
+                AdditionalConsumptionUnitPrice = Number(Cell(row, additionalPrice), "Additional consumption price", false),
                 ImportErrors = resultLineErrors,
                 Unit = Empty(Cell(row, unit)),
                 Brand = Empty(Cell(row, brand)),
