@@ -2003,6 +2003,22 @@ button.btn[disabled] {
   animation: modalSlideUp 0.22s var(--ease-smooth);
 }
 
+.modal.boq-fullscreen { padding: 0; }
+.modal.boq-fullscreen .modalbox {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: 100vh;
+  overflow: hidden;
+  border-radius: 0;
+}
+.modal.boq-fullscreen .modalbody {
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 28px;
+}
+.modal.boq-fullscreen .table-wrap { max-width: 100%; }
+
 @keyframes modalSlideUp {
   from { transform: translateY(16px) scale(0.98); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }

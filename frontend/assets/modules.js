@@ -3215,6 +3215,8 @@ WTPages.switchProjView = function(view) {
         </table></div>
       `);
       hydrateBoqRevisionAdditionalColumns(items, canEditRevision);
+      document.getElementById('modal')?.classList.add('boq-fullscreen');
+      if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 50);
     } catch (e) { showToast(e.message, 'danger'); }
   }
 

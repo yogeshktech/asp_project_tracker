@@ -62,7 +62,7 @@ function showToast(message, type = 'success') {
 
 // Modal Management
 function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
-  document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
+  document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show', 'boq-fullscreen'));
   let modal = document.getElementById('modal');
   if (!modal) {
     modal = document.createElement('div');
@@ -97,7 +97,7 @@ function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
 
 function closeModal() {
   const modal = document.getElementById('modal');
-  if (modal) modal.classList.remove('show');
+  if (modal) modal.classList.remove('show', 'boq-fullscreen');
 }
 
 // Get Data from LocalStorage (static WISETRACK_DATA is optional — live API pages may omit data.js)
