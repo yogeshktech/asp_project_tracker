@@ -13,6 +13,7 @@ public class CostCenter
     public string? Description { get; set; }
     public string? AttachmentPath { get; set; }
     public string? AttachmentName { get; set; }
+    public ICollection<BudgetRecordAttachment> Attachments { get; set; } = new List<BudgetRecordAttachment>();
     public DateTime CreatedAt { get; set; }
     public Project? Project { get; set; }
 }
@@ -35,6 +36,21 @@ public class Budget
     public Project Project { get; set; } = null!;
     public ICollection<BudgetVersion> Versions { get; set; } = new List<BudgetVersion>();
     public ICollection<BudgetAllocation> Allocations { get; set; } = new List<BudgetAllocation>();
+    public ICollection<BudgetRecordAttachment> Attachments { get; set; } = new List<BudgetRecordAttachment>();
+}
+
+[Table("budget_record_attachments")]
+public class BudgetRecordAttachment
+{
+    public long Id { get; set; }
+    public long? BudgetId { get; set; }
+    public long? CostCenterId { get; set; }
+    public string FilePath { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public long? UploadedBy { get; set; }
+    public DateTime UploadedAt { get; set; }
+    [JsonIgnore] public Budget? Budget { get; set; }
+    [JsonIgnore] public CostCenter? CostCenter { get; set; }
 }
 
 [Table("budget_versions")]

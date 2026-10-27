@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<Budget> Budgets => Set<Budget>();
     public DbSet<BudgetVersion> BudgetVersions => Set<BudgetVersion>();
     public DbSet<BudgetAllocation> BudgetAllocations => Set<BudgetAllocation>();
+    public DbSet<BudgetRecordAttachment> BudgetRecordAttachments => Set<BudgetRecordAttachment>();
     public DbSet<Brand> Brands => Set<Brand>();
     public DbSet<Unit> Units => Set<Unit>();
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
@@ -87,6 +88,10 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<UserResort>().HasKey(x => new { x.UserId, x.ResortId });
         modelBuilder.Entity<BudgetVersion>()
             .HasOne(x => x.Approver).WithMany().HasForeignKey(x => x.ApproverId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<BudgetRecordAttachment>()
+            .HasOne(x => x.Budget).WithMany(x => x.Attachments).HasForeignKey(x => x.BudgetId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<BudgetRecordAttachment>()
+            .HasOne(x => x.CostCenter).WithMany(x => x.Attachments).HasForeignKey(x => x.CostCenterId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<Project>()
             .HasMany(x => x.SubProjects)
             .WithOne(x => x.ParentProject)

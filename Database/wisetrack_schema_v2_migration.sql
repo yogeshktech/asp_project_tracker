@@ -8,6 +8,31 @@ ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL;
 ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL;
 ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL;
 
+CREATE TABLE IF NOT EXISTS budget_record_attachments (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    budget_id BIGINT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+    cost_center_id BIGINT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    uploaded_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK ((budget_id IS NOT NULL)::INT + (cost_center_id IS NOT NULL)::INT = 1)
+);
+CREATE INDEX IF NOT EXISTS ix_budget_record_attachments_budget ON budget_record_attachments(budget_id, uploaded_at DESC);
+CREATE INDEX IF NOT EXISTS ix_budget_record_attachments_cost_center ON budget_record_attachments(cost_center_id, uploaded_at DESC);
+
+INSERT INTO budget_record_attachments (budget_id, file_path, file_name, uploaded_at)
+SELECT b.id, b.attachment_path, COALESCE(NULLIF(b.attachment_name, ''), 'budget-attachment'), COALESCE(b.updated_at, b.created_at)
+FROM budgets b
+WHERE b.attachment_path IS NOT NULL AND b.attachment_path <> ''
+  AND NOT EXISTS (SELECT 1 FROM budget_record_attachments a WHERE a.budget_id = b.id AND a.file_path = b.attachment_path);
+
+INSERT INTO budget_record_attachments (cost_center_id, file_path, file_name, uploaded_at)
+SELECT c.id, c.attachment_path, COALESCE(NULLIF(c.attachment_name, ''), 'cost-center-attachment'), c.created_at
+FROM cost_centers c
+WHERE c.attachment_path IS NOT NULL AND c.attachment_path <> ''
+  AND NOT EXISTS (SELECT 1 FROM budget_record_attachments a WHERE a.cost_center_id = c.id AND a.file_path = c.attachment_path);
+
 CREATE TABLE IF NOT EXISTS project_types (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name VARCHAR(150) NOT NULL UNIQUE,

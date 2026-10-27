@@ -578,7 +578,7 @@ async function handleCreateProject(e) {
         budgetData.append('name', 'Initial Project Budget');
         budgetData.append('approvedAmount', String(initialBudget));
         budgetData.append('currency', currency);
-        budgetData.append('attachment', initialBudgetAttachment);
+        budgetData.append('attachments', initialBudgetAttachment);
         await WisetrackAPI.createBudget(budgetData);
       } catch (budgetErr) {
         budgetWarning = ` Project saved, but initial budget could not be added: ${budgetErr.message}`;

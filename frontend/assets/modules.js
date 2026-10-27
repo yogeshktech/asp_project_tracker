@@ -2241,7 +2241,7 @@ WTPages.switchProjView = function(view) {
           <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
           <td>${esc(b.currency || b.Currency || 'MVR')}</td><td>${esc(versionLabel)}</td>
-          <td>${b.attachmentName ? `<button class="btn sm" title="View attachment" onclick="WTPages.openAttachment('budget', ${b.id}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download attachment" onclick="WTPages.openAttachment('budget', ${b.id}, true)"><i class="fa-solid fa-download"></i></button>` : '<span class="badge amber">Missing</span>'}</td>
+          <td><button class="btn sm" title="View attachment history" onclick="WTPages.openAttachmentHistory('budget', ${b.id}, ${canUpdate})"><i class="fa-solid fa-paperclip"></i> ${(b.attachments || b.Attachments || []).length}</button></td>
           <td class="table-actions">${actions}</td></tr>`;
       }).join('') || emptyRow(9, 'No budgets');
       const allocationMap = new Map();
@@ -2289,7 +2289,7 @@ WTPages.switchProjView = function(view) {
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.variance ?? allocated).toLocaleString('en-US')}</td>
           <td><span class="badge ${rollup.budgetStatus === 'Over Budget' ? 'red' : rollup.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(rollup.budgetStatus || 'On Budget')}</span></td>
           <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td>
-          <td>${c.attachmentName ? `<button class="btn sm" title="View attachment" onclick="WTPages.openAttachment('costcenter', ${c.id}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download attachment" onclick="WTPages.openAttachment('costcenter', ${c.id}, true)"><i class="fa-solid fa-download"></i></button>` : '<span class="badge amber">Missing</span>'}</td>
+          <td><button class="btn sm" title="View attachment history" onclick="WTPages.openAttachmentHistory('costcenter', ${c.id}, ${canEditCenter})"><i class="fa-solid fa-paperclip"></i> ${(c.attachments || c.Attachments || []).length}</button></td>
           <td class="table-actions">${childHistoryButton}${canEditCenter ? `<button class="btn sm" title="Edit cost center" aria-label="Edit cost center" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDeleteCenter ? `<button class="btn sm danger" title="Delete cost center" aria-label="Delete cost center" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') || emptyRow(10, 'No cost centers. Add sub-projects to use them as cost centers.');
     } catch (e) {
@@ -2314,7 +2314,7 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>Approved Amount *</label><input id="bAmt" type="number" step="0.01" value="${budget?.approvedAmount ?? ''}" required></div>
           <div class="field"><label>Currency</label><input id="bCur" value="${esc(currency)}" readonly><small class="card-subtitle">Budget currency follows the project currency.</small></div>
           ${budget ? '<div class="field full"><label>Reason for baseline change (required if amount/currency changes)</label><input id="bReason" maxlength="2000"></div>' : ''}
-          <div class="field full"><label>Attachment * (Excel, PDF, CSV, Word, or TXT; up to 25 MB)</label>${budget?.attachmentName ? `<div class="card-subtitle">Current: ${esc(budget.attachmentName)} <label style="display:block;margin:6px 0"><input id="bRemoveAttachment" type="checkbox"> Remove current file and replace it</label></div>` : '<small class="card-subtitle">Required for every budget.</small>'}<input id="bAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" required></div>
+          <div class="field full"><label>Attachment ${budget ? '(optional; adds to file history)' : '*'} (Excel, PDF, CSV, Word, or TXT; up to 25 MB each)</label>${budget ? `<small class="card-subtitle">${(budget.attachments || budget.Attachments || []).length} saved file(s). Existing files stay in history. Add files here only when needed.</small>` : '<small class="card-subtitle">Attach at least one file when creating a budget.</small>'}<input id="bAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" multiple ${budget ? '' : 'required'}></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -2330,8 +2330,7 @@ WTPages.switchProjView = function(view) {
       payload.append('approvedAmount', $('#bAmt').value);
       payload.append('currency', $('#bCur').value.trim() || 'MVR');
       payload.append('remarks', $('#bReason')?.value.trim() || '');
-      payload.append('removeAttachment', $('#bRemoveAttachment')?.checked ? 'true' : 'false');
-      if ($('#bAttachment').files[0]) payload.append('attachment', $('#bAttachment').files[0]);
+      for (const file of $('#bAttachment').files) payload.append('attachments', file);
       if (id) await WisetrackAPI.updateBudget(id, payload);
       else await WisetrackAPI.createBudget(payload);
       closeModal(); showToast(id ? 'Budget updated' : 'Budget created'); await pageBudget();
@@ -2459,7 +2458,7 @@ WTPages.switchProjView = function(view) {
         <input type="hidden" id="ccId" value="${existing?.id || ''}">
         <div class="form-grid">
           <div class="field"><label>Name *</label><input id="ccName" value="${esc(existing?.name || '')}" required></div>
-          <div class="field full"><label>Attachment * (Excel, PDF, CSV, Word, or TXT; up to 25 MB)</label>${existing?.attachmentName ? `<div class="card-subtitle">Current: ${esc(existing.attachmentName)} <label style="display:block;margin:6px 0"><input id="ccRemoveAttachment" type="checkbox"> Remove current file and replace it</label></div>` : '<small class="card-subtitle">Required for every cost center.</small>'}<input id="ccAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" required></div>
+          <div class="field full"><label>Attachment ${existing ? '(optional; adds to file history)' : '*'} (Excel, PDF, CSV, Word, or TXT; up to 25 MB each)</label>${existing ? `<small class="card-subtitle">${(existing.attachments || existing.Attachments || []).length} saved file(s). Existing files stay in history. Add files here only when needed.</small>` : '<small class="card-subtitle">Attach at least one file when creating a cost center.</small>'}<input id="ccAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" multiple ${existing ? '' : 'required'}></div>
         </div>
         <p class="card-subtitle" style="margin:8px 0 0">Code auto-assigns (CC-001).</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -2473,8 +2472,7 @@ WTPages.switchProjView = function(view) {
       const data = new FormData();
       data.append('projectId', $('#ccProj').value);
       data.append('name', $('#ccName').value.trim());
-      data.append('removeAttachment', $('#ccRemoveAttachment')?.checked ? 'true' : 'false');
-      if ($('#ccAttachment').files[0]) data.append('attachment', $('#ccAttachment').files[0]);
+      for (const file of $('#ccAttachment').files) data.append('attachments', file);
       if (id) await WisetrackAPI.updateCostCenter(id, data); else await WisetrackAPI.createCostCenter(data);
       closeModal(); showToast(id ? 'Cost center updated' : 'Created'); await pageBudget();
     } catch (err) { showToast(err.message, 'danger'); }
@@ -2485,11 +2483,38 @@ WTPages.switchProjView = function(view) {
     try { await WisetrackAPI.deleteCostCenter(id); await pageBudget(); } catch (e) { showToast(e.message, 'danger'); }
   }
 
-  async function openAttachment(kind, id, download) {
-    const baseUrl = kind === 'budget' ? `/budgets/${id}/attachment` : `/budgets/cost-centers/${id}/attachment`;
-    const url = download ? `${baseUrl}?download=true` : baseUrl;
-    try { await WisetrackAPI.openFile(url, null, download); }
+  async function openAttachmentHistory(kind, id, canDelete) {
+    try {
+      const pid = await selectedProjectId();
+      const records = kind === 'budget' ? await WisetrackAPI.getBudgets(pid) : await WisetrackAPI.getCostCenters(pid);
+      const owner = (records || []).find(row => Number(row.id ?? row.Id) === Number(id));
+      if (!owner) throw new Error('Record not found.');
+      const files = owner.attachments || owner.Attachments || [];
+      const rows = files.map(file => {
+        const fileId = Number(file.id ?? file.Id);
+        const fileName = file.fileName || file.FileName || 'Attachment';
+        const uploadedAt = file.uploadedAt || file.UploadedAt;
+        return `<tr><td>${esc(fileName)}</td><td>${esc(uploadedAt ? new Date(uploadedAt).toLocaleString() : '—')}</td><td><button class="btn sm" title="View" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, true)"><i class="fa-solid fa-download"></i></button>${canDelete ? ` <button class="btn sm danger" title="Delete file" onclick="WTPages.deleteAttachment('${kind}', ${id}, ${fileId})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
+      }).join('');
+      openModal(`Attachment History · ${esc(owner.name || owner.Name || 'Record')}`, `<div class="table-wrap"><table><thead><tr><th>File name</th><th>Uploaded date & time</th><th>Options</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No files uploaded.</td></tr>'}</tbody></table></div>`);
+    } catch (e) { showToast(e.message || 'Could not load attachment history.', 'danger'); }
+  }
+
+  async function openAttachmentFile(kind, id, attachmentId, download) {
+    const baseUrl = kind === 'budget' ? `/budgets/${id}/attachments/${attachmentId}/file` : `/budgets/cost-centers/${id}/attachments/${attachmentId}/file`;
+    try { await WisetrackAPI.openFile(download ? `${baseUrl}?download=true` : baseUrl, null, download); }
     catch (e) { showToast(e.message || 'Could not open attachment.', 'danger'); }
+  }
+
+  async function deleteAttachment(kind, id, attachmentId) {
+    if (!confirm('Delete this attachment permanently?')) return;
+    try {
+      if (kind === 'budget') await WisetrackAPI.deleteBudgetAttachment(id, attachmentId);
+      else await WisetrackAPI.deleteCostCenterAttachment(id, attachmentId);
+      await pageBudget();
+      await openAttachmentHistory(kind, id, true);
+      showToast('Attachment deleted.');
+    } catch (e) { showToast(e.message || 'Could not delete attachment.', 'danger'); }
   }
 
   // ---------- COSTS ----------
@@ -5673,7 +5698,7 @@ WTPages.switchProjView = function(view) {
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
-    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachment,
+    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,

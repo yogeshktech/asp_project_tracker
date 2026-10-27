@@ -29,6 +29,7 @@ public class BudgetRepository : IBudgetRepository
     {
         var budgets = await _db.Budgets.Include(b => b.Allocations).ThenInclude(a => a.CostCenter)
             .Include(b => b.Versions).ThenInclude(v => v.Approver)
+            .Include(b => b.Attachments)
             .Where(b => b.ProjectId == projectId).AsNoTracking().ToListAsync();
         foreach (var version in budgets.SelectMany(b => b.Versions))
             version.ApproverName = version.Approver?.FullName;
@@ -83,7 +84,7 @@ public class BudgetRepository : IBudgetRepository
 
     public Task<List<CostCenter>> GetCostCentersAsync(long? projectId)
     {
-        var q = _db.CostCenters.AsNoTracking().AsQueryable();
+        var q = _db.CostCenters.Include(c => c.Attachments).AsNoTracking().AsQueryable();
         if (projectId.HasValue) q = q.Where(c => c.ProjectId == projectId ||
             (c.ProjectId.HasValue && _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId)));
         return q.ToListAsync();

@@ -18,8 +18,9 @@ public class BudgetsController : ControllerBase
     private readonly IBudgetService _budgetService;
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _env;
-    public BudgetsController(IBudgetService budgetService, AppDbContext db, IWebHostEnvironment env)
-    { _budgetService = budgetService; _db = db; _env = env; }
+    private readonly IPermissionService _permissions;
+    public BudgetsController(IBudgetService budgetService, AppDbContext db, IWebHostEnvironment env, IPermissionService permissions)
+    { _budgetService = budgetService; _db = db; _env = env; _permissions = permissions; }
     private long UserId => UserContext.GetUserId(User)!.Value;
 
     [HttpGet("project/{projectId:long}")]
@@ -28,50 +29,68 @@ public class BudgetsController : ControllerBase
 
     [HttpPost]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(25_000_000)]
+    [RequestSizeLimit(100_000_000)]
     public async Task<IActionResult> Create([FromForm] CreateBudgetRequest request)
     {
-        if (request.Attachment == null || request.Attachment.Length == 0) return BadRequest(new { message = "A budget attachment is required." });
-        var file = await StoreAttachmentAsync(request.Attachment, "budget");
+        if (request.Attachments.Count == 0) return BadRequest(new { message = "Attach at least one budget file." });
+        var files = await StoreAttachmentsAsync(request.Attachments, "budget");
         try
         {
             var budget = await _budgetService.CreateAsync(request, UserId);
-            budget.AttachmentPath = file.Path; budget.AttachmentName = file.Name;
+            _db.BudgetRecordAttachments.AddRange(files.Select(file => new BudgetRecordAttachment
+            {
+                BudgetId = budget.Id, FilePath = file.Path, FileName = file.Name, UploadedBy = UserId, UploadedAt = DateTime.UtcNow
+            }));
             await _db.SaveChangesAsync();
             return Ok(budget);
         }
-        catch { DeleteStoredFile(file.Path); throw; }
+        catch { DeleteStoredFiles(files.Select(file => file.Path)); throw; }
     }
 
     [HttpPut("{id:long}")]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(25_000_000)]
+    [RequestSizeLimit(100_000_000)]
     public async Task<IActionResult> Update(long id, [FromForm] UpdateBudgetRequest request)
     {
         var current = await _db.Budgets.FindAsync(id);
         if (current == null) return NotFound();
-        if (request.Attachment == null || request.Attachment.Length == 0)
-            return BadRequest(new { message = "A budget attachment is required when editing. Choose the file to keep or replace before saving." });
-        var oldPath = current.AttachmentPath;
-        var file = await StoreAttachmentAsync(request.Attachment, "budget");
+        var files = request.Attachments.Count > 0 ? await StoreAttachmentsAsync(request.Attachments, "budget") : new List<(string Path, string Name)>();
         try
         {
             var budget = await _budgetService.UpdateAsync(id, request, UserId);
-            budget.AttachmentPath = file.Path; budget.AttachmentName = file.Name;
+            _db.BudgetRecordAttachments.AddRange(files.Select(file => new BudgetRecordAttachment
+            {
+                BudgetId = budget.Id, FilePath = file.Path, FileName = file.Name, UploadedBy = UserId, UploadedAt = DateTime.UtcNow
+            }));
             await _db.SaveChangesAsync();
-            DeleteStoredFile(oldPath);
             return Ok(budget);
         }
-        catch { DeleteStoredFile(file.Path); throw; }
+        catch { DeleteStoredFiles(files.Select(file => file.Path)); throw; }
     }
 
-    [HttpGet("{id:long}/attachment")]
-    public async Task<IActionResult> BudgetAttachment(long id, [FromQuery] bool download = false)
+    [HttpGet("{id:long}/attachments/{attachmentId:long}/file")]
+    public async Task<IActionResult> BudgetAttachment(long id, long attachmentId, [FromQuery] bool download = false)
     {
-        var budget = (await _budgetService.GetByProjectAsync(UserId,
-            await _db.Budgets.Where(b => b.Id == id).Select(b => b.ProjectId).FirstOrDefaultAsync())).FirstOrDefault(b => b.Id == id);
+        var budget = await _db.Budgets.AsNoTracking().Include(b => b.Attachments).FirstOrDefaultAsync(b => b.Id == id);
+        if (budget == null || !budget.Attachments.Any(a => a.Id == attachmentId)) return NotFound();
+        if (!(await _budgetService.GetByProjectAsync(UserId, budget.ProjectId)).Any(b => b.Id == id)) return NotFound();
+        var attachment = budget.Attachments.First(a => a.Id == attachmentId);
+        return ServeAttachment(attachment.FilePath, attachment.FileName, download);
+    }
+
+    [HttpDelete("{id:long}/attachments/{attachmentId:long}")]
+    public async Task<IActionResult> DeleteBudgetAttachment(long id, long attachmentId)
+    {
+        var budget = await _db.Budgets.FindAsync(id);
         if (budget == null) return NotFound();
-        return ServeAttachment(budget.AttachmentPath, budget.AttachmentName, download);
+        await _permissions.EnsureModuleAsync(UserId, budget.ProjectId, "Budgets", "update");
+        var attachment = await _db.BudgetRecordAttachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.BudgetId == id);
+        if (attachment == null) return NotFound();
+        var path = attachment.FilePath;
+        _db.BudgetRecordAttachments.Remove(attachment);
+        await _db.SaveChangesAsync();
+        DeleteStoredFile(path);
+        return NoContent();
     }
 
     [HttpDelete("{id:long}")]
@@ -79,9 +98,10 @@ public class BudgetsController : ControllerBase
     {
         try
         {
-            var attachmentPath = await _db.Budgets.Where(b => b.Id == id).Select(b => b.AttachmentPath).FirstOrDefaultAsync();
+            var paths = await _db.BudgetRecordAttachments.Where(a => a.BudgetId == id).Select(a => a.FilePath).ToListAsync();
+            var legacyPath = await _db.Budgets.Where(b => b.Id == id).Select(b => b.AttachmentPath).FirstOrDefaultAsync();
             await _budgetService.DeleteAsync(id, UserId);
-            DeleteStoredFile(attachmentPath);
+            DeleteStoredFiles(paths.Append(legacyPath));
             return NoContent();
         }
         catch (InvalidOperationException ex) { return NotFound(new { message = ex.Message }); }
@@ -98,65 +118,96 @@ public class BudgetsController : ControllerBase
 
     [HttpPost("cost-centers")]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(25_000_000)]
+    [RequestSizeLimit(100_000_000)]
     public async Task<IActionResult> CreateCostCenter([FromForm] CreateCostCenterRequest request)
     {
-        if (request.Attachment == null || request.Attachment.Length == 0) return BadRequest(new { message = "A cost center attachment is required." });
-        var file = await StoreAttachmentAsync(request.Attachment, "costcenter");
+        if (request.Attachments.Count == 0) return BadRequest(new { message = "Attach at least one cost center file." });
+        var files = await StoreAttachmentsAsync(request.Attachments, "costcenter");
         try
         {
             var center = await _budgetService.CreateCostCenterAsync(request, UserId);
-            center.AttachmentPath = file.Path; center.AttachmentName = file.Name;
+            _db.BudgetRecordAttachments.AddRange(files.Select(file => new BudgetRecordAttachment
+            {
+                CostCenterId = center.Id, FilePath = file.Path, FileName = file.Name, UploadedBy = UserId, UploadedAt = DateTime.UtcNow
+            }));
             await _db.SaveChangesAsync();
             return Ok(center);
         }
-        catch { DeleteStoredFile(file.Path); throw; }
+        catch { DeleteStoredFiles(files.Select(file => file.Path)); throw; }
     }
 
     [HttpPut("cost-centers/{id:long}")]
     [Consumes("multipart/form-data")]
-    [RequestSizeLimit(25_000_000)]
+    [RequestSizeLimit(100_000_000)]
     public async Task<IActionResult> UpdateCostCenter(long id, [FromForm] UpdateCostCenterRequest request)
     {
         var current = await _db.CostCenters.FindAsync(id);
         if (current == null) return NotFound();
-        if (request.Attachment == null || request.Attachment.Length == 0)
-            return BadRequest(new { message = "A cost center attachment is required when editing. Choose the file to keep or replace before saving." });
-        var oldPath = current.AttachmentPath;
-        var file = await StoreAttachmentAsync(request.Attachment, "costcenter");
+        var files = request.Attachments.Count > 0 ? await StoreAttachmentsAsync(request.Attachments, "costcenter") : new List<(string Path, string Name)>();
         try
         {
             var cc = await _budgetService.UpdateCostCenterAsync(id, request, UserId);
-            if (cc == null) { DeleteStoredFile(file.Path); return NotFound(); }
-            cc.AttachmentPath = file.Path; cc.AttachmentName = file.Name;
+            if (cc == null) { DeleteStoredFiles(files.Select(file => file.Path)); return NotFound(); }
+            _db.BudgetRecordAttachments.AddRange(files.Select(file => new BudgetRecordAttachment
+            {
+                CostCenterId = cc.Id, FilePath = file.Path, FileName = file.Name, UploadedBy = UserId, UploadedAt = DateTime.UtcNow
+            }));
             await _db.SaveChangesAsync();
-            DeleteStoredFile(oldPath);
             return Ok(cc);
         }
-        catch { DeleteStoredFile(file.Path); throw; }
+        catch { DeleteStoredFiles(files.Select(file => file.Path)); throw; }
     }
 
-    [HttpGet("cost-centers/{id:long}/attachment")]
-    public async Task<IActionResult> CostCenterAttachment(long id, [FromQuery] bool download = false)
+    [HttpGet("cost-centers/{id:long}/attachments/{attachmentId:long}/file")]
+    public async Task<IActionResult> CostCenterAttachment(long id, long attachmentId, [FromQuery] bool download = false)
     {
-        var center = await _db.CostCenters.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        var center = await _db.CostCenters.AsNoTracking().Include(c => c.Attachments).FirstOrDefaultAsync(c => c.Id == id);
+        if (center == null) return NotFound();
+        var visible = await _budgetService.GetCostCentersAsync(UserId, center.ProjectId);
+        var attachment = center.Attachments.FirstOrDefault(a => a.Id == attachmentId);
+        if (!visible.Any(c => c.Id == id) || attachment == null) return NotFound();
+        return ServeAttachment(attachment.FilePath, attachment.FileName, download);
+    }
+
+    [HttpDelete("cost-centers/{id:long}/attachments/{attachmentId:long}")]
+    public async Task<IActionResult> DeleteCostCenterAttachment(long id, long attachmentId)
+    {
+        var center = await _db.CostCenters.FindAsync(id);
         if (center == null) return NotFound();
         var visible = await _budgetService.GetCostCentersAsync(UserId, center.ProjectId);
         if (!visible.Any(c => c.Id == id)) return NotFound();
-        return ServeAttachment(center.AttachmentPath, center.AttachmentName, download);
+        if (center.ProjectId.HasValue) await _permissions.EnsureModuleAsync(UserId, center.ProjectId.Value, "Budgets", "update");
+        var attachment = await _db.BudgetRecordAttachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.CostCenterId == id);
+        if (attachment == null) return NotFound();
+        var path = attachment.FilePath;
+        _db.BudgetRecordAttachments.Remove(attachment);
+        await _db.SaveChangesAsync();
+        DeleteStoredFile(path);
+        return NoContent();
     }
 
-    private async Task<(string Path, string Name)> StoreAttachmentAsync(IFormFile file, string scope)
+    private async Task<List<(string Path, string Name)>> StoreAttachmentsAsync(IReadOnlyCollection<IFormFile> files, string scope)
     {
-        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (files.Count > 10) throw new InvalidOperationException("Upload up to 10 files at a time.");
         var allowed = new[] { ".xlsx", ".xls", ".pdf", ".csv", ".doc", ".docx", ".txt" };
-        if (!allowed.Contains(extension)) throw new InvalidOperationException("Allowed attachment formats: Excel, PDF, CSV, Word, and TXT.");
-        if (file.Length > 25_000_000) throw new InvalidOperationException("Attachment must be 25 MB or smaller.");
-        var stored = $"{scope}_{Guid.NewGuid():N}{extension}";
+        var prepared = files.Select(file => (File: file, Extension: Path.GetExtension(file.FileName).ToLowerInvariant())).ToList();
+        if (prepared.Any(item => item.File.Length == 0)) throw new InvalidOperationException("Empty attachments cannot be uploaded.");
+        if (prepared.Any(item => !allowed.Contains(item.Extension))) throw new InvalidOperationException("Allowed attachment formats: Excel, PDF, CSV, Word, and TXT.");
+        if (prepared.Any(item => item.File.Length > 25_000_000)) throw new InvalidOperationException("Each attachment must be 25 MB or smaller.");
         var directory = Path.Combine(_env.ContentRootPath, "uploads");
         Directory.CreateDirectory(directory);
-        await using (var stream = System.IO.File.Create(Path.Combine(directory, stored))) await file.CopyToAsync(stream);
-        return ($"/uploads/{stored}", Path.GetFileName(file.FileName));
+        var storedFiles = new List<(string Path, string Name)>();
+        try
+        {
+            foreach (var item in prepared)
+            {
+                var stored = $"{scope}_{Guid.NewGuid():N}{item.Extension}";
+                await using (var stream = System.IO.File.Create(Path.Combine(directory, stored))) await item.File.CopyToAsync(stream);
+                storedFiles.Add(($"/uploads/{stored}", Path.GetFileName(item.File.FileName)));
+            }
+            return storedFiles;
+        }
+        catch { DeleteStoredFiles(storedFiles.Select(file => file.Path)); throw; }
     }
 
     private IActionResult ServeAttachment(string? path, string? name, bool download)
@@ -181,12 +232,18 @@ public class BudgetsController : ControllerBase
         }
     }
 
+    private void DeleteStoredFiles(IEnumerable<string?> paths)
+    {
+        foreach (var path in paths) DeleteStoredFile(path);
+    }
+
     [HttpDelete("cost-centers/{id:long}")]
     public async Task<IActionResult> DeleteCostCenter(long id)
     {
-        var attachmentPath = await _db.CostCenters.Where(c => c.Id == id).Select(c => c.AttachmentPath).FirstOrDefaultAsync();
+        var paths = await _db.BudgetRecordAttachments.Where(a => a.CostCenterId == id).Select(a => a.FilePath).ToListAsync();
+        var legacyPath = await _db.CostCenters.Where(c => c.Id == id).Select(c => c.AttachmentPath).FirstOrDefaultAsync();
         await _budgetService.DeleteCostCenterAsync(id, UserId);
-        DeleteStoredFile(attachmentPath);
+        DeleteStoredFiles(paths.Append(legacyPath));
         return NoContent();
     }
 

@@ -191,8 +191,7 @@ public class CreateBudgetRequest
     public string Currency { get; set; } = "MVR";
     public decimal RagAmberPercent { get; set; } = 80;
     public decimal RagRedPercent { get; set; } = 100;
-    public IFormFile? Attachment { get; set; }
-    public bool RemoveAttachment { get; set; }
+    public List<IFormFile> Attachments { get; set; } = new();
 }
 
 public class UpdateBudgetRequest
@@ -201,8 +200,7 @@ public class UpdateBudgetRequest
     public decimal ApprovedAmount { get; set; }
     public string Currency { get; set; } = "MVR";
     public string? Remarks { get; set; }
-    public IFormFile? Attachment { get; set; }
-    public bool RemoveAttachment { get; set; }
+    public List<IFormFile> Attachments { get; set; } = new();
 }
 
 public class CreateCostCenterRequest
@@ -212,8 +210,7 @@ public class CreateCostCenterRequest
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public IFormFile? Attachment { get; set; }
-    public bool RemoveAttachment { get; set; }
+    public List<IFormFile> Attachments { get; set; } = new();
 }
 
 public class UpdateCostCenterRequest : CreateCostCenterRequest { }
