@@ -149,9 +149,10 @@ public class BOQService : IBOQService
             if (boq.ProjectId != dto.ProjectId) throw new InvalidOperationException("Target BOQ does not belong to the selected project.");
             var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault()
                 ?? throw new InvalidOperationException("Target BOQ has no version to revise.");
+            var nextVersionNo = latest.VersionNo + 1;
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = latest.VersionNo + 1, IsCurrentBaseline = false,
+                BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextMajorVersionLabel(boq.Versions), IsCurrentBaseline = false,
                 Remarks = string.IsNullOrWhiteSpace(dto.Remarks) ? "Imported revision" : dto.Remarks,
                 CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
@@ -174,7 +175,7 @@ public class BOQService : IBOQService
             });
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = 1, IsCurrentBaseline = true, Remarks = dto.Remarks,
+                BoqId = boq.Id, VersionNo = 1, VersionLabel = "1", IsCurrentBaseline = true, Remarks = dto.Remarks,
                 CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
             lines = new List<BoqItem>();
@@ -240,9 +241,10 @@ public class BOQService : IBOQService
             if (boq.ProjectId != projectId) throw new InvalidOperationException("Target BOQ does not belong to the selected project.");
             var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault()
                 ?? throw new InvalidOperationException("Target BOQ has no version to revise.");
+            var nextVersionNo = latest.VersionNo + 1;
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = latest.VersionNo + 1, IsCurrentBaseline = false,
+                BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextMajorVersionLabel(boq.Versions), IsCurrentBaseline = false,
                 Remarks = string.IsNullOrWhiteSpace(revisionNotes) ? null : revisionNotes.Trim(), CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
             lines.AddRange(latest.Items.Select(item => new BoqItem
@@ -264,7 +266,7 @@ public class BOQService : IBOQService
             });
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = 1, IsCurrentBaseline = true,
+                BoqId = boq.Id, VersionNo = 1, VersionLabel = "1", IsCurrentBaseline = true,
                 CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
         }
@@ -306,11 +308,13 @@ public class BOQService : IBOQService
         await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
         var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
         if (latest == null) throw new InvalidOperationException("This BOQ has no version to revise.");
+        var nextVersionNo = boq.Versions.Max(v => v.VersionNo) + 1;
 
         var revision = await _repository.AddVersionAsync(new BoqVersion
         {
             BoqId = boqId,
-            VersionNo = boq.Versions.Max(v => v.VersionNo) + 1,
+            VersionNo = nextVersionNo,
+            VersionLabel = NextBaselineVersionLabel(boq.Versions),
             Remarks = string.IsNullOrWhiteSpace(remarks) ? null : remarks.Trim(),
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow,
@@ -339,6 +343,34 @@ public class BOQService : IBOQService
         await _audit.LogAsync(userId, "CreateRevision", "BOQ", boqId, $"Version {revision.VersionNo} from version {latest.VersionNo}");
         revision.Items = copiedItems;
         return revision;
+    }
+
+    private static string VersionLabelOf(BoqVersion version) =>
+        string.IsNullOrWhiteSpace(version.VersionLabel) ? version.VersionNo.ToString() : version.VersionLabel.Trim();
+
+    private static int VersionMajor(BoqVersion version)
+    {
+        var majorText = VersionLabelOf(version).Split('.', 2)[0];
+        return int.TryParse(majorText, out var major) ? major : version.VersionNo;
+    }
+
+    private static string NextMajorVersionLabel(IEnumerable<BoqVersion> versions) =>
+        ((versions.Any() ? versions.Max(VersionMajor) : 0) + 1).ToString();
+
+    private static string NextBaselineVersionLabel(IEnumerable<BoqVersion> versions)
+    {
+        var allVersions = versions.ToList();
+        var baseline = allVersions.FirstOrDefault(version => version.IsCurrentBaseline)
+            ?? allVersions.OrderByDescending(version => version.VersionNo).First();
+        var major = VersionMajor(baseline);
+        var maxMinor = allVersions
+            .Where(version => VersionMajor(version) == major)
+            .Select(version => VersionLabelOf(version).Split('.', 2))
+            .Where(parts => parts.Length == 2 && int.TryParse(parts[1], out _))
+            .Select(parts => int.Parse(parts[1]))
+            .DefaultIfEmpty(0)
+            .Max();
+        return $"{major}.{maxMinor + 1}";
     }
 
     public async Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId)

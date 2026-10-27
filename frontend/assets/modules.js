@@ -2532,6 +2532,15 @@ WTPages.switchProjView = function(view) {
         const tableRows = records.slice(1, 501).map(record => `<tr>${columns.map((_, index) => `<td>${esc(record[index] ?? '')}</td>`).join('')}</tr>`).join('');
         const truncation = records.length > 500 ? '<p class="card-subtitle">Preview limited to first 500 rows.</p>' : '';
         openModal(`Preview · ${esc(file.fileName)}`, `${truncation}<div class="table-wrap"><table class="table attachment-preview-table"><thead><tr>${columns.map(column => `<th>${esc(column ?? '')}</th>`).join('')}</tr></thead><tbody>${tableRows || `<tr><td colspan="${columns.length || 1}">No data rows.</td></tr>`}</tbody></table></div>`, '', 'attachment-preview-modal');
+      } else if (extension === 'docx') {
+        if (!window.mammoth) await loadMilestoneImportScript('https://cdn.jsdelivr.net/npm/mammoth@1.13.0/mammoth.browser.min.js');
+        const result = await mammoth.convertToHtml({ arrayBuffer: await file.blob.arrayBuffer() });
+        openModal(`Preview · ${esc(file.fileName)}`, `<article class="attachment-document-preview">${sanitizeAttachmentPreviewHtml(result.value)}</article>`, '', 'attachment-preview-modal');
+      } else if (extension === 'doc') {
+        if (!window.docToText) await loadMilestoneImportScript('https://cdn.jsdelivr.net/gh/Alpaq92/JSDoc@main/src/docToText.js');
+        const html = docToText.html(await file.blob.arrayBuffer());
+        if (html == null) throw new Error('This legacy Word file cannot be previewed. Try downloading it.');
+        openModal(`Preview · ${esc(file.fileName)}`, `<article class="attachment-document-preview">${sanitizeAttachmentPreviewHtml(html)}</article>`, '', 'attachment-preview-modal');
       } else {
         openModal(`Preview · ${esc(file.fileName)}`, '<p>This file format cannot be previewed in the browser. Use Download to open it in the appropriate application.</p>', '', 'attachment-preview-modal');
       }
@@ -2555,6 +2564,29 @@ WTPages.switchProjView = function(view) {
     if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
     if (rows[0]?.[0]?.charCodeAt(0) === 0xFEFF) rows[0][0] = rows[0][0].slice(1);
     return rows;
+  }
+
+  function sanitizeAttachmentPreviewHtml(source) {
+    const parsed = new DOMParser().parseFromString(source || '', 'text/html');
+    const allowedTags = new Set(['P', 'BR', 'STRONG', 'B', 'EM', 'I', 'U', 'S', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD', 'A', 'IMG', 'SPAN', 'DIV', 'SUB', 'SUP']);
+    const cleanNode = node => {
+      for (const child of [...node.childNodes]) {
+        if (child.nodeType !== Node.ELEMENT_NODE) continue;
+        if (!allowedTags.has(child.tagName)) {
+          child.replaceWith(document.createTextNode(child.textContent || ''));
+          continue;
+        }
+        const tag = child.tagName;
+        const src = tag === 'IMG' && /^data:image\/(png|jpeg|gif);base64,/i.test(child.getAttribute('src') || '') ? child.getAttribute('src') : null;
+        const href = tag === 'A' && /^(https?:|mailto:)/i.test(child.getAttribute('href') || '') ? child.getAttribute('href') : null;
+        for (const attribute of [...child.attributes]) child.removeAttribute(attribute.name);
+        if (src) child.setAttribute('src', src);
+        if (href) { child.setAttribute('href', href); child.setAttribute('target', '_blank'); child.setAttribute('rel', 'noopener noreferrer'); }
+        cleanNode(child);
+      }
+    };
+    cleanNode(parsed.body);
+    return parsed.body.innerHTML;
   }
 
   async function deleteAttachment(kind, id, attachmentId) {
@@ -2862,27 +2894,44 @@ WTPages.switchProjView = function(view) {
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
       ` ${canCreateBoq ? `<button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>
         <button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>` : ''}`)
-      + tableWrap(['SR NO', 'Title', 'Status', 'BOQ Version', 'Latest / Current Baseline', 'Created', 'Actions'], 'boqBody');
+      + tableWrap(['SR NO', 'Title', 'Status', 'BOQ Version', 'Latest / Current Baseline', 'Created', 'Actions'], 'boqBody')
+      + '<h3 style="margin:22px 0 10px">BOQ Version History</h3>'
+      + tableWrap(['BOQ', 'Version', 'Created', 'Revision Notes', 'Baseline', 'Actions'], 'boqVersionsBody');
     if (!pid) {
       $('#boqBody').innerHTML = emptyRow(7, 'No project available.');
+      $('#boqVersionsBody').innerHTML = emptyRow(6, 'No project available.');
       return;
     }
     try {
       const scopeIds = await projectScopeIds(pid);
       const batches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id)));
       const list = batches.flat();
+      const versionRows = list.flatMap(b => (b.versions || b.Versions || []).map(v => ({ boq: b, version: v })))
+        .sort((a, b) => Number(a.boq.id || a.boq.Id) - Number(b.boq.id || b.boq.Id)
+          || Number(a.version.versionNo || a.version.VersionNo) - Number(b.version.versionNo || b.version.VersionNo));
       const canCreateFirstBoq = list.length === 0;
       ['boqFromMasterButton', 'boqImportButton'].forEach(id => { const button = document.getElementById(id); if (button) button.disabled = !canCreateFirstBoq; });
       $('#boqBody').innerHTML = list.length ? list.map(b => `
         <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || b.Status || '—')}</td>
         <td>v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</td>
-        <td>${(() => { const vs = b.versions || b.Versions || []; const latest = Math.max(0, ...vs.map(v => Number(v.versionNo || v.VersionNo || 0))); const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `Revision v${latest || '—'} / Baseline v${base?.versionNo || base?.VersionNo || '—'}`; })()}</td>
+        <td>${(() => { const vs = b.versions || b.Versions || []; const latest = vs.slice().sort((a, c) => Number(c.versionNo || c.VersionNo || 0) - Number(a.versionNo || a.VersionNo || 0))[0]; const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); const label = v => v?.versionLabel || v?.VersionLabel || v?.versionNo || v?.VersionNo || '—'; return `Revision v${label(latest)} / Baseline v${label(base)}`; })()}</td>
         <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '—')}</td>
         <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button>
         ${canCreateBoq ? `<button class="btn sm" onclick="WTPages.createBoqRevision(${b.id})">Revise Baseline</button>` : ''} 
         ${canUpdateBoq ? `<button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button>` : ''}</td></tr>`
       ).join('') : emptyRow(7, 'No BOQ — import or create from master');
-    } catch (e) { $('#boqBody').innerHTML = errRow(7, e); }
+      $('#boqVersionsBody').innerHTML = versionRows.length ? versionRows.map(({ boq: b, version: v }) => {
+        const versionId = v.id || v.Id;
+        const isBaseline = v.isCurrentBaseline || v.IsCurrentBaseline;
+        const versionLabel = v.versionLabel || v.VersionLabel || v.versionNo || v.VersionNo;
+        return `<tr><td>${esc(b.title || b.Title || 'BOQ')}</td><td>Version ${esc(versionLabel)}</td>
+          <td>${esc((v.createdAt || v.CreatedAt || '').toString().slice(0, 10) || 'â€”')}</td>
+          <td>${esc(v.remarks || v.Remarks || 'â€”')}</td>
+          <td>${isBaseline ? '<span class="badge green">Current Baseline</span>' : 'â€”'}</td>
+          <td><button class="btn sm" onclick="WTPages.viewBoqVersion(${b.id || b.Id},${versionId})">View</button>
+          ${!isBaseline && canUpdateBoq ? `<button class="btn sm" onclick="WTPages.setBoqBaseline(${b.id || b.Id},${versionId})">Set as baseline</button>` : ''}</td></tr>`;
+      }).join('') : emptyRow(6, 'No BOQ versions found.');
+    } catch (e) { $('#boqBody').innerHTML = errRow(7, e); $('#boqVersionsBody').innerHTML = errRow(6, e); }
   }
 
   async function editBoq(id) {
@@ -3125,25 +3174,11 @@ WTPages.switchProjView = function(view) {
         <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <span class="badge blue">${esc(b.status || b.Status || 'Draft')}</span>
           <span class="badge gray">BOQ Version v${Number(b.projectVersionNo ?? b.ProjectVersionNo ?? 0) || '—'}</span>
-          <span class="badge gray">Latest: Version ${latest?.versionNo || latest?.VersionNo || versions.length || 1}</span>
-          <span class="badge green">Current Baseline: Version ${currentBaseline?.versionNo || currentBaseline?.VersionNo || '—'}</span>
+          <span class="badge gray">Latest: Version ${latest?.versionLabel || latest?.VersionLabel || latest?.versionNo || latest?.VersionNo || versions.length || 1}</span>
+          <span class="badge green">Current Baseline: Version ${currentBaseline?.versionLabel || currentBaseline?.VersionLabel || currentBaseline?.versionNo || currentBaseline?.VersionNo || '—'}</span>
           ${latest?.remarks || latest?.Remarks ? `<small style="color:var(--text-muted)">${esc(latest.remarks || latest.Remarks)}</small>` : ''}
         </div>
-        <div class="card" style="padding:12px;margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
-            <strong>Version history</strong>
-          </div>
-          <div class="table-wrap"><table class="table"><thead><tr><th>Version</th><th>Created</th><th>Revision Notes</th><th>Baseline</th><th>Action</th></tr></thead><tbody>
-            ${versions.slice().sort((a, c) => (a.versionNo || a.VersionNo || 0) - (c.versionNo || c.VersionNo || 0)).map(v => {
-              const versionNo = v.versionNo || v.VersionNo;
-              const isBaseline = v.isCurrentBaseline || v.IsCurrentBaseline;
-              return `<tr><td>Version ${versionNo}</td><td>${esc((v.createdAt || v.CreatedAt || '').toString().slice(0, 10) || '—')}</td><td>${esc(v.remarks || v.Remarks || '—')}</td>
-                <td>${isBaseline ? '<span class="badge green">Current Baseline</span>' : '—'}</td>
-                <td>${isBaseline || !canUpdate ? '—' : `<button class="btn sm" onclick="WTPages.setBoqBaseline(${id},${v.id || v.Id})">Set as baseline</button>`}</td></tr>`;
-            }).join('') || '<tr><td colspan="5">No versions found.</td></tr>'}
-          </tbody></table></div>
-        </div>
-        <p class="card-subtitle">Showing line items from latest version ${latest?.versionNo || latest?.VersionNo || 1}. Revisions are retained. ${!canEditRevision ? 'Create a revision to make changes; baseline versions are locked.' : 'Edit this draft revision, then set it as the baseline when approved.'}</p>
+        <p class="card-subtitle">Showing line items from latest version ${latest?.versionLabel || latest?.VersionLabel || latest?.versionNo || latest?.VersionNo || 1}. Revisions are retained. ${!canEditRevision ? 'Create a revision to make changes; baseline versions are locked.' : 'Edit this draft revision, then set it as the baseline when approved.'}</p>
         ${canEditRevision ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${latestVersionId},true)">Save all changes</button></div>` : ''}
         <div class="table-wrap"><table class="table" id="boqRevisionItemsTable">
           <thead><tr><th>#</th><th>Item</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Action</th></tr></thead>
@@ -3173,6 +3208,35 @@ WTPages.switchProjView = function(view) {
     try {
       await viewBoq(id, true);
       showToast('Revision draft opened. The new version will be created when you save it.');
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function viewBoqVersion(boqId, versionId) {
+    try {
+      const boq = await WisetrackAPI.getBoq(boqId);
+      const versions = boq.versions || boq.Versions || [];
+      const version = versions.find(v => Number(v.id || v.Id) === Number(versionId));
+      if (!version) throw new Error('BOQ version was not found.');
+      const items = version.items || version.Items || [];
+      const label = version.versionLabel || version.VersionLabel || version.versionNo || version.VersionNo;
+      const rows = items.map((item, index) => `<tr>
+        <td>${esc(item.displayLineNo || item.DisplayLineNo || item.lineNo || item.LineNo || index + 1)}</td>
+        <td>${esc(item.itemName || item.ItemName || item.description || item.Description || '—')}</td>
+        <td>${esc(item.itemCode || item.ItemCode || '—')}</td>
+        <td>${esc(item.unit || item.Unit || '—')}</td>
+        <td>${Number(item.quantity ?? item.Quantity ?? 0).toLocaleString('en-US')}</td>
+        <td>${Number(item.unitPrice ?? item.UnitPrice ?? 0).toLocaleString('en-US')}</td>
+        <td>${Number(item.amount ?? item.Amount ?? 0).toLocaleString('en-US')}</td>
+        <td>${esc(item.description || item.Description || '—')}</td></tr>`).join('');
+      openModal(`BOQ Version ${esc(label)} — ${esc(boq.title || boq.Title || 'BOQ')}`, `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <span class="badge blue">Version ${esc(label)}</span>
+          <span class="badge gray">Created ${esc((version.createdAt || version.CreatedAt || '').toString().replace('T', ' ').slice(0, 19) || '—')}</span>
+          ${version.isCurrentBaseline || version.IsCurrentBaseline ? '<span class="badge green">Current Baseline</span>' : ''}
+          <span>${esc(version.remarks || version.Remarks || '')}</span>
+        </div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Item name</th><th>Code</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Description</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="8">No items in this version.</td></tr>'}</tbody></table></div>`);
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -3238,7 +3302,7 @@ WTPages.switchProjView = function(view) {
     try {
       await WisetrackAPI.setBoqBaseline(id, versionId);
       showToast('Current project baseline updated.');
-      await viewBoq(id);
+      await pageBoq();
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -5753,7 +5817,7 @@ WTPages.switchProjView = function(view) {
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,
-    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, editBoq, saveBoqEdit, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, setBoqBaseline, downloadReport,
+    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,

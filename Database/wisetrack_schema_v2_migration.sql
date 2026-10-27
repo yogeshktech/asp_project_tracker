@@ -1,6 +1,9 @@
 
 -- Run this on existing wisetrack database after wisetrack_schema.sql
 
+ALTER TABLE boq_versions ADD COLUMN IF NOT EXISTS version_label TEXT NULL;
+UPDATE boq_versions SET version_label = version_no::TEXT WHERE version_label IS NULL OR version_label = '';
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_internal BOOLEAN NOT NULL DEFAULT TRUE;
 
 ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL;

@@ -23,6 +23,7 @@ public class BoqVersion
     public long Id { get; set; }
     public long BoqId { get; set; }
     public int VersionNo { get; set; }
+    public string? VersionLabel { get; set; }
     public bool IsCurrentBaseline { get; set; }
     public string? Remarks { get; set; }
     public long? CreatedBy { get; set; }

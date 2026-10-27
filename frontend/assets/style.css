@@ -1330,6 +1330,15 @@ button.btn[disabled] {
 .attachment-preview-modal { width: min(1100px, 96vw); }
 .attachment-preview-frame { display: block; width: 100%; height: min(72vh, 780px); border: 0; background: #fff; }
 .attachment-text-preview { max-height: 70vh; overflow: auto; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--border-light); border-radius: var(--radius-md); }
+.attachment-document-preview { max-height: 72vh; overflow: auto; padding: 28px 36px; line-height: 1.65; color: var(--text-main); background: var(--bg-card); }
+.attachment-document-preview h1,
+.attachment-document-preview h2,
+.attachment-document-preview h3 { margin: 1.25em 0 .55em; }
+.attachment-document-preview p { margin: 0 0 .8em; }
+.attachment-document-preview table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+.attachment-document-preview th,
+.attachment-document-preview td { border: 1px solid var(--border-color); padding: 7px 9px; text-align: left; vertical-align: top; }
+.attachment-document-preview img { max-width: 100%; height: auto; }
 .attachment-preview-table { max-height: 68vh; }
 
 .table {

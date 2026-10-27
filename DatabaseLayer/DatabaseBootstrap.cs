@@ -246,6 +246,8 @@ public static class DatabaseBootstrap
     private static async Task EnsureBoqBaselineColumnAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_versions ADD COLUMN IF NOT EXISTS is_current_baseline BOOLEAN NOT NULL DEFAULT FALSE""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_versions ADD COLUMN IF NOT EXISTS version_label TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE boq_versions SET version_label = version_no::TEXT WHERE version_label IS NULL OR version_label = ''""");
         await db.Database.ExecuteSqlRawAsync("""
             WITH latest AS (
                 SELECT DISTINCT ON (boq_id) id

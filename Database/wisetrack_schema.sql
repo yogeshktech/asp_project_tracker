@@ -307,6 +307,7 @@ CREATE TABLE boq_versions (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     boq_id      BIGINT NOT NULL REFERENCES boqs(id) ON DELETE CASCADE,
     version_no  INT NOT NULL,
+    version_label TEXT,
     is_current_baseline BOOLEAN NOT NULL DEFAULT FALSE,
     remarks     TEXT,
     created_by  BIGINT REFERENCES users(id),
