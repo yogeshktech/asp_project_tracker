@@ -2185,11 +2185,11 @@ WTPages.switchProjView = function(view) {
         ${canCreateBudget ? `<button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
         <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
-      + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Actions'], 'budgetBody')
-      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Actions'], 'ccBody', 'cost-center-table-wrap');
+      + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Attachment', 'Actions'], 'budgetBody')
+      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Attachment', 'Actions'], 'ccBody', 'cost-center-table-wrap');
     if (!pid) {
-      $('#budgetBody').innerHTML = emptyRow(8, 'No project available.');
-      $('#ccBody').innerHTML = emptyRow(9, 'No project available.');
+      $('#budgetBody').innerHTML = emptyRow(9, 'No project available.');
+      $('#ccBody').innerHTML = emptyRow(10, 'No project available.');
       return;
     }
     try {
@@ -2241,8 +2241,9 @@ WTPages.switchProjView = function(view) {
           <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
           <td>${esc(b.currency || b.Currency || 'MVR')}</td><td>${esc(versionLabel)}</td>
+          <td>${b.attachmentName ? `<button class="btn sm" title="View attachment" onclick="WTPages.openAttachment('budget', ${b.id}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download attachment" onclick="WTPages.openAttachment('budget', ${b.id}, true)"><i class="fa-solid fa-download"></i></button>` : '<span class="badge amber">Missing</span>'}</td>
           <td class="table-actions">${actions}</td></tr>`;
-      }).join('') || emptyRow(8, 'No budgets');
+      }).join('') || emptyRow(9, 'No budgets');
       const allocationMap = new Map();
       const allocationSources = new Map();
       for (const b of budgets || []) for (const a of (b.allocations || b.Allocations || [])) {
@@ -2288,11 +2289,12 @@ WTPages.switchProjView = function(view) {
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.variance ?? allocated).toLocaleString('en-US')}</td>
           <td><span class="badge ${rollup.budgetStatus === 'Over Budget' ? 'red' : rollup.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(rollup.budgetStatus || 'On Budget')}</span></td>
           <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td>
+          <td>${c.attachmentName ? `<button class="btn sm" title="View attachment" onclick="WTPages.openAttachment('costcenter', ${c.id}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download attachment" onclick="WTPages.openAttachment('costcenter', ${c.id}, true)"><i class="fa-solid fa-download"></i></button>` : '<span class="badge amber">Missing</span>'}</td>
           <td class="table-actions">${childHistoryButton}${canEditCenter ? `<button class="btn sm" title="Edit cost center" aria-label="Edit cost center" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDeleteCenter ? `<button class="btn sm danger" title="Delete cost center" aria-label="Delete cost center" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
-      }).join('') || emptyRow(9, 'No cost centers. Add sub-projects to use them as cost centers.');
+      }).join('') || emptyRow(10, 'No cost centers. Add sub-projects to use them as cost centers.');
     } catch (e) {
-      $('#budgetBody').innerHTML = errRow(8, e);
-      $('#ccBody').innerHTML = errRow(9, e);
+      $('#budgetBody').innerHTML = errRow(9, e);
+      $('#ccBody').innerHTML = errRow(10, e);
       showToast(e.message, 'danger');
     }
   }
@@ -2312,6 +2314,7 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>Approved Amount *</label><input id="bAmt" type="number" step="0.01" value="${budget?.approvedAmount ?? ''}" required></div>
           <div class="field"><label>Currency</label><input id="bCur" value="${esc(currency)}" readonly><small class="card-subtitle">Budget currency follows the project currency.</small></div>
           ${budget ? '<div class="field full"><label>Reason for baseline change (required if amount/currency changes)</label><input id="bReason" maxlength="2000"></div>' : ''}
+          <div class="field full"><label>Attachment * (Excel, PDF, CSV, Word, or TXT; up to 25 MB)</label>${budget?.attachmentName ? `<div class="card-subtitle">Current: ${esc(budget.attachmentName)} <label style="display:block;margin:6px 0"><input id="bRemoveAttachment" type="checkbox"> Remove current file and replace it</label></div>` : '<small class="card-subtitle">Required for every budget.</small>'}<input id="bAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" required></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -2321,13 +2324,14 @@ WTPages.switchProjView = function(view) {
     e.preventDefault();
     try {
       const id = Number($('#bId')?.value) || 0;
-      const payload = {
-        projectId: Number($('#bProj').value),
-        name: $('#bName').value.trim(),
-        approvedAmount: Number($('#bAmt').value),
-        currency: $('#bCur').value.trim() || 'MVR',
-        remarks: $('#bReason')?.value.trim() || null
-      };
+      const payload = new FormData();
+      payload.append('projectId', $('#bProj').value);
+      payload.append('name', $('#bName').value.trim());
+      payload.append('approvedAmount', $('#bAmt').value);
+      payload.append('currency', $('#bCur').value.trim() || 'MVR');
+      payload.append('remarks', $('#bReason')?.value.trim() || '');
+      payload.append('removeAttachment', $('#bRemoveAttachment')?.checked ? 'true' : 'false');
+      if ($('#bAttachment').files[0]) payload.append('attachment', $('#bAttachment').files[0]);
       if (id) await WisetrackAPI.updateBudget(id, payload);
       else await WisetrackAPI.createBudget(payload);
       closeModal(); showToast(id ? 'Budget updated' : 'Budget created'); await pageBudget();
@@ -2455,6 +2459,7 @@ WTPages.switchProjView = function(view) {
         <input type="hidden" id="ccId" value="${existing?.id || ''}">
         <div class="form-grid">
           <div class="field"><label>Name *</label><input id="ccName" value="${esc(existing?.name || '')}" required></div>
+          <div class="field full"><label>Attachment * (Excel, PDF, CSV, Word, or TXT; up to 25 MB)</label>${existing?.attachmentName ? `<div class="card-subtitle">Current: ${esc(existing.attachmentName)} <label style="display:block;margin:6px 0"><input id="ccRemoveAttachment" type="checkbox"> Remove current file and replace it</label></div>` : '<small class="card-subtitle">Required for every cost center.</small>'}<input id="ccAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" required></div>
         </div>
         <p class="card-subtitle" style="margin:8px 0 0">Code auto-assigns (CC-001).</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -2465,7 +2470,11 @@ WTPages.switchProjView = function(view) {
     e.preventDefault();
     try {
       const id = Number($('#ccId')?.value) || 0;
-      const data = { projectId: Number($('#ccProj').value), name: $('#ccName').value.trim() };
+      const data = new FormData();
+      data.append('projectId', $('#ccProj').value);
+      data.append('name', $('#ccName').value.trim());
+      data.append('removeAttachment', $('#ccRemoveAttachment')?.checked ? 'true' : 'false');
+      if ($('#ccAttachment').files[0]) data.append('attachment', $('#ccAttachment').files[0]);
       if (id) await WisetrackAPI.updateCostCenter(id, data); else await WisetrackAPI.createCostCenter(data);
       closeModal(); showToast(id ? 'Cost center updated' : 'Created'); await pageBudget();
     } catch (err) { showToast(err.message, 'danger'); }
@@ -2474,6 +2483,13 @@ WTPages.switchProjView = function(view) {
   async function deleteCC(id) {
     if (!confirm('Delete this cost center? This may fail if it is linked to existing cost entries or allocations.')) return;
     try { await WisetrackAPI.deleteCostCenter(id); await pageBudget(); } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function openAttachment(kind, id, download) {
+    const baseUrl = kind === 'budget' ? `/budgets/${id}/attachment` : `/budgets/cost-centers/${id}/attachment`;
+    const url = download ? `${baseUrl}?download=true` : baseUrl;
+    try { await WisetrackAPI.openFile(url, null, download); }
+    catch (e) { showToast(e.message || 'Could not open attachment.', 'danger'); }
   }
 
   // ---------- COSTS ----------
@@ -2657,7 +2673,7 @@ WTPages.switchProjView = function(view) {
       const version = versions.find(v => v.isCurrentBaseline) || [...versions].sort((a, z) => (z.versionNo || 0) - (a.versionNo || 0))[0];
       return (version?.items || []).map(i => ({ ...i, boqTitle: b.title }));
     });
-    const lineOptions = boqLines.map(i => `<option value="${i.id}">${esc(i.boqTitle)} · ${esc(i.lineNo || '')} ${esc(i.itemCode || i.description || i.itemName || 'BOQ line')}</option>`).join('');
+    const lineOptions = boqLines.map(i => `<option value="${i.id}">${esc(i.itemName || i.ItemName || i.item?.name || i.Item?.name || i.description || i.Description || i.itemCode || i.ItemCode || 'BOQ line')}</option>`).join('');
     openModal(existing ? 'Edit Purchase' : 'Add Purchase', `
       <form onsubmit="WTPages.savePurchase(event)">
         <input type="hidden" id="pProj" value="${pid}">
@@ -2710,7 +2726,7 @@ WTPages.switchProjView = function(view) {
     const lineOptions = boqLines.map(i => {
       const itemName = i.itemName || i.ItemName || i.item?.name || i.Item?.name || i.description || i.Description || i.itemCode || i.ItemCode || 'BOQ line';
       const price = i.unitPrice ?? i.UnitPrice ?? i.unitRate ?? i.UnitRate ?? i.rate ?? i.Rate ?? i.price ?? i.Price;
-      const label = [i.boqTitle, i.lineNo || i.displayLineNo, itemName].filter(Boolean).join(' · ');
+      const label = itemName;
       return `<option value="${i.id}" data-price="${Number(price) || 0}">${esc(label)}</option>`;
     }).join('');
     openModal(existing ? 'Edit Actual Cost' : 'Add Actual Cost', `
@@ -5657,7 +5673,7 @@ WTPages.switchProjView = function(view) {
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
-    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC,
+    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,

@@ -11,6 +11,8 @@ public class CostCenter
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
     public DateTime CreatedAt { get; set; }
     public Project? Project { get; set; }
 }
@@ -23,6 +25,8 @@ public class Budget
     public string Name { get; set; } = string.Empty;
     public decimal ApprovedAmount { get; set; }
     public string Currency { get; set; } = "MVR";
+    public string? AttachmentPath { get; set; }
+    public string? AttachmentName { get; set; }
     public decimal RagAmberPercent { get; set; } = 80;
     public decimal RagRedPercent { get; set; } = 100;
     public string Status { get; set; } = "Draft";

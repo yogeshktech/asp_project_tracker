@@ -526,6 +526,11 @@ async function handleCreateProject(e) {
   const teamUserIds = [...(document.getElementById('projectTeamIds')?.selectedOptions || [])]
     .map(option => Number(option.value)).filter(id => id > 0);
   const initialBudget = Number(document.getElementById('projectInitialBudget')?.value || 0);
+  const initialBudgetAttachment = document.getElementById('projectInitialBudgetAttachment')?.files?.[0];
+  if (initialBudget > 0 && !initialBudgetAttachment) {
+    showToast('Attach a supporting file for the initial budget.', 'danger');
+    return;
+  }
   const code = document.getElementById('projectCode')?.value.trim() || null;
   const clientName = document.getElementById('projectClient')?.value.trim() || null;
   const sponsor = document.getElementById('projectSponsor')?.value.trim() || null;
@@ -568,7 +573,13 @@ async function handleCreateProject(e) {
     let budgetWarning = '';
     if (initialBudget > 0) {
       try {
-        await WisetrackAPI.createBudget({ projectId, name: 'Initial Project Budget', approvedAmount: initialBudget, currency });
+        const budgetData = new FormData();
+        budgetData.append('projectId', String(projectId));
+        budgetData.append('name', 'Initial Project Budget');
+        budgetData.append('approvedAmount', String(initialBudget));
+        budgetData.append('currency', currency);
+        budgetData.append('attachment', initialBudgetAttachment);
+        await WisetrackAPI.createBudget(budgetData);
       } catch (budgetErr) {
         budgetWarning = ` Project saved, but initial budget could not be added: ${budgetErr.message}`;
       }
@@ -692,6 +703,8 @@ async function openCreateProjectModal(preselectedParentId = null) {
         <div class="field" id="initialProjectBudgetField">
           <label>Initial Approved Budget</label>
           <input type="number" id="projectInitialBudget" min="0" step="0.01" placeholder="Leave blank to add later">
+          <label style="margin-top:8px">Budget Attachment (required when amount is entered)</label>
+          <input type="file" id="projectInitialBudgetAttachment" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt">
         </div>
         <div class="field">
           <label>Project Team</label>

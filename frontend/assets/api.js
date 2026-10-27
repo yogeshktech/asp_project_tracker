@@ -40,7 +40,7 @@ const WisetrackAPI = {
   async _fetch(url, options = {}) {
     const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => controller.abort(), isForm ? 120000 : 20000);
     if (options.signal) options.signal.addEventListener('abort', () => controller.abort(), { once: true });
     let res;
     try {
@@ -84,6 +84,27 @@ const WisetrackAPI = {
       throw error;
     } finally {
       clearTimeout(timeout);
+    }
+  },
+
+  async openFile(url, fileName, download = false) {
+    const viewer = download ? null : window.open('about:blank', '_blank');
+    let response;
+    try { response = await fetch(`${API_BASE}${url}`, { headers: this._headers(false) }); }
+    catch (error) { if (viewer) viewer.close(); throw error; }
+    if (!response.ok) { if (viewer) viewer.close(); throw new Error(response.status === 404 ? 'Attachment not found.' : 'Could not open attachment.'); }
+    const disposition = response.headers.get('content-disposition') || '';
+    const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+    fileName = fileName || (encodedName ? decodeURIComponent(encodedName) : plainName) || 'attachment';
+    const blobUrl = URL.createObjectURL(await response.blob());
+    if (download) {
+      const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'attachment';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } else {
+      if (viewer) viewer.location.href = blobUrl;
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     }
   },
 
@@ -221,13 +242,13 @@ const WisetrackAPI = {
 
   // Budgets
   getBudgets(projectId) { return this.get(`/budgets/project/${projectId}`); },
-  createBudget(data) { return this.post('/budgets', data); },
-  updateBudget(id, data) { return this.put(`/budgets/${id}`, data); },
+  createBudget(data) { return this._fetch('/budgets', { method: 'POST', body: data }); },
+  updateBudget(id, data) { return this._fetch(`/budgets/${id}`, { method: 'PUT', body: data }); },
   deleteBudget(id) { return this.del(`/budgets/${id}`); },
   reviseBudget(id, data) { return this.post(`/budgets/${id}/revise`, data); },
   getCostCenters(projectId) { return this.get(`/budgets/cost-centers${projectId ? '?projectId=' + projectId : ''}`); },
-  createCostCenter(data) { return this.post('/budgets/cost-centers', data); },
-  updateCostCenter(id, data) { return this.put(`/budgets/cost-centers/${id}`, data); },
+  createCostCenter(data) { return this._fetch('/budgets/cost-centers', { method: 'POST', body: data }); },
+  updateCostCenter(id, data) { return this._fetch(`/budgets/cost-centers/${id}`, { method: 'PUT', body: data }); },
   deleteCostCenter(id) { return this.del(`/budgets/cost-centers/${id}`); },
   allocateBudget(data) { return this.post('/budgets/allocations', data); },
 

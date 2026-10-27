@@ -76,6 +76,10 @@ public static class DatabaseBootstrap
             """);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE projects ALTER COLUMN currency SET DEFAULT 'MVR'""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ALTER COLUMN currency SET DEFAULT 'MVR'""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ALTER COLUMN currency SET DEFAULT 'MVR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE projects SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budgets SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
