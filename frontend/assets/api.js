@@ -89,7 +89,10 @@ const WisetrackAPI = {
 
   async fetchFile(url) {
     const response = await fetch(`${API_BASE}${url}`, { headers: this._headers(false) });
-    if (!response.ok) throw new Error(response.status === 404 ? 'Attachment not found.' : 'Could not open attachment.');
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.message || (response.status === 404 ? 'Attachment not found.' : 'Could not open attachment.'));
+    }
     const disposition = response.headers.get('content-disposition') || '';
     const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
     const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];

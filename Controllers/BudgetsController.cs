@@ -72,7 +72,7 @@ public class BudgetsController : ControllerBase
     public async Task<IActionResult> BudgetAttachment(long id, long attachmentId, [FromQuery] bool download = false)
     {
         var budget = await _db.Budgets.AsNoTracking().Include(b => b.Attachments).FirstOrDefaultAsync(b => b.Id == id);
-        if (budget == null || !budget.Attachments.Any(a => a.Id == attachmentId)) return NotFound();
+        if (budget == null || !budget.Attachments.Any(a => a.Id == attachmentId)) return NotFound(new { message = "Attachment record not found." });
         if (!(await _budgetService.GetByProjectAsync(UserId, budget.ProjectId)).Any(b => b.Id == id)) return NotFound();
         var attachment = budget.Attachments.First(a => a.Id == attachmentId);
         return ServeAttachment(attachment.FilePath, attachment.FileName, download);
@@ -165,7 +165,8 @@ public class BudgetsController : ControllerBase
         if (center == null) return NotFound();
         var visible = await _budgetService.GetCostCentersAsync(UserId, center.ProjectId);
         var attachment = center.Attachments.FirstOrDefault(a => a.Id == attachmentId);
-        if (!visible.Any(c => c.Id == id) || attachment == null) return NotFound();
+        if (!visible.Any(c => c.Id == id)) return NotFound();
+        if (attachment == null) return NotFound(new { message = "Attachment record not found." });
         return ServeAttachment(attachment.FilePath, attachment.FileName, download);
     }
 
@@ -213,10 +214,10 @@ public class BudgetsController : ControllerBase
     private IActionResult ServeAttachment(string? path, string? name, bool download)
     {
         if (string.IsNullOrWhiteSpace(path)) return NotFound();
-        var stored = Path.GetFileName(path);
+        var stored = Path.GetFileName(path.Replace('\\', '/'));
         if (!stored.StartsWith("budget_", StringComparison.Ordinal) && !stored.StartsWith("costcenter_", StringComparison.Ordinal)) return NotFound();
-        var fullPath = Path.Combine(_env.ContentRootPath, "uploads", stored);
-        if (!System.IO.File.Exists(fullPath)) return NotFound();
+        var fullPath = FindStoredFile(stored);
+        if (fullPath == null) return NotFound(new { message = "The attachment record exists, but its file is missing from server storage. Re-upload the file to view it." });
         var contentType = new FileExtensionContentTypeProvider().TryGetContentType(stored, out var detected) ? detected : "application/octet-stream";
         return PhysicalFile(fullPath, contentType, download ? Path.GetFileName(name ?? stored) : null, enableRangeProcessing: true);
     }
@@ -224,12 +225,21 @@ public class BudgetsController : ControllerBase
     private void DeleteStoredFile(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        var stored = Path.GetFileName(path);
+        var stored = Path.GetFileName(path.Replace('\\', '/'));
         if (stored.StartsWith("budget_", StringComparison.Ordinal) || stored.StartsWith("costcenter_", StringComparison.Ordinal))
         {
-            var fullPath = Path.Combine(_env.ContentRootPath, "uploads", stored);
-            if (System.IO.File.Exists(fullPath)) System.IO.File.Delete(fullPath);
+            foreach (var fullPath in CandidateStoredFilePaths(stored))
+                if (System.IO.File.Exists(fullPath)) System.IO.File.Delete(fullPath);
         }
+    }
+
+    private string? FindStoredFile(string stored) => CandidateStoredFilePaths(stored).FirstOrDefault(System.IO.File.Exists);
+
+    private IEnumerable<string> CandidateStoredFilePaths(string stored)
+    {
+        yield return Path.Combine(_env.ContentRootPath, "uploads", stored);
+        if (!string.IsNullOrWhiteSpace(_env.WebRootPath)) yield return Path.Combine(_env.WebRootPath, "uploads", stored);
+        yield return Path.Combine(_env.ContentRootPath, "wwwroot", "uploads", stored);
     }
 
     private void DeleteStoredFiles(IEnumerable<string?> paths)
