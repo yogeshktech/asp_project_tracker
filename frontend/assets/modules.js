@@ -3158,12 +3158,7 @@ WTPages.switchProjView = function(view) {
       closeModal(); showToast(targetBoqId ? 'Imported as a new BOQ revision' : 'Imported');
       if (targetBoqId) await viewBoq(targetBoqId); else await pageBoq();
     } catch (err) {
-      if ($('#boqFile')?.files?.[0]) {
-        const csvCell = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
-        const report = '\uFEFFRow,Field,Message\n' + [0, 'Columns', err.message || 'File could not be read.'].map(csvCell).join(',');
-        if (typeof wtDownloadText === 'function') wtDownloadText('boq-validation-errors.csv', report);
-        showToast(`${err.message || 'File validation failed.'} Error report downloaded; correct the source file and import again.`, 'danger');
-      } else showToast(err.message, 'danger');
+      showToast(err.message || 'BOQ import failed. Please retry.', 'danger');
     }
   }
 

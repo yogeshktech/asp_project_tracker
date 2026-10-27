@@ -79,8 +79,6 @@ public class BOQService : IBOQService
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, dto.ProjectId, "BOQ", dto.Commit ? "edit" : "view");
         var result = new BOQValidationResultDto { TotalRows = dto.Lines.Count };
-        var seenCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenItems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (var i = 0; i < dto.Lines.Count; i++)
         {
@@ -126,17 +124,6 @@ public class BOQService : IBOQService
                 Math.Abs(row.TotalAmount.Value - calculatedAmount.Value) > 0.01m)
                 result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "TotalAmount", Message = $"Total amount {row.TotalAmount.Value:0.##} does not match quantity × unit price ({calculatedAmount.Value:0.##})." });
 
-            if (!string.IsNullOrWhiteSpace(row.ItemCode))
-            {
-                if (!seenCodes.Add(row.ItemCode))
-                    result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "ItemCode", Message = "Duplicate item code in import." });
-            }
-
-            var duplicateKey = !string.IsNullOrWhiteSpace(row.ItemCode)
-                ? "code:" + row.ItemCode.Trim()
-                : "item:" + (row.Description?.Trim() ?? "") + "|" + (row.Unit?.Trim() ?? "");
-            if (!seenItems.Add(duplicateKey) && string.IsNullOrWhiteSpace(row.ItemCode) && !string.IsNullOrWhiteSpace(row.Description))
-                result.Errors.Add(new BOQValidationErrorDto { Row = rowNo, Field = "Description", Message = "Duplicate item description and unit in import." });
         }
 
         result.ErrorCount = result.Errors.Count;
