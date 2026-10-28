@@ -145,7 +145,7 @@ public class BOQService : IBOQService
             var nextVersionNo = latest.VersionNo + 1;
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextMajorVersionLabel(boq.Versions), IsCurrentBaseline = false,
+                BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextBaselineVersionLabel(boq.Versions), IsCurrentBaseline = false,
                 Remarks = string.IsNullOrWhiteSpace(dto.Remarks) ? "Imported revision" : dto.Remarks,
                 CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
@@ -244,7 +244,7 @@ public class BOQService : IBOQService
             var nextVersionNo = latest.VersionNo + 1;
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextMajorVersionLabel(boq.Versions), IsCurrentBaseline = false,
+                BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextBaselineVersionLabel(boq.Versions), IsCurrentBaseline = false,
                 Remarks = string.IsNullOrWhiteSpace(revisionNotes) ? null : revisionNotes.Trim(), CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
             lines.AddRange(latest.Items.Select(item => new BoqItem
@@ -370,9 +370,8 @@ public class BOQService : IBOQService
     private static string NextBaselineVersionLabel(IEnumerable<BoqVersion> versions)
     {
         var allVersions = versions.ToList();
-        var baseline = allVersions.FirstOrDefault(version => version.IsCurrentBaseline)
-            ?? allVersions.OrderByDescending(version => version.VersionNo).First();
-        var major = VersionMajor(baseline);
+        var firstVersion = allVersions.OrderBy(version => version.VersionNo).First();
+        var major = VersionMajor(firstVersion);
         var maxMinor = allVersions
             .Where(version => VersionMajor(version) == major)
             .Select(version => VersionLabelOf(version).Split('.', 2))
@@ -390,6 +389,9 @@ public class BOQService : IBOQService
         await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "update");
         var selected = boq.Versions.SingleOrDefault(v => v.Id == versionId);
         if (selected == null) return null;
+        var firstVersion = boq.Versions.OrderBy(v => v.VersionNo).FirstOrDefault();
+        if (firstVersion != null && selected.Id != firstVersion.Id)
+            throw new InvalidOperationException("The first BOQ version is the permanent baseline and cannot be changed.");
         await _repository.SetCurrentBaselineAsync(boqId, versionId);
         foreach (var version in boq.Versions) version.IsCurrentBaseline = version.Id == versionId;
         await _audit.LogAsync(userId, "SetBaseline", "BOQ", boqId, $"Current baseline set to version {selected.VersionNo}");

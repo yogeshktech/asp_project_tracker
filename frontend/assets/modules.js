@@ -2916,7 +2916,6 @@ WTPages.switchProjView = function(view) {
         <td>${(() => { const vs = b.versions || b.Versions || []; const latest = vs.slice().sort((a, c) => Number(c.versionNo || c.VersionNo || 0) - Number(a.versionNo || a.VersionNo || 0))[0]; const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); const label = v => v?.versionLabel || v?.VersionLabel || v?.versionNo || v?.VersionNo || '-'; return `Latest v${label(latest)} / Baseline v${label(base)}`; })()}</td>
         <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '-')}</td>
         <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button>
-        ${canCreateBoq ? `<button class="btn sm" onclick="WTPages.createBoqRevision(${b.id})">Revise Baseline</button>` : ''} 
         ${canUpdateBoq ? `<button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button>` : ''}</td></tr>`
       ).join('') : emptyRow(6, 'No BOQ - import or create from master');
       $('#boqVersionsBody').innerHTML = versionRows.length ? versionRows.map(({ boq: b, version: v }) => {
@@ -2928,7 +2927,7 @@ WTPages.switchProjView = function(view) {
           <td>${esc(v.remarks || v.Remarks || '-')}</td>
           <td>${isBaseline ? '<span class="badge green">Current Baseline</span>' : '-'}</td>
           <td><button class="btn sm" onclick="WTPages.viewBoqVersion(${b.id || b.Id},${versionId})">View</button>
-          ${!isBaseline && canUpdateBoq ? `<button class="btn sm" onclick="WTPages.setBoqBaseline(${b.id || b.Id},${versionId})">Set as baseline</button>` : ''}</td></tr>`;
+          ${canCreateBoq ? `<button class="btn sm" onclick="WTPages.createBoqRevision(${b.id || b.Id})">Add additional item</button>` : ''}</td></tr>`;
       }).join('') : emptyRow(6, 'No BOQ versions found.');
     } catch (e) { $('#boqBody').innerHTML = errRow(6, e); $('#boqVersionsBody').innerHTML = errRow(6, e); }
   }
