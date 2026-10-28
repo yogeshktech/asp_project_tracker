@@ -2164,12 +2164,12 @@ button.btn[disabled] {
 
 .project-context-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  overflow-x: auto;
+  overflow: visible;
   margin: 0 0 18px;
   padding: 0 0 8px;
   border-bottom: 1px solid var(--border-color);
-  scrollbar-width: thin;
 }
 
 .project-context-tab {

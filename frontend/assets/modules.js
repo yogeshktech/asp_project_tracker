@@ -105,8 +105,8 @@
   async function selectedProjectId(projects = null) {
     projects = projects || await loadProjectsList();
     if (!projects.length) {
-      localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
-      return null;
+      // Keep the selected project during temporary API/list failures so project tabs remain available.
+      return localStorage.getItem('WISETRACK_SELECTED_PROJECT') || null;
     }
     const stored = localStorage.getItem('WISETRACK_SELECTED_PROJECT');
     if (stored && projects.some(p => String(p.id) === String(stored))) {
@@ -134,7 +134,9 @@
       const active = page === href;
       return `<a class="project-context-tab${active ? ' active' : ''}"${active ? ' aria-current="page"' : ''} href="${href}?projectId=${encodeURIComponent(projectId)}">${label}</a>`;
     }).join('')}</nav>`;
-    el.querySelector('.head')?.insertAdjacentHTML('afterend', nav);
+    const head = el.querySelector('.head');
+    if (head) head.insertAdjacentHTML('afterend', nav);
+    else el.insertAdjacentHTML('afterbegin', nav);
   }
 
   /** Parent + descendant ids — used for BOQ / inventory roll-up only. Tasks use the selected project alone. */
@@ -5880,6 +5882,9 @@ WTPages.switchProjView = function(view) {
         <p style="margin:0">${esc(err.message || err)}</p>
         <p style="margin:12px 0 0;font-size:12px;color:var(--text-muted)">Check login token / API, then refresh. Stale project selection is cleared on next load.</p>
       </div>`;
+      if (PROJECT_CONTEXT_PAGES.has(page)) {
+        renderProjectContextTabs(page, localStorage.getItem('WISETRACK_SELECTED_PROJECT'));
+      }
       console.error(err);
     }
   }
