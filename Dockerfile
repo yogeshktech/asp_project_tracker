@@ -27,4 +27,7 @@ RUN dotnet publish "./project-tracker-madhu.csproj" -c $BUILD_CONFIGURATION -o /
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+USER root
+RUN mkdir -p /app/uploads && chown $APP_UID:$APP_UID /app/uploads
+USER $APP_UID
 ENTRYPOINT ["dotnet", "project-tracker-madhu.dll"]

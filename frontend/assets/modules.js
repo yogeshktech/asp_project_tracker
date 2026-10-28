@@ -3201,7 +3201,7 @@ WTPages.switchProjView = function(view) {
                 <td>${!canEditRevision ? (it.quantity ?? it.Quantity ?? 0) : `<input id="boqQty-${it.id || it.Id}" type="number" min="0.0001" step="0.0001" value="${it.quantity ?? it.Quantity ?? 0}" style="width:92px" oninput="WTPages.calcBoqRevisionTotals(${it.id || it.Id})">`}</td>
                 <td>${!canEditRevision ? esc(it.description || it.Description || it.itemName || '—') : `<input id="boqDesc-${it.id || it.Id}" value="${esc(it.description || it.Description || '')}" style="min-width:150px">`}</td>
                 <td>${(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl) ? `<a href="${esc(it.imageUrl || it.ImageUrl || it.item?.imageUrl || it.Item?.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
-                <td><strong id="boqAmount-${it.id || it.Id}">MVR ${Number(it.amount ?? it.Amount ?? 0).toLocaleString('en-US')}</strong></td>
+                <td><strong id="boqAmount-${it.id || it.Id}">${Number(it.amount ?? it.Amount ?? 0).toLocaleString('en-US')}</strong></td>
                 <td>${esc(it.brand || it.Brand || it.item?.brand?.name || it.Item?.brand?.name || '—')}</td>
                 <td>${!canEditRevision ? esc(it.remarks || it.Remarks || '—') : `<input id="boqRemark-${it.id || it.Id}" value="${esc(it.remarks || it.Remarks || '')}" style="min-width:120px">`}</td>
                 <td>${(it.attachmentPath || it.AttachmentPath) ? `<button class="btn sm" onclick="WTPages.downloadBoqAttachment('${encodeURIComponent(it.attachmentPath || it.AttachmentPath)}','${encodeURIComponent(it.attachmentName || it.AttachmentName || 'boq-attachment')}')">${esc(it.attachmentName || it.AttachmentName || 'Download')}</button>` : '—'}</td>
@@ -3272,7 +3272,7 @@ WTPages.switchProjView = function(view) {
     const regularTotal = document.getElementById('boqAmount-' + itemId);
     const additionalTotal = document.getElementById('boqAdditionalAmount-' + itemId);
     const allTotal = document.getElementById('boqAllTotal-' + itemId);
-    if (regularTotal) regularTotal.textContent = 'MVR ' + format(amount);
+    if (regularTotal) regularTotal.textContent = format(amount);
     if (additionalTotal) additionalTotal.textContent = format(additionalAmount);
     if (allTotal) allTotal.textContent = format(amount + additionalAmount);
   }
