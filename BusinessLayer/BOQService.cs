@@ -170,7 +170,7 @@ public class BOQService : IBOQService
             });
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = 1, VersionLabel = "1", IsCurrentBaseline = true, Remarks = dto.Remarks,
+                BoqId = boq.Id, VersionNo = 1, VersionLabel = "1.0", IsCurrentBaseline = true, Remarks = dto.Remarks,
                 CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
             lines = new List<BoqItem>();
@@ -268,7 +268,7 @@ public class BOQService : IBOQService
             });
             version = await _repository.AddVersionAsync(new BoqVersion
             {
-                BoqId = boq.Id, VersionNo = 1, VersionLabel = "1", IsCurrentBaseline = true,
+                BoqId = boq.Id, VersionNo = 1, VersionLabel = "1.0", IsCurrentBaseline = true,
                 CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
         }
@@ -355,31 +355,10 @@ public class BOQService : IBOQService
         return revision;
     }
 
-    private static string VersionLabelOf(BoqVersion version) =>
-        string.IsNullOrWhiteSpace(version.VersionLabel) ? version.VersionNo.ToString() : version.VersionLabel.Trim();
-
-    private static int VersionMajor(BoqVersion version)
-    {
-        var majorText = VersionLabelOf(version).Split('.', 2)[0];
-        return int.TryParse(majorText, out var major) ? major : version.VersionNo;
-    }
-
-    private static string NextMajorVersionLabel(IEnumerable<BoqVersion> versions) =>
-        ((versions.Any() ? versions.Max(VersionMajor) : 0) + 1).ToString();
-
     private static string NextBaselineVersionLabel(IEnumerable<BoqVersion> versions)
     {
         var allVersions = versions.ToList();
-        var firstVersion = allVersions.OrderBy(version => version.VersionNo).First();
-        var major = VersionMajor(firstVersion);
-        var maxMinor = allVersions
-            .Where(version => VersionMajor(version) == major)
-            .Select(version => VersionLabelOf(version).Split('.', 2))
-            .Where(parts => parts.Length == 2 && int.TryParse(parts[1], out _))
-            .Select(parts => int.Parse(parts[1]))
-            .DefaultIfEmpty(0)
-            .Max();
-        return $"{major}.{maxMinor + 1}";
+        return $"1.{allVersions.Count}";
     }
 
     public async Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId)
@@ -411,18 +390,22 @@ public class BOQService : IBOQService
         if (request.AdditionalConsumptionUnitPrice < 0) throw new InvalidOperationException("Price for additional consumption cannot be negative.");
         var item = await _repository.GetItemAsync(itemId);
         if (item == null || item.BoqVersionId != versionId) return null;
-        var isItemMaster = item.ItemId.HasValue;
-        if (!isItemMaster && request.UnitPrice < 0) throw new InvalidOperationException("Purchase price cannot be negative.");
-        var unitPrice = isItemMaster ? item.UnitPrice : request.UnitPrice;
-        var description = isItemMaster ? item.Description : request.Description?.Trim();
+        if (request.UnitPrice != item.UnitPrice)
+            throw new InvalidOperationException("Purchase price cannot be changed in a BOQ revision.");
+        if (request.Quantity != item.Quantity)
+            throw new InvalidOperationException("Quantity cannot be changed in a BOQ revision.");
+        if (!string.Equals(request.Description?.Trim(), item.Description?.Trim(), StringComparison.Ordinal))
+            throw new InvalidOperationException("Description cannot be changed in a BOQ revision.");
+        var unitPrice = item.UnitPrice;
+        var description = item.Description;
         var previousVersion = boq.Versions.Where(v => v.VersionNo < latest.VersionNo).OrderByDescending(v => v.VersionNo).FirstOrDefault();
         var previousItem = previousVersion?.Items.FirstOrDefault(i => i.LineNo == item.LineNo);
         var remarks = request.Remarks?.Trim();
         var lineChanged = previousItem != null &&
-            (previousItem.Quantity != request.Quantity || (!isItemMaster && previousItem.UnitPrice != unitPrice) ||
+            (previousItem.Quantity != item.Quantity || previousItem.UnitPrice != unitPrice ||
              previousItem.AdditionalConsumption != request.AdditionalConsumption ||
              previousItem.AdditionalConsumptionUnitPrice != request.AdditionalConsumptionUnitPrice ||
-             (!isItemMaster && !string.Equals(previousItem.Description, description, StringComparison.Ordinal)) ||
+             !string.Equals(previousItem.Description, description, StringComparison.Ordinal) ||
              !string.Equals(previousItem.Remarks, remarks, StringComparison.Ordinal));
         decimal amount, additionalAmount, allTotal;
         try
@@ -443,14 +426,11 @@ public class BOQService : IBOQService
             }
             else item.DisplayLineNo = previousSerial;
         }
-        item.Quantity = request.Quantity;
-        item.UnitPrice = unitPrice;
         item.Amount = amount;
         item.AdditionalConsumption = request.AdditionalConsumption;
         item.AdditionalConsumptionUnitPrice = request.AdditionalConsumptionUnitPrice;
         item.AdditionalConsumptionAmount = additionalAmount;
         item.AllTotal = allTotal;
-        item.Description = description;
         item.Remarks = remarks;
         await _repository.UpdateItemAsync(item);
         await _audit.LogAsync(userId, "UpdateRevisionLine", "BOQ", boqId, $"Version {latest.VersionNo}, line {itemId}");
