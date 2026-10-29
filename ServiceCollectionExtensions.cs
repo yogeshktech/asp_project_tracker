@@ -33,6 +33,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddWisetrackModules(this IServiceCollection services)
     {
         services.AddSingleton<JwtTokenGenerator>();
+        services.AddSingleton<IUploadStorage, UploadStorage>();
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IPermissionService, PermissionService>();

@@ -18,13 +18,13 @@ public class BOQController : ControllerBase
 {
     private readonly IBOQService _boqService;
     private readonly IPermissionService _permissions;
-    private readonly IWebHostEnvironment _env;
+    private readonly IUploadStorage _storage;
     private readonly AppDbContext _db;
-    public BOQController(IBOQService boqService, IPermissionService permissions, IWebHostEnvironment env, AppDbContext db)
+    public BOQController(IBOQService boqService, IPermissionService permissions, IUploadStorage storage, AppDbContext db)
     {
         _boqService = boqService;
         _permissions = permissions;
-        _env = env;
+        _storage = storage;
         _db = db;
     }
     private long UserId => UserContext.GetUserId(User)!.Value;
@@ -185,12 +185,10 @@ public class BOQController : ControllerBase
     {
         if (request.File == null || request.File.Length == 0) return BadRequest(new { message = "Choose a file to attach." });
         await _permissions.EnsureModuleAsync(UserId, request.ProjectId, "BOQ", "edit");
-        var uploads = Path.Combine(_env.ContentRootPath, "uploads");
-        Directory.CreateDirectory(uploads);
         var name = Path.GetFileName(request.File.FileName);
         var stored = $"boq_{request.ProjectId}_{Guid.NewGuid():N}";
-        var path = Path.Combine(uploads, stored);
-        await using (var stream = System.IO.File.Create(path)) await request.File.CopyToAsync(stream);
+        await using (var stream = request.File.OpenReadStream())
+            await _storage.SaveAsync(stored, stream, request.File.ContentType);
         return Ok(new { path = $"/boq/projects/{request.ProjectId}/attachments/{stored}", fileName = name });
     }
 
@@ -201,9 +199,9 @@ public class BOQController : ControllerBase
         if (!string.Equals(safeName, storedName, StringComparison.Ordinal)) return BadRequest();
         if (!safeName.StartsWith($"boq_{projectId}_", StringComparison.Ordinal)) return NotFound();
         if (!await _permissions.CanViewModuleAsync(UserId, projectId, "BOQ")) return Forbid();
-        var filePath = Path.Combine(_env.ContentRootPath, "uploads", safeName);
-        if (!System.IO.File.Exists(filePath)) return NotFound();
-        return PhysicalFile(filePath, "application/octet-stream", "boq-attachment", enableRangeProcessing: true);
+        var stream = await _storage.OpenReadAsync(safeName);
+        if (stream == null) return NotFound();
+        return File(stream, "application/octet-stream", "boq-attachment", enableRangeProcessing: true);
     }
 }
 

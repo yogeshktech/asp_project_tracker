@@ -12,6 +12,13 @@ services:
       ASPNETCORE_HTTP_PORTS: 8080
       ConnectionStrings__AppDbContextConnection: ${APP_DB_CONNECTION:?Set APP_DB_CONNECTION in the deployment environment}
       Jwt__Key: ${JWT_KEY:?Set JWT_KEY in the deployment environment}
+      DigitalOcean__AccessKey: ${DO_SPACES_ACCESS_KEY:?Set DO_SPACES_ACCESS_KEY in the deployment environment}
+      DigitalOcean__SecretKey: ${DO_SPACES_SECRET_KEY:?Set DO_SPACES_SECRET_KEY in the deployment environment}
+      DigitalOcean__BucketName: ${DO_SPACES_BUCKET:-mytrackwize}
+      DigitalOcean__Region: ${DO_SPACES_REGION:-SFO3}
+      DigitalOcean__ServiceUrl: ${DO_SPACES_SERVICE_URL:-https://sfo3.digitaloceanspaces.com}
+      DigitalOcean__PublicBaseUrl: ${DO_SPACES_PUBLIC_BASE_URL:-https://mytrackwize.sfo3.digitaloceanspaces.com}
+      DigitalOcean__SigningRegion: ${DO_SPACES_SIGNING_REGION:-us-east-1}
     volumes:
       - uploads_data:/app/uploads
 

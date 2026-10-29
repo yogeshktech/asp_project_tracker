@@ -1,7 +1,10 @@
-@"
 .vs/
 bin/
 obj/
 *.user
 *.suo
-"@ | Out-File -Encoding utf8 .gitignore
+.env
+.env.*
+!.env.example
+uploads/*
+!uploads/.gitkeep

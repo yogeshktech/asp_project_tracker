@@ -13,14 +13,14 @@ namespace project_tracker_madhu.Controllers;
 public class FilesController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly IWebHostEnvironment _env;
+    private readonly IUploadStorage _storage;
     private readonly IAuditService _audit;
     private readonly IPermissionService _permissions;
 
-    public FilesController(AppDbContext db, IWebHostEnvironment env, IAuditService audit, IPermissionService permissions)
+    public FilesController(AppDbContext db, IUploadStorage storage, IAuditService audit, IPermissionService permissions)
     {
         _db = db;
-        _env = env;
+        _storage = storage;
         _audit = audit;
         _permissions = permissions;
     }
@@ -63,9 +63,9 @@ public class FilesController : ControllerBase
             !await _permissions.CanViewModuleAsync(UserContext.GetUserId(User)!.Value, record.RelatedId.Value, "Closure")) return Forbid();
         if (string.Equals(record.Module, "Inventory", StringComparison.OrdinalIgnoreCase) && record.RelatedId.HasValue &&
             !await _permissions.CanViewModuleAsync(UserContext.GetUserId(User)!.Value, record.RelatedId.Value, "Closure")) return Forbid();
-        var path = Path.Combine(_env.ContentRootPath, "uploads", Path.GetFileName(record.FilePath));
-        if (!System.IO.File.Exists(path)) return NotFound();
-        return PhysicalFile(path, record.ContentType ?? "application/octet-stream", record.FileName);
+        var stream = await _storage.OpenReadAsync(Path.GetFileName(record.FilePath));
+        if (stream == null) return NotFound();
+        return File(stream, record.ContentType ?? "application/octet-stream", record.FileName, enableRangeProcessing: true);
     }
 
     [HttpPost]
@@ -118,14 +118,10 @@ public class FilesController : ControllerBase
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "A file is required." });
 
-        var dir = Path.Combine(_env.ContentRootPath, "uploads");
-        Directory.CreateDirectory(dir);
-
         var original = Path.GetFileName(file.FileName);
         var stored = $"{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}_{original}";
-        var physical = Path.Combine(dir, stored);
-        await using (var stream = System.IO.File.Create(physical))
-            await file.CopyToAsync(stream);
+        await using (var stream = file.OpenReadStream())
+            await _storage.SaveAsync(stored, stream, file.ContentType);
 
         var record = new FileRecord
         {
@@ -138,10 +134,18 @@ public class FilesController : ControllerBase
             UploadedBy = UserContext.GetUserId(User),
             UploadedAt = DateTime.UtcNow
         };
-        _db.FileRecords.Add(record);
-        await _db.SaveChangesAsync();
-        await _audit.LogAsync(UserContext.GetUserId(User), "Create", "File", record.Id, original);
-        return Ok(record);
+        try
+        {
+            _db.FileRecords.Add(record);
+            await _db.SaveChangesAsync();
+            await _audit.LogAsync(UserContext.GetUserId(User), "Create", "File", record.Id, original);
+            return Ok(record);
+        }
+        catch
+        {
+            await _storage.DeleteAsync(stored);
+            throw;
+        }
     }
 
     private async Task<bool> CanViewTaskFilesAsync(long userId, long taskId)

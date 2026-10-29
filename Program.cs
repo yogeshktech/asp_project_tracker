@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
@@ -8,6 +9,7 @@ using Microsoft.OpenApi;
 using project_tracker_madhu;
 using project_tracker_madhu.DatabaseLayer;
 using project_tracker_madhu.DatabaseLayer.Context;
+using project_tracker_madhu.Common;
 using project_tracker_madhu.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -184,6 +186,15 @@ app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(uploadsPath),
     RequestPath = "/uploads"
+});
+app.MapGet("/uploads/{**key}", async (string key, IUploadStorage storage, CancellationToken cancellationToken) =>
+{
+    var stream = await storage.OpenReadAsync(key, cancellationToken);
+    if (stream == null) return (IResult)Results.NotFound();
+    var contentType = new FileExtensionContentTypeProvider().TryGetContentType(key, out var detected)
+        ? detected
+        : "application/octet-stream";
+    return (IResult)Results.File(stream, contentType, enableRangeProcessing: true);
 });
 
 app.MapStaticAssets();
