@@ -53,7 +53,7 @@ async function fillResortSelector() {
     const resorts = await WisetrackAPI.getResorts();
     const selected = localStorage.getItem('WISETRACK_SELECTED_RESORT') || '';
     sel.innerHTML = (resorts || []).map(r =>
-      `<option value="${r.id}" ${String(r.id) === String(selected) ? 'selected' : ''}>${esc(r.name)}${r.code ? ' (' + esc(r.code) + ')' : ''}</option>`
+      `<option value="${r.id}" ${String(r.id) === String(selected) ? 'selected' : ''}>${esc(r.name)}</option>`
     ).join('') || '<option value="">No resorts</option>';
     if (resorts?.length && !selected) {
       localStorage.setItem('WISETRACK_SELECTED_RESORT', String(resorts[0].id));
@@ -139,7 +139,7 @@ async function fillProjectSelector() {
       const expanded = window.wtProjectExpanded.has(id);
       return `<div class="project-tree-row" style="--tree-depth:${depth}">
         ${kids.length ? `<button type="button" class="project-tree-expand" aria-label="${expanded ? 'Collapse' : 'Expand'} ${esc(p.name || p.title)}" aria-expanded="${expanded}" onclick="wtToggleProjectNode(${id})"><i class="fa-solid fa-chevron-${expanded ? 'down' : 'right'}"></i></button>` : '<span class="project-tree-spacer"></span>'}
-        <button type="button" class="project-tree-option${String(p.id) === String(cur) ? ' selected' : ''}" onclick="wtChooseProject(${id})">${esc(p.name || p.title)} <small>${esc(p.code || '#' + p.id)}</small></button>
+        <button type="button" class="project-tree-option${String(p.id) === String(cur) ? ' selected' : ''}" onclick="wtChooseProject(${id})">${esc(p.name || p.title)}</button>
       </div>${kids.length && expanded ? renderBranch(id, depth + 1) : ''}`;
     };
     const renderBranch = (parentId, depth = 0) => (children.get(Number(parentId)) || []).map(p => renderNode(p, depth)).join('');
@@ -149,7 +149,7 @@ async function fillProjectSelector() {
     });
     menu.innerHTML = roots.length ? roots.map(p => renderNode(p)).join('') : '<div class="project-tree-empty">No projects</div>';
     const selected = tree.find(p => String(p.id) === String(cur));
-    button.innerHTML = `${esc(selected ? (selected.name || selected.title) : 'No projects')} <small>${selected ? esc(selected.code || '#' + selected.id) : ''}</small><i class="fa-solid fa-chevron-down"></i>`;
+    button.innerHTML = `${esc(selected ? (selected.name || selected.title) : 'No projects')}<i class="fa-solid fa-chevron-down"></i>`;
   } catch (err) {
     menu.innerHTML = `<div class="project-tree-empty">${esc(err.message)}</div>`;
     button.textContent = 'Projects unavailable';

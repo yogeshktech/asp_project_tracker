@@ -2,6 +2,8 @@
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
   const detailValue = value => value == null || (typeof value === 'string' && !value.trim()) ? 'N/A' : esc(value);
+  const costCenterDisplayName = value => String(value || '').replace(/^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+\s*(?:[—–-])\s*/, '');
+  const withoutProjectCode = (value, code) => code ? String(value ?? '').replace(new RegExp(code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').replace(/\s{2,}/g, ' ').replace(/^\s*[·|–—-]\s*/, '').trim() : String(value ?? '');
 
   function root() {
     let el = document.getElementById('apiPageRoot');
@@ -1598,7 +1600,7 @@ WTPages.switchProjView = function(view) {
               ${p.desc ? `<small style="color:var(--text-muted);">${esc(p.desc)}</small>` : ''}
             </td>
             <td>
-              ${parentObj ? `<small style="font-weight:600; color:var(--text-main);">↳ Parent: <u>${esc(parentObj.name)}</u></small><small style="color:var(--text-muted);">Code: ${esc(parentObj.code || '')}</small>` : `<span class="badge blue">None (Root Parent)</span>`}
+              ${parentObj ? `<small style="font-weight:600; color:var(--text-main);">↳ Parent: <u>${esc(parentObj.name)}</u></small>` : `<span class="badge blue">None (Root Parent)</span>`}
             </td>
             <td><code>${esc(p.code || 'PRJ-01')}</code></td>
             <td><span class="badge blue">${esc(p.discipline || p.disc || 'Civil Structure')}</span></td>
@@ -1640,7 +1642,7 @@ WTPages.switchProjView = function(view) {
             </div>
             <h3 style="font-size:15px; font-weight:800; margin:10px 0 4px;">${esc(p.name || p.title)}</h3>
             ${parentObj ? `<div style="font-size:11px; color:#6b21a8; background:#faf5ff; padding:3px 6px; border-radius:4px; margin-bottom:6px;">↳ Parent: <b>${esc(parentObj.name)}</b></div>` : ''}
-            <div style="font-size:11.5px; color:var(--text-muted);">Code: <code>${esc(p.code || '')}</code> · ${esc(p.discipline || 'General')}</div>
+            <div style="font-size:11.5px; color:var(--text-muted);">${esc(p.discipline || 'General')}</div>
             <div class="progress ${progColor}"><i style="width:${prog}%"></i></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
               <span><b>${prog}%</b> complete</span>
@@ -1891,7 +1893,7 @@ WTPages.switchProjView = function(view) {
         <div>
           <div style="margin-bottom:4px;">${levelBadge}</div>
           <h3 style="font-size:18px; font-weight:800; margin:0 0 4px;">${detailValue(p.name || p.title)}</h3>
-          <p style="color:var(--text-muted); font-size:12px; margin:0;">Code: <code>${detailValue(p.code)}</code> · Discipline: <b>${detailValue(p.discipline || p.disc)}</b></p>
+          <p style="color:var(--text-muted); font-size:12px; margin:0;">Discipline: <b>${detailValue(p.discipline || p.disc)}</b></p>
         </div>
         <span class="badge ${p.healthBadge || (prog>=80?'green':prog>=50?'blue':'amber')}">${esc(p.health || p.status || 'Active')}</span>
       </div>
@@ -2023,7 +2025,8 @@ WTPages.switchProjView = function(view) {
       <div>Actual cost<br><strong>${money(actualTotal)}</strong></div><div>Forecast position<br><span class="badge ${remainingForecast < 0 ? 'red' : remainingForecast === 0 ? 'amber' : 'green'}">${esc(computedBudgetStatus)}</span><br>${money(remainingForecast)}</div>
       </div>` : `<span style="color:var(--text-muted)">${can('Budgets') && can('Costs') ? 'Budget data is unavailable.' : 'Budget and cost data are hidden for your permissions.'}</span>`;
     const centers = rows(variance?.costCenters);
-    const costCenterPanel = variance ? (centers.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Cost center</th><th>Budget</th><th>Commitment</th><th>Actual</th><th>Forecast RAG</th></tr></thead><tbody>${centers.map(c => `<tr><td>${esc(c.costCenterName || c.name || `#${c.costCenterId}`)}</td><td>${money(c.budget)}</td><td>${money(c.currentCommitment ?? c.purchaseCost)}</td><td>${money(c.actualSpend)}</td><td><span class="badge ${c.ragStatus === 'Red' ? 'red' : c.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(c.ragStatus || 'Green')}</span></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No cost center rollups.</span>') : budgetPanel;
+    const costCenterLabel = c => costCenterDisplayName(c.costCenterName || c.name || `#${c.costCenterId}`);
+    const costCenterPanel = variance ? (centers.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Cost center</th><th>Budget</th><th>Commitment</th><th>Actual</th><th>Forecast RAG</th></tr></thead><tbody>${centers.map(c => `<tr><td>${esc(costCenterLabel(c))}</td><td>${money(c.budget)}</td><td>${money(c.currentCommitment ?? c.purchaseCost)}</td><td>${money(c.actualSpend)}</td><td><span class="badge ${c.ragStatus === 'Red' ? 'red' : c.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(c.ragStatus || 'Green')}</span></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No cost center rollups.</span>') : budgetPanel;
     const boqPanel = boqRows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>BOQ</th><th>Status</th><th>Baseline</th><th>Lines</th></tr></thead><tbody>${boqRows.map(b => { const versions = rows(b.versions || b.Versions); const baseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); const lines = rows(baseline?.items || baseline?.Items); return `<tr><td>${esc(b.title || b.Title || `BOQ #${b.id || b.Id}`)}</td><td>${esc(b.status || b.Status || '—')}</td><td>${baseline ? `v${baseline.versionNo || baseline.VersionNo}` : 'Not set'}</td><td>${lines.length || (b.itemCount ?? b.ItemCount ?? '—')}</td></tr>`; }).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No BOQ records available or permission is restricted.</span>';
     box.innerHTML = `<div class="card-header"><div><h2 class="card-title">${esc(project.name || project.title || 'Project')} · Project Dashboard</h2><div class="card-subtitle">Project dates, delivery progress, financial position, risks and actions</div></div></div>
       <div class="grid g2" style="margin-top:12px">
@@ -2293,7 +2296,7 @@ WTPages.switchProjView = function(view) {
         const childHistoryButton = ccProjectId !== Number(pid)
           ? `<button class="btn sm" title="View project budget history" aria-label="View project budget history" onclick="WTPages.openChildBudgetHistory(${ccProjectId}, ${childNameArg})"><i class="fa-solid fa-clock-rotate-left"></i></button>`
           : '';
-        return `<tr><td>${esc(c.name)}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
+        return `<tr><td>${esc(costCenterDisplayName(c.name))}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
           <td title="${esc(sourceTitle || 'No budget allocations')}">${esc(budgets?.[0]?.currency || fundingCurrency || 'MVR')} ${centerBudget.toLocaleString('en-US')}${sourceTitle ? ' <i class="fa-solid fa-circle-info" aria-label="Allocation sources"></i>' : ''}</td>
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-US')}</td>
           <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.actualSpend || 0).toLocaleString('en-US')}</td>
@@ -2441,7 +2444,7 @@ WTPages.switchProjView = function(view) {
       const budget = (budgets || []).find(b => b.id === budgetId);
       if (!budget) throw new Error('Budget not found');
       const allocated = (budget.allocations || []).reduce((n, a) => n + Number(a.allocatedAmount || 0), 0);
-      const options = (centers || []).map(c => `<option value="${c.id}">${esc(c.name)}${c.projectId !== Number(pid) ? ' (Sub-project cost center)' : ''}</option>`).join('');
+      const options = (centers || []).map(c => `<option value="${c.id}">${esc(costCenterDisplayName(c.name))}${c.projectId !== Number(pid) ? ' (Sub-project cost center)' : ''}</option>`).join('');
       openModal('Allocate Budget to Cost Center', `<form onsubmit="WTPages.saveAllocation(event)">
         <input type="hidden" id="allocBudgetId" value="${budgetId}">
         <p class="card-subtitle">${esc(budget.name)} · Approved ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')} · Remaining ${esc(budget.currency || 'MVR')} ${(Number(budget.approvedAmount || 0) - allocated).toLocaleString('en-US')}</p>
@@ -2744,7 +2747,7 @@ WTPages.switchProjView = function(view) {
         </div>`;
       $('#costCenterFinanceBody').innerHTML = (variance.costCenters || []).length ? variance.costCenters.map(c => {
         const status = c.ragStatus || 'Green';
-        return `<tr><td>${esc(c.name)}</td><td>${money(c.budget ?? c.allocated)}</td>
+        return `<tr><td>${esc(costCenterDisplayName(c.name))}</td><td>${money(c.budget ?? c.allocated)}</td>
           <td>${money(c.actualSpend)}</td><td>${money(c.variance)}</td>
           <td><span class="badge ${c.budgetStatus === 'Over Budget' ? 'red' : c.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(c.budgetStatus || 'On Budget')}</span></td>
           <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td></tr>`;
@@ -2787,7 +2790,7 @@ WTPages.switchProjView = function(view) {
     const [centers, boqs] = await Promise.all([
       WisetrackAPI.getCostCenters(pid).catch(() => []), WisetrackAPI.getBoqs(pid).catch(() => [])
     ]);
-    const ccOptions = (centers || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    const ccOptions = (centers || []).map(c => `<option value="${c.id}">${esc(costCenterDisplayName(c.name))}</option>`).join('');
     const boqLines = (boqs || []).flatMap(b => {
       const versions = b.versions || [];
       const version = versions.find(v => v.isCurrentBaseline) || [...versions].sort((a, z) => (z.versionNo || 0) - (a.versionNo || 0))[0];
@@ -2837,7 +2840,7 @@ WTPages.switchProjView = function(view) {
     const [centers, boqs] = await Promise.all([
       WisetrackAPI.getCostCenters(pid).catch(() => []), WisetrackAPI.getBoqs(pid).catch(() => [])
     ]);
-    const ccOptions = (centers || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    const ccOptions = (centers || []).map(c => `<option value="${c.id}">${esc(costCenterDisplayName(c.name))}</option>`).join('');
     const boqLines = (boqs || []).flatMap(b => {
       const versions = b.versions || b.Versions || [];
       const version = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo ?? 0) - Number(a.versionNo ?? a.VersionNo ?? 0))[0];
@@ -3481,7 +3484,7 @@ WTPages.switchProjView = function(view) {
     const selectedLabel = kind === 'daily'
       ? (dailyResortIds.map(id => resorts.find(r => String(r.id) === id)?.name || `Resort ${id}`).join(', ') || 'No resorts selected')
       : selectedMeta
-      ? `${selectedMeta.name || selectedMeta.title || 'Project'} (${selectedMeta.code || '#' + pid})`
+      ? (selectedMeta.name || selectedMeta.title || 'Project')
       : (pid ? `Project #${pid}` : 'No project');
 
     el.innerHTML = pageHead(title, `Showing ${selectedLabel} `,
@@ -3546,7 +3549,7 @@ WTPages.switchProjView = function(view) {
       const scopeIds = kind === 'daily' ? selectedDailyProjects.map(p => Number(p.id)) : [Number(pid)];
       const nameOf = (id) => {
         const p = (kind === 'daily' ? dailyProjects : projects).find(x => Number(x.id) === Number(id));
-        return p ? (p.code || p.name || `#${id}`) : `#${id}`;
+        return p ? (p.name || p.title || `#${id}`) : `#${id}`;
       };
 
       if (kind === 'milestones') {
@@ -3569,7 +3572,7 @@ WTPages.switchProjView = function(view) {
           return `
           <tr>
             <td>${m.id}</td>
-            <td><strong>${esc(m.name || m.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(nameOf(m._projectId || pid))} · Owner: ${esc(milestoneOwner(m.ownerId || m.OwnerId))}</small><small style="display:block;color:var(--text-muted)">${esc(m.description || '')}</small>${dependency ? `<small style="display:block;color:var(--text-muted)">Depends on: ${esc(dependency.name)}</small>` : ''}${(m.completionEvidence || m.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted)">Evidence: ${esc(m.completionEvidence || m.CompletionEvidence)}</small>` : ''}${(milestoneFilesById.get(Number(m.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}</td>
+            <td><strong>${esc(m.name || m.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(nameOf(m._projectId || pid))} · Owner: ${esc(milestoneOwner(m.ownerId || m.OwnerId))}</small><small style="display:block;color:var(--text-muted)">${esc(withoutProjectCode(m.description || '', (projects.find(p => Number(p.id) === Number(m._projectId || pid)) || {}).code))}</small>${dependency ? `<small style="display:block;color:var(--text-muted)">Depends on: ${esc(dependency.name)}</small>` : ''}${(m.completionEvidence || m.CompletionEvidence) ? `<small style="display:block;color:var(--text-muted)">Evidence: ${esc(m.completionEvidence || m.CompletionEvidence)}</small>` : ''}${(milestoneFilesById.get(Number(m.id)) || []).map(file => `<button class="btn sm" style="margin-top:4px" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join(' ')}</td>
             <td>${esc(m.startDate || '—')} → ${esc(m.dueDate || '—')}</td>
             <td>${esc(m.status || '—')}</td>
           <td>${pct}%</td><td class="table-actions">${taskRowActionMenu(`
@@ -3674,7 +3677,7 @@ WTPages.switchProjView = function(view) {
               <td><code>${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t) : (t.displayCode || 'Task-' + t.id))}</code></td>
               <td class="nest-col depth-task is-filled">
                 <strong>${esc(t.title || t.name)}</strong>
-                ${kind !== 'planning' ? `<small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(t.description || 'General Package Task')}</small>
+                ${kind !== 'planning' ? `<small style="display:block;color:var(--text-muted);">${esc(nameOf(t._projectId || pid))} · ${esc(withoutProjectCode(t.description || 'General Package Task', (kind === 'daily' ? dailyProjects : projects).find(p => Number(p.id) === Number(t._projectId || pid))?.code))}</small>
                 <small style="display:block;color:var(--text-muted);">Owner: ${esc(owner)}${ownerLabel ? ' · ' + esc(ownerLabel) : ''}</small>
                 <small style="display:block;color:var(--text-muted);">${esc(t.startDate || t.StartDate || 'No start date')} → ${esc(t.dueDate || t.DueDate || 'No due date')}</small>
                 ${(t.remarks || t.Remarks) ? `<small style="display:block;color:var(--text-muted);">Latest remark: ${esc(t.remarks || t.Remarks)}</small>` : ''}` : ''}
@@ -3778,10 +3781,9 @@ WTPages.switchProjView = function(view) {
       const reportRows = reports.flatMap(({ project, resort, updates: rows, error }) => {
         const resortName = resort?.name || resort?.resortName || `Resort ${project._resortId || project.resortId || ''}`;
         const projectName = project.name || project.title || `Project ${project.id}`;
-        const projectCode = project.code ? `<small style="display:block;color:var(--text-muted)">${esc(project.code)}</small>` : '';
-        if (error) return [`<tr><td>${esc(resortName)}</td><td>${esc(projectName)}${projectCode}</td><td colspan="4" style="color:#b91c1c">Report could not be loaded: ${esc(error.message || 'Request failed')}</td></tr>`];
-        if (!rows.length) return [`<tr><td>${esc(resortName)}</td><td>${esc(projectName)}${projectCode}</td><td colspan="4" style="color:var(--text-muted)">No ${cumulative ? 'progress snapshot' : 'daily report entries'} for this date.</td></tr>`];
-        return rows.map(u => `<tr><td>${esc(resortName)}</td><td>${esc(projectName)}${projectCode}</td><td>${esc(u.title || u.Title || '')}${(u.subTaskTitle || u.SubTaskTitle) ? `<small style="display:block;color:var(--text-muted)">${esc(u.subTaskTitle || u.SubTaskTitle)}</small>` : ''}</td><td>${esc(u.status || u.Status || '—')}</td><td>${Number(u.completionPercent ?? u.CompletionPercent ?? 0)}%</td><td>${esc(u.remarks || u.Remarks || '—')}</td></tr>`);
+                if (error) return [`<tr><td>${esc(resortName)}</td><td>${esc(projectName)}</td><td colspan="4" style="color:#b91c1c">Report could not be loaded: ${esc(error.message || 'Request failed')}</td></tr>`];
+        if (!rows.length) return [`<tr><td>${esc(resortName)}</td><td>${esc(projectName)}</td><td colspan="4" style="color:var(--text-muted)">No ${cumulative ? 'progress snapshot' : 'daily report entries'} for this date.</td></tr>`];
+        return rows.map(u => `<tr><td>${esc(resortName)}</td><td>${esc(projectName)}</td><td>${esc(u.title || u.Title || '')}${(u.subTaskTitle || u.SubTaskTitle) ? `<small style="display:block;color:var(--text-muted)">${esc(u.subTaskTitle || u.SubTaskTitle)}</small>` : ''}</td><td>${esc(u.status || u.Status || '—')}</td><td>${Number(u.completionPercent ?? u.CompletionPercent ?? 0)}%</td><td>${esc(u.remarks || u.Remarks || '—')}</td></tr>`);
       });
       target.innerHTML = `<div style="margin-bottom:10px"><strong>${cumulative ? 'Progress as of' : 'Updates on'}:</strong> ${esc(date || new Date().toLocaleDateString('en-CA'))} &nbsp; <strong>Selected resorts:</strong> ${resortIds.length} &nbsp; <strong>Projects included:</strong> ${selectedProjects.length} &nbsp; <strong>Daily entries:</strong> ${updates.length}</div>
         <div class="table-wrap"><table class="table"><thead><tr><th>Resort</th><th>Project</th><th>Task / Sub-task</th><th>Status</th><th>Completion</th><th>Remarks</th></tr></thead><tbody>
@@ -4313,10 +4315,15 @@ WTPages.switchProjView = function(view) {
     const canPct = isSub
       ? (selectedSub?.canEditPercent ?? selectedSub?.CanEditPercent ?? selectedTask?.canEditPercent ?? true)
       : (selectedTask?.canEditPercent ?? selectedTask?.CanEditPercent ?? true);
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
     openModal(isSub ? 'Update Sub-Task' : 'Update Task', `
       <form onsubmit="WTPages.saveTaskUpdate(event)">
         <div class="form-grid">
+          <div class="field">
+            <label>Update date (today only)</label>
+            <input type="date" value="${today}" readonly aria-readonly="true" title="Daily updates can only be submitted for today">
+          </div>
           <div class="field">
             <label>Main Task *</label>
             <select id="tuId" required onchange="WTPages.onUpdateTaskChange(this.value)">${taskOpts}</select>
