@@ -239,6 +239,7 @@ public class CreateItemRequest
     public long? CategoryId { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal? StandardPrice { get; set; }
+    public string Currency { get; set; } = "MVR";
     public string? ImageUrl { get; set; }
     public DateOnly? EffectiveDate { get; set; }
     public string? Source { get; set; }
@@ -254,6 +255,7 @@ public class BOQImportDto
 {
     public long ProjectId { get; set; }
     public long? BoqId { get; set; }
+    public long? SourceVersionId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Remarks { get; set; }
     public bool Commit { get; set; }
@@ -297,6 +299,7 @@ public class BoqFromMasterLineRequest
 public class CreateBoqRevisionRequest
 {
     public string? Remarks { get; set; }
+    public long? SourceVersionId { get; set; }
 }
 
 public class UpdateBoqRequest

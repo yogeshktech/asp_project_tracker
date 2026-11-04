@@ -39,6 +39,7 @@ public class Item
     public long? CategoryId { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal? StandardPrice { get; set; }
+    public string Currency { get; set; } = "MVR";
     public string? ImageUrl { get; set; }
     public DateOnly? EffectiveDate { get; set; }
     public string? Source { get; set; }

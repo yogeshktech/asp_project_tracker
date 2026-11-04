@@ -115,6 +115,9 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""UPDATE projects SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budgets SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE projects SET currency = 'MVR' WHERE UPPER(currency) NOT IN ('MVR', 'USD', 'EUR')""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE budgets SET currency = 'MVR' WHERE UPPER(currency) NOT IN ('MVR', 'USD', 'EUR')""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET currency = 'MVR' WHERE UPPER(currency) NOT IN ('MVR', 'USD', 'EUR')""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budget_versions SET approver_id = created_by WHERE approver_id IS NULL AND created_by IS NOT NULL""");
         await EnsureProjectBudgetAllocationSchemaAsync(db);
         if (!budgetVersionCurrencyExists)
@@ -198,6 +201,8 @@ public static class DatabaseBootstrap
     private static async Task EnsureItemMasterColumnsAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE items ADD COLUMN IF NOT EXISTS standard_price NUMERIC(18,2)""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE items ADD COLUMN IF NOT EXISTS currency VARCHAR(10) NOT NULL DEFAULT 'MVR'""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE items SET currency = 'MVR' WHERE UPPER(currency) NOT IN ('MVR', 'USD', 'EUR')""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE items ADD COLUMN IF NOT EXISTS effective_date DATE""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE items ADD COLUMN IF NOT EXISTS source VARCHAR(500)""");
     }

@@ -262,6 +262,14 @@ public class ProjectService : IProjectService
         return dto;
     }
 
+    private static string NormalizeCurrency(string? currency)
+    {
+        var code = string.IsNullOrWhiteSpace(currency) ? "MVR" : currency.Trim().ToUpperInvariant();
+        if (code is not ("MVR" or "USD" or "EUR"))
+            throw new InvalidOperationException("Currency must be MVR, USD, or EUR.");
+        return code;
+    }
+
     public async Task<ProjectResponseDto> CreateAsync(long userId, CreateProjectDto dto)
     {
         if (dto.ParentProjectId.HasValue)
@@ -277,6 +285,7 @@ public class ProjectService : IProjectService
                 ?? throw new InvalidOperationException("Parent project not found.");
             dto.Currency = parentProject.Currency;
         }
+        dto.Currency = NormalizeCurrency(dto.Currency);
         var entity = FromDto(dto);
         entity.OwnerId ??= userId;
         entity.Code = string.IsNullOrWhiteSpace(dto.Code) ? await NextProjectCodeAsync(dto.ParentProjectId) : dto.Code.Trim();
@@ -324,6 +333,7 @@ public class ProjectService : IProjectService
         {
             throw new InvalidOperationException("Project currency cannot be changed after child projects or budgets have been added. Create a separate root project for another currency.");
         }
+        dto.Currency = NormalizeCurrency(dto.Currency);
         var fieldRights = await _permissions.GetProjectFieldPermissionsAsync(userId, id);
         var moduleUpdate = await _permissions.CanUpdateModuleAsync(userId, id, "Projects");
         var changedFields = ProjectFieldsChanged(project, dto);

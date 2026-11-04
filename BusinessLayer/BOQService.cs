@@ -15,8 +15,8 @@ public interface IBOQService
     Task<Boq?> GetAsync(long id);
     Task<Boq?> UpdateAsync(long id, UpdateBoqRequest request, long userId);
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
-    Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId, long? boqId = null, string? revisionNotes = null);
-    Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId);
+    Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId, long? boqId = null, string? revisionNotes = null, long? sourceVersionId = null);
+    Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId, long? sourceVersionId = null);
     Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId);
     Task<BoqItem?> UpdateRevisionItemAsync(long boqId, long versionId, long itemId, UpdateBoqVersionItemRequest request, long userId);
     Task<List<BoqItem>> UpdateRevisionItemsAsync(long boqId, long versionId, List<UpdateBoqRevisionLineRequest> lines, long userId);
@@ -140,16 +140,18 @@ public class BOQService : IBOQService
         {
             boq = await _repository.GetAsync(dto.BoqId.Value) ?? throw new InvalidOperationException("Target BOQ was not found.");
             if (boq.ProjectId != dto.ProjectId) throw new InvalidOperationException("Target BOQ does not belong to the selected project.");
-            var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault()
-                ?? throw new InvalidOperationException("Target BOQ has no version to revise.");
-            var nextVersionNo = latest.VersionNo + 1;
+            var source = dto.SourceVersionId.HasValue
+                ? boq.Versions.FirstOrDefault(v => v.Id == dto.SourceVersionId.Value)
+                : boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
+            if (source == null) throw new InvalidOperationException(dto.SourceVersionId.HasValue ? "The selected BOQ version was not found." : "Target BOQ has no version to revise.");
+            var nextVersionNo = boq.Versions.Max(v => v.VersionNo) + 1;
             version = await _repository.AddVersionAsync(new BoqVersion
             {
                 BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextBaselineVersionLabel(boq.Versions), IsCurrentBaseline = false,
                 Remarks = string.IsNullOrWhiteSpace(dto.Remarks) ? "Imported revision" : dto.Remarks,
                 CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
-            lines = latest.Items.Select(item => new BoqItem
+            lines = source.Items.Select(item => new BoqItem
             {
                 BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
                 LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
@@ -218,7 +220,7 @@ public class BOQService : IBOQService
         return result;
     }
 
-    public async Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> requestedLines, long? userId, long? boqId = null, string? revisionNotes = null)
+    public async Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> requestedLines, long? userId, long? boqId = null, string? revisionNotes = null, long? sourceVersionId = null)
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, projectId, "BOQ", "edit");
         if (requestedLines.Count == 0) throw new InvalidOperationException("Select at least one Item Master item.");
@@ -239,15 +241,17 @@ public class BOQService : IBOQService
         {
             boq = await _repository.GetAsync(boqId.Value) ?? throw new InvalidOperationException("Target BOQ was not found.");
             if (boq.ProjectId != projectId) throw new InvalidOperationException("Target BOQ does not belong to the selected project.");
-            var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault()
-                ?? throw new InvalidOperationException("Target BOQ has no version to revise.");
-            var nextVersionNo = latest.VersionNo + 1;
+            var source = sourceVersionId.HasValue
+                ? boq.Versions.FirstOrDefault(v => v.Id == sourceVersionId.Value)
+                : boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
+            if (source == null) throw new InvalidOperationException(sourceVersionId.HasValue ? "The selected BOQ version was not found." : "Target BOQ has no version to revise.");
+            var nextVersionNo = boq.Versions.Max(v => v.VersionNo) + 1;
             version = await _repository.AddVersionAsync(new BoqVersion
             {
                 BoqId = boq.Id, VersionNo = nextVersionNo, VersionLabel = NextBaselineVersionLabel(boq.Versions), IsCurrentBaseline = false,
                 Remarks = string.IsNullOrWhiteSpace(revisionNotes) ? null : revisionNotes.Trim(), CreatedBy = userId, CreatedAt = DateTime.UtcNow
             });
-            lines.AddRange(latest.Items.Select(item => new BoqItem
+            lines.AddRange(source.Items.Select(item => new BoqItem
             {
                 BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
                 LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
@@ -308,12 +312,14 @@ public class BOQService : IBOQService
         return await _repository.GetAsync(boq.Id) ?? boq;
     }
 
-    public async Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId)
+    public async Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId, long? sourceVersionId = null)
     {
         var boq = await _repository.GetAsync(boqId) ?? throw new KeyNotFoundException("BOQ was not found.");
         await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "edit");
-        var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
-        if (latest == null) throw new InvalidOperationException("This BOQ has no version to revise.");
+        var source = sourceVersionId.HasValue
+            ? boq.Versions.FirstOrDefault(v => v.Id == sourceVersionId.Value)
+            : boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
+        if (source == null) throw new InvalidOperationException(sourceVersionId.HasValue ? "The selected BOQ version was not found." : "This BOQ has no version to revise.");
         var nextVersionNo = boq.Versions.Max(v => v.VersionNo) + 1;
 
         var revision = await _repository.AddVersionAsync(new BoqVersion
@@ -326,7 +332,7 @@ public class BOQService : IBOQService
             CreatedAt = DateTime.UtcNow,
             IsCurrentBaseline = false
         });
-        var copiedItems = latest.Items.Select(item => new BoqItem
+        var copiedItems = source.Items.Select(item => new BoqItem
         {
             BoqVersionId = revision.Id,
             ItemId = item.ItemId,
@@ -350,7 +356,7 @@ public class BOQService : IBOQService
             AttachmentName = item.AttachmentName
         }).ToList();
         await _repository.AddItemsAsync(copiedItems);
-        await _audit.LogAsync(userId, "CreateRevision", "BOQ", boqId, $"Version {revision.VersionNo} from version {latest.VersionNo}");
+        await _audit.LogAsync(userId, "CreateRevision", "BOQ", boqId, $"Version {revision.VersionNo} from version {source.VersionNo}");
         revision.Items = copiedItems;
         return revision;
     }

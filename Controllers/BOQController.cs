@@ -90,7 +90,7 @@ public class BOQController : ControllerBase
     [HttpPost("{id:long}/versions")]
     public async Task<IActionResult> CreateRevision(long id, [FromBody] CreateBoqRevisionRequest request)
     {
-        try { return Ok(await _boqService.CreateRevisionAsync(id, request.Remarks, UserId)); }
+        try { return Ok(await _boqService.CreateRevisionAsync(id, request.Remarks, UserId, request.SourceVersionId)); }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
@@ -152,6 +152,7 @@ public class BOQController : ControllerBase
             {
                 ProjectId = request.ProjectId,
                 BoqId = request.BoqId,
+                SourceVersionId = request.SourceVersionId,
                 Title = string.IsNullOrWhiteSpace(request.Title) ? Path.GetFileNameWithoutExtension(request.File.FileName) : request.Title,
                 Commit = request.Commit,
                 Lines = lines
@@ -171,7 +172,7 @@ public class BOQController : ControllerBase
     [HttpPost("from-master")]
     public async Task<IActionResult> FromMaster([FromBody] BoqFromMasterRequest request)
     {
-        try { return Ok(await _boqService.CreateFromMasterAsync(request.ProjectId, request.Lines, UserId, request.BoqId, request.RevisionNotes)); }
+        try { return Ok(await _boqService.CreateFromMasterAsync(request.ProjectId, request.Lines, UserId, request.BoqId, request.RevisionNotes, request.SourceVersionId)); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
@@ -209,6 +210,7 @@ public sealed class BOQFileImportRequest
 {
     public long ProjectId { get; set; }
     public long? BoqId { get; set; }
+    public long? SourceVersionId { get; set; }
     public string? Title { get; set; }
     public bool Commit { get; set; }
     public string? Worksheet { get; set; }
@@ -463,6 +465,7 @@ public class BoqFromMasterRequest
 {
     public long ProjectId { get; set; }
     public long? BoqId { get; set; }
+    public long? SourceVersionId { get; set; }
     public string? RevisionNotes { get; set; }
     public List<BoqFromMasterLineRequest> Lines { get; set; } = new();
 }

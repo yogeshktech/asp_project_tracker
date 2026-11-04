@@ -131,7 +131,6 @@
             <tr>
               <th>PROPERTY NAME</th>
               <th>PARENT RESORT</th>
-              <th>CODE</th>
               <th>LOCATION</th>
               <th>STATUS</th>
             </tr>
@@ -140,21 +139,18 @@
             <tr>
               <td><strong>Main Palace Wing & Suites</strong></td>
               <td>Grand Oasis Goa</td>
-              <td><code>PROP-GOA-01</code></td>
               <td>North Goa Coast</td>
               <td><span class="badge green">Active</span></td>
             </tr>
             <tr>
               <td><strong>Luxury Oceanfront Villas Cluster</strong></td>
               <td>Grand Oasis Goa</td>
-              <td><code>PROP-GOA-02</code></td>
               <td>South Ridge</td>
               <td><span class="badge blue">In Construction</span></td>
             </tr>
             <tr>
               <td><strong>Heritage Courtyard & Spa Block</strong></td>
               <td>Royal Heritage Jaipur</td>
-              <td><code>PROP-JAI-01</code></td>
               <td>Jaipur Palace Grounds</td>
               <td><span class="badge amber">Under Fitout</span></td>
             </tr>

@@ -330,6 +330,17 @@ function wtNormalizeTableSerialNumbers(table) {
   });
 }
 
+// Render application timestamps in Maldives time, regardless of the viewer's device timezone.
+(() => {
+  const zone = 'Indian/Maldives';
+  for (const method of ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString']) {
+    const native = Date.prototype[method];
+    Date.prototype[method] = function (locales, options) {
+      return native.call(this, locales, { ...(options || {}), timeZone: options?.timeZone || zone });
+    };
+  }
+})();
+
 function wtNormalizeCurrencyContent(rootNode) {
   if (!rootNode) return;
   const replace = value => String(value).replace(/MVR /g, 'MVR ').replace(/MVR/g, 'MVR').replace(/Maldivian Rufiyaa/gi, 'Maldivian Rufiyaa');

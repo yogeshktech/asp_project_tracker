@@ -1,6 +1,25 @@
 // Full API UI modules — replaces page .content with live Swagger-backed screens
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
+  const WT_TIME_ZONE = 'Indian/Maldives';
+  function wtMaldivesParts(value = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: WT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
+    return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  }
+  function wtMaldivesDateInput(value = new Date()) {
+    const p = wtMaldivesParts(value);
+    return `${p.year}-${p.month}-${p.day}`;
+  }
+  function wtMaldivesDateTimeInput(value = new Date()) {
+    const p = wtMaldivesParts(value);
+    return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+  }
+  function wtMaldivesInputToIso(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value || '');
+    if (!match) return null;
+    const [, year, month, day, hour, minute] = match;
+    return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour) - 5, Number(minute))).toISOString();
+  }
   const detailValue = value => value == null || (typeof value === 'string' && !value.trim()) ? 'N/A' : esc(value);
   const costCenterDisplayName = value => String(value || '').replace(/^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+\s*(?:[—–-])\s*/, '');
   const withoutProjectCode = (value, code) => code ? String(value ?? '').replace(new RegExp(code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').replace(/\s{2,}/g, ' ').replace(/^\s*[·|–—-]\s*/, '').trim() : String(value ?? '');
@@ -64,7 +83,7 @@
     if (amount == null || !Number.isFinite(Number(amount))) return 'Not set';
     const value = Number(amount);
     const rawCode = String(currency || 'MVR').toUpperCase();
-    const code = rawCode === 'INR' ? 'MVR' : rawCode;
+    const code = ['MVR', 'USD', 'EUR'].includes(rawCode) ? rawCode : 'MVR';
     return `${code} ${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
   }
 
@@ -1181,7 +1200,7 @@
               </div>
               ${canCreate ? `<button class="btn sm primary" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-plus"></i> Add Property</button>` : ''}
             </div>
-            ${tableWrap(['ID', 'Parent Resort ID', 'Property Name', 'Property Code', 'Actions'], 'propsBody')}
+            ${tableWrap(['ID', 'Parent Resort', 'Property Name', 'Actions'], 'propsBody')}
           </div>
 
           <!-- Section 3: Project Types / Disciplines -->
@@ -1224,14 +1243,16 @@
     if (!body) return;
     try {
       const list = await WisetrackAPI.getProperties();
+      const resorts = await WisetrackAPI.getResorts();
+      const resortNames = new Map(resorts.map(r => [String(r.id), r.name]));
       const canEdit = !window.wtCan || window.wtCan('Resorts', 'update');
       const canDelete = !window.wtCan || window.wtCan('Resorts', 'delete');
       body.innerHTML = list.length ? list.map(p => `
         <tr>
-          <td>${p.id}</td><td>${p.resortId}</td><td>${esc(p.name)}</td><td>${esc(p.code || '—')}</td>
+          <td>${p.id}</td><td>${esc(resortNames.get(String(p.resortId)) || '—')}</td><td>${esc(p.name)}</td>
           <td class="table-actions">${canEdit ? `<button class="btn sm" title="Edit property" onclick="WTPages.openEditPropertyModal(${p.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete property" onclick="WTPages.deleteProperty(${p.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td>
         </tr>`).join('') : emptyRow(5, 'No properties');
-    } catch (e) { body.innerHTML = errRow(5, e); }
+    } catch (e) { body.innerHTML = errRow(4, e); }
   }
 
   async function refreshTypes() {
@@ -2089,9 +2110,9 @@ WTPages.switchProjView = function(view) {
       $('#itemsBody').innerHTML = items.length ? items.map(it => `
         <tr>
           <td>${it.id}</td><td><code>${esc(it.itemCode || it.code || '')}</code></td>
-          <td>${esc(it.name)}</td><td>MVR ${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-US')}</td>
+          <td>${esc(it.name)}</td><td>${esc(it.currency || it.Currency || 'MVR')} ${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-US')}</td>
           <td>${esc(it.brand?.name || it.brandName || '—')}</td><td>${esc(it.unit?.name || it.unitName || it.unit?.code || '—')}</td>
-          <td>${it.standardPrice == null ? '—' : `MVR ${Number(it.standardPrice).toLocaleString('en-US')}`}</td>
+          <td>${it.standardPrice == null ? '—' : `${esc(it.currency || it.Currency || 'MVR')} ${Number(it.standardPrice).toLocaleString('en-US')}`}</td>
           <td>${esc(it.effectiveDate || '—')}</td><td>${esc(it.source || '—')}</td>
           <td>${it.imageUrl ? `<a href="${esc(it.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
           <td class="table-actions">
@@ -2107,8 +2128,10 @@ WTPages.switchProjView = function(view) {
 
   async function openItemModal(id) {
     const [brands, units, cats] = await Promise.all([WisetrackAPI.getBrands(), WisetrackAPI.getUnits(), WisetrackAPI.getCategories()]);
-    let it = { itemCode: '', name: '', unitPrice: 0 };
+    let it = { itemCode: '', name: '', unitPrice: 0, currency: 'MVR' };
     if (id) it = await WisetrackAPI.getItem(id);
+    const itemCurrency = String(it.currency || it.Currency || 'MVR').trim().toUpperCase();
+    const itemCurrencies = ['MVR', 'USD', 'EUR'];
     openModal(id ? 'Edit Item' : 'Create Item', `
       <form onsubmit="WTPages.saveItem(event, ${id || 'null'})">
         <div class="form-grid">
@@ -2116,6 +2139,7 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>Name *</label><input id="itName" value="${esc(it.name || '')}" required></div>
           <div class="field"><label>Purchase Price *</label><input id="itPrice" type="number" min="0" step="0.01" value="${it.unitPrice || 0}" required></div>
           <div class="field"><label>Standard Price</label><input id="itStandardPrice" type="number" min="0" step="0.01" value="${it.standardPrice ?? ''}"></div>
+          <div class="field"><label>Currency *</label><select id="itCurrency" required>${itemCurrencies.map(currency => `<option value="${esc(currency)}" ${itemCurrency === currency ? 'selected' : ''}>${esc(currency)}</option>`).join('')}</select></div>
           <div class="field"><label>Unit</label><select id="itUnit"><option value="">—</option>${units.map(u => `<option value="${u.id}" ${it.unitId == u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Brand</label><select id="itBrand"><option value="">—</option>${brands.map(b => `<option value="${b.id}" ${it.brandId == b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Category</label><select id="itCat"><option value="">—</option>${cats.map(c => `<option value="${c.id}" ${it.categoryId == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
@@ -2135,6 +2159,7 @@ WTPages.switchProjView = function(view) {
       name: $('#itName').value.trim(),
       unitPrice: Number($('#itPrice').value),
       standardPrice: $('#itStandardPrice').value === '' ? null : Number($('#itStandardPrice').value),
+      currency: $('#itCurrency').value,
       unitId: $('#itUnit').value ? Number($('#itUnit').value) : null,
       brandId: $('#itBrand').value ? Number($('#itBrand').value) : null,
       categoryId: $('#itCat').value ? Number($('#itCat').value) : null,
@@ -2197,11 +2222,10 @@ WTPages.switchProjView = function(view) {
     }
     el.innerHTML = pageHead('Budgets & Cost Centers', '/api/budgets',
       ` ${pid && canUpdateBudget ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
-        ${canCreateBudget ? `<button class="btn" onclick="WTPages.openCostCenterModal()">+ Cost Center</button>
-        <button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>` : ''}`)
+        ${canCreateBudget ? `<button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Attachment', 'Actions'], 'budgetBody')
-      + tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Attachment', 'Actions'], 'ccBody', 'cost-center-table-wrap');
+      + `<div hidden>${tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Attachment', 'Actions'], 'ccBody', 'cost-center-table-wrap')}</div>`;
     if (!pid) {
       $('#budgetBody').innerHTML = emptyRow(9, 'No project available.');
       $('#ccBody').innerHTML = emptyRow(10, 'No project available.');
@@ -2931,7 +2955,7 @@ WTPages.switchProjView = function(view) {
         <td>${(() => { const vs = b.versions || b.Versions || []; const first = vs.slice().sort((a, c) => Number(a.versionNo || a.VersionNo || 0) - Number(c.versionNo || c.VersionNo || 0))[0]; const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `First ${boqVersionLabel(first, vs)} / Baseline ${boqVersionLabel(base, vs)}`; })()}</td>
         <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '-')}</td>
         <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button>
-        ${canUpdateBoq ? `<button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button>` : ''}</td></tr>`
+        ${canUpdateBoq ? (() => { const isBaseline = String(b.status || b.Status || '').trim().toLowerCase() === 'baseline' || (b.versions || b.Versions || []).some(v => v.isCurrentBaseline || v.IsCurrentBaseline); return isBaseline ? '<button class="btn sm primary" disabled title="Status updates are disabled for baseline BOQs">Status Update</button>' : `<button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button>`; })() : ''}</td></tr>`
       ).join('') : emptyRow(6, 'No BOQ - import or create from master');
       $('#boqVersionsBody').innerHTML = versionRows.length ? versionRows.map(({ boq: b, version: v }) => {
         const versionId = v.id || v.Id;
@@ -2942,7 +2966,7 @@ WTPages.switchProjView = function(view) {
           <td>${esc(v.remarks || v.Remarks || '-')}</td>
           <td>${isBaseline ? '<span class="badge green">Current Baseline</span>' : '-'}</td>
           <td><button class="btn sm" onclick="WTPages.viewBoqVersion(${b.id || b.Id},${versionId})">View</button>
-          ${canCreateBoq ? `<button class="btn sm" onclick="WTPages.createBoqRevision(${b.id || b.Id})">Add additional item</button>` : ''}</td></tr>`;
+          ${canCreateBoq ? `<button class="btn sm" onclick="WTPages.createBoqRevision(${b.id || b.Id},${versionId})">Add additional item</button>` : ''}</td></tr>`;
       }).join('') : emptyRow(6, 'No BOQ versions found.');
     } catch (e) { $('#boqBody').innerHTML = errRow(6, e); $('#boqVersionsBody').innerHTML = errRow(6, e); }
   }
@@ -2974,7 +2998,7 @@ WTPages.switchProjView = function(view) {
     } catch (error) { showToast(error.message || 'BOQ update failed.', 'danger'); }
   }
 
-  async function boqFromMaster(targetBoqId = null) {
+  async function boqFromMaster(targetBoqId = null, sourceVersionId = null) {
     const targetBoq = targetBoqId ? await WisetrackAPI.getBoq(targetBoqId) : null;
     const pid = Number(targetBoq?.projectId || targetBoq?.ProjectId) || await selectedProjectId();
     const items = (await WisetrackAPI.getItems()).filter(i => i.isActive !== false);
@@ -2983,6 +3007,7 @@ WTPages.switchProjView = function(view) {
       <form onsubmit="WTPages.saveBoqFromMaster(event)">
         <input type="hidden" id="boqMasterProject" value="${pid}">
         <input type="hidden" id="boqMasterTarget" value="${targetBoqId || ''}">
+        <input type="hidden" id="boqMasterSourceVersion" value="${sourceVersionId || ''}">
         <div class="field"><label>Search reusable items</label><input id="boqMasterSearch" oninput="WTPages.filterBoqMasterItems()" placeholder="Code, item, brand, unit"></div>
         <div id="boqMasterItems" style="max-height:48vh;overflow:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px">
           ${items.map(i => `<div class="boq-master-option" data-search="${esc([i.itemCode, i.name, i.description, i.brand?.name, i.unit?.name].filter(Boolean).join(' ').toLowerCase())}" style="padding:10px;border-bottom:1px solid var(--border-light)">
@@ -3072,7 +3097,8 @@ WTPages.switchProjView = function(view) {
         revisionNotes = revisionNotes.trim();
         if (!revisionNotes) { showToast('Revision notes are required.', 'danger'); return; }
       }
-      await WisetrackAPI.createBoqFromMaster(pid, lines, targetBoqId, revisionNotes);
+      const sourceVersionId = Number($('#boqMasterSourceVersion')?.value) || null;
+      await WisetrackAPI.createBoqFromMaster(pid, lines, targetBoqId, revisionNotes, sourceVersionId);
       closeModal(); showToast(`${lines.length} item(s) added${targetBoqId ? ' to a new BOQ revision' : ' to project BOQ'}`);
       if (targetBoqId) await viewBoq(targetBoqId, true); else await pageBoq();
     } catch (e) { showToast(e.message, 'danger'); }
@@ -3090,13 +3116,14 @@ WTPages.switchProjView = function(view) {
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
-  async function boqImport(targetBoqId = null) {
+  async function boqImport(targetBoqId = null, sourceVersionId = null) {
     const target = targetBoqId ? await WisetrackAPI.getBoq(targetBoqId) : null;
     const pid = Number(target?.projectId || target?.ProjectId) || await selectedProjectId();
     openModal(targetBoqId ? 'Import into a new BOQ revision' : 'Import BOQ (flexible vendor file)', `
       <form onsubmit="WTPages.saveBoqImport(event)">
         <input type="hidden" id="boqProj" value="${pid}">
         <input type="hidden" id="boqTargetId" value="${targetBoqId || ''}">
+        <input type="hidden" id="boqSourceVersionId" value="${sourceVersionId || ''}">
         <div class="field"><label>Title *</label><input id="boqTitle" value="${esc(target?.title || target?.Title || 'Imported BOQ')}" required></div>
         <div class="field"><label>Excel / CSV / TSV from 3rd party (flexible column names)</label>
           <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv">
@@ -3123,6 +3150,7 @@ WTPages.switchProjView = function(view) {
         const form = new FormData();
         form.append('projectId', $('#boqProj').value);
         if ($('#boqTargetId')?.value) form.append('boqId', $('#boqTargetId').value);
+        if ($('#boqSourceVersionId')?.value) form.append('sourceVersionId', $('#boqSourceVersionId').value);
         form.append('title', $('#boqTitle').value.trim());
         if ($('#boqWorksheet')?.value.trim()) form.append('worksheet', $('#boqWorksheet').value.trim());
         form.append('commit', String(commit));
@@ -3151,6 +3179,7 @@ WTPages.switchProjView = function(view) {
         result = await WisetrackAPI.importBoq({
           projectId: Number($('#boqProj').value),
           boqId: Number($('#boqTargetId')?.value) || null,
+          sourceVersionId: Number($('#boqSourceVersionId')?.value) || null,
           title: $('#boqTitle').value.trim(),
           commit,
           lines
@@ -3207,7 +3236,7 @@ WTPages.switchProjView = function(view) {
       </tr></thead><tbody>${rows || '<tr><td colspan="12">No items in the original version.</td></tr>'}</tbody></table></div>`;
   }
 
-  async function viewBoq(id, editMode = false) {
+  async function viewBoq(id, editMode = false, sourceVersionId = null) {
     try {
       const b = await WisetrackAPI.getBoq(id);
       const projectId = Number(b.projectId || b.ProjectId);
@@ -3216,31 +3245,28 @@ WTPages.switchProjView = function(view) {
       const versions = b.versions || b.Versions || [];
       const latest = versions.slice().sort((a, c) => (c.versionNo || c.VersionNo || 0) - (a.versionNo || a.VersionNo || 0))[0];
       const first = versions.slice().sort((a, c) => (a.versionNo || a.VersionNo || 0) - (c.versionNo || c.VersionNo || 0))[0];
+      const sourceVersion = sourceVersionId ? versions.find(v => Number(v.id || v.Id) === Number(sourceVersionId)) : latest;
+      if (sourceVersionId && !sourceVersion) throw new Error('The selected BOQ version was not found.');
       const currentBaseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline);
-      const firstItems = first?.items || first?.Items || [];
-      const items = latest?.items || latest?.Items || b.items || b.Items || [];
-      const latestVersionId = latest?.id || latest?.Id;
-      const latestIsBaseline = latest?.isCurrentBaseline || latest?.IsCurrentBaseline;
+      const items = sourceVersion?.items || sourceVersion?.Items || b.items || b.Items || [];
+      const sourceVersionIdForSave = sourceVersion?.id || sourceVersion?.Id;
       const canEditRevision = editMode && canUpdate;
-      const latestLabel = boqVersionLabel(latest, versions);
+      const latestLabel = boqVersionLabel(sourceVersion, versions);
       const firstLabel = boqVersionLabel(first, versions);
       const baselineLabel = boqVersionLabel(currentBaseline, versions);
       const draftLabel = `v1.${versions.length}`;
       openModal(`BOQ — ${esc(b.title || b.name || '#' + id)}`, `
         ${editMode && canCreate ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn sm" onclick="WTPages.boqFromMaster(${id})">Add from Master Items</button>
-          <button class="btn sm" onclick="WTPages.boqImport(${id})">Import vendor file</button>
+          <button class="btn sm" onclick="WTPages.boqFromMaster(${id},${sourceVersionIdForSave})">Add from Master Items</button>
+          <button class="btn sm" onclick="WTPages.boqImport(${id},${sourceVersionIdForSave})">Import vendor file</button>
         </div>` : ''}
         <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <span class="badge blue">${esc(b.status || b.Status || 'Draft')}</span>
-          <span class="badge gray">BOQ Version: First ${esc(firstLabel)} / Latest ${esc(latestLabel)} / Baseline ${esc(baselineLabel)}</span>
-          <span class="badge gray">Latest: ${esc(latestLabel)}</span>
-          <span class="badge green">Current Baseline: ${esc(baselineLabel)}</span>
-          ${latest?.remarks || latest?.Remarks ? `<small style="color:var(--text-muted)">${esc(latest.remarks || latest.Remarks)}</small>` : ''}
+          ${editMode ? `<span class="badge blue">Source version: ${esc(latestLabel)}</span><span class="badge gray">New revision: ${esc(draftLabel)}</span>` : `<span class="badge blue">${esc(b.status || b.Status || 'Draft')}</span><span class="badge gray">BOQ Version: First ${esc(firstLabel)} / Latest ${esc(latestLabel)} / Baseline ${esc(baselineLabel)}</span><span class="badge gray">Latest: ${esc(latestLabel)}</span><span class="badge green">Current Baseline: ${esc(baselineLabel)}</span>`}
+          ${sourceVersion?.remarks || sourceVersion?.Remarks ? `<small style="color:var(--text-muted)">${esc(sourceVersion.remarks || sourceVersion.Remarks)}</small>` : ''}
         </div>
-        <p class="card-subtitle">${canEditRevision ? `Editing a draft for ${draftLabel}, copied from ${latestLabel}. The original ${firstLabel} stays read-only; ${draftLabel} is created when you save.` : `Showing ${latestLabel}. This version is read-only. Use Add additional item to prepare the next version.`}</p>
-        ${canEditRevision ? renderBoqReadOnlyItems(firstItems, firstLabel) + `<h3 style="margin:18px 0 8px">Draft ${esc(draftLabel)} (Editable)</h3>` : ''}
-        ${canEditRevision ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${latestVersionId},true)">Save all changes</button></div>` : ''}
+        <p class="card-subtitle">${canEditRevision ? `Editing a draft for ${draftLabel}, copied from ${latestLabel}. The selected version stays unchanged; ${draftLabel} is created when you save.` : `Showing ${latestLabel}. This version is read-only. Use Add additional item to prepare a revision from this version.`}</p>
+        ${canEditRevision ? `<h3 style="margin:18px 0 8px">Revision from ${esc(latestLabel)} (Editable)</h3>` : ''}
+        ${canEditRevision ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${sourceVersionIdForSave},true)">Save all changes</button></div>` : ''}
         <div class="table-wrap"><table class="table" id="boqRevisionItemsTable">
           <thead><tr><th>#</th><th>Item</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Action</th></tr></thead>
           <tbody>
@@ -3257,7 +3283,7 @@ WTPages.switchProjView = function(view) {
                 <td>${esc(it.brand || it.Brand || it.item?.brand?.name || it.Item?.brand?.name || '—')}</td>
                 <td>${!canEditRevision ? esc(it.remarks || it.Remarks || '—') : `<input id="boqRemark-${it.id || it.Id}" value="${esc(it.remarks || it.Remarks || '')}" style="min-width:120px">`}</td>
                 <td>${(it.attachmentPath || it.AttachmentPath) ? `<button class="btn sm" onclick="WTPages.downloadBoqAttachment('${encodeURIComponent(it.attachmentPath || it.AttachmentPath)}','${encodeURIComponent(it.attachmentName || it.AttachmentName || 'boq-attachment')}')">${esc(it.attachmentName || it.AttachmentName || 'Download')}</button>` : '—'}</td>
-                <td>${!canEditRevision ? '—' : `<button class="btn sm danger" onclick="WTPages.removeBoqRevisionItem(${id},${latestVersionId},${it.id || it.Id})">Remove</button>`}</td>
+                <td>${!canEditRevision ? '—' : `<button class="btn sm danger" onclick="WTPages.markBoqRevisionItemRemoved(${it.id || it.Id})">Remove</button>`}</td>
               </tr>`).join('') : `<tr><td colspan="12">No line items</td></tr>`}
           </tbody>
         </table></div>
@@ -3329,9 +3355,16 @@ WTPages.switchProjView = function(view) {
     if (allTotal) allTotal.textContent = format(amount + additionalAmount);
   }
 
-  async function createBoqRevision(id) {
+  function markBoqRevisionItemRemoved(itemId) {
+    const row = document.querySelector(`#boqRevisionItemsTable tr[data-item-id="${Number(itemId)}"]`);
+    if (!row) return;
+    row.dataset.removeLine = 'true';
+    row.style.display = 'none';
+  }
+
+  async function createBoqRevision(id, sourceVersionId = null) {
     try {
-      await viewBoq(id, true);
+      await viewBoq(id, true, sourceVersionId);
       showToast('Revision draft opened. Add your changes, then save to create the new version.');
     } catch (e) { showToast(e.message, 'danger'); }
   }
@@ -3387,7 +3420,9 @@ WTPages.switchProjView = function(view) {
   }
 
   async function saveBoqRevisionItems(boqId, versionId, createVersionOnSave = false) {
-    const rows = [...document.querySelectorAll('#boqRevisionItemsTable tbody tr[data-item-id]')];
+    const allRows = [...document.querySelectorAll('#boqRevisionItemsTable tbody tr[data-item-id]')];
+    const removedRows = allRows.filter(row => row.dataset.removeLine === 'true');
+    const rows = allRows.filter(row => row.dataset.removeLine !== 'true');
     const lines = rows.map(row => {
       const itemId = Number(row.dataset.itemId);
       return { itemId, lineNo: Number(row.dataset.lineNo), values: {
@@ -3399,14 +3434,14 @@ WTPages.switchProjView = function(view) {
         remarks: $(`#boqRemark-${itemId}`)?.value.trim() || null
       }};
     });
-    if (!lines.length) { showToast('There are no line changes to save.', 'info'); return; }
+    if (!lines.length && !removedRows.length) { showToast('There are no line changes to save.', 'info'); return; }
     try {
       let targetVersionId = versionId;
       if (createVersionOnSave) {
         const notes = prompt('Revision notes *', '');
         if (notes === null) return;
         if (!notes.trim()) { showToast('Revision notes are required.', 'danger'); return; }
-        const created = await WisetrackAPI.createBoqRevision(boqId, notes.trim());
+        const created = await WisetrackAPI.createBoqRevision(boqId, notes.trim(), versionId);
         targetVersionId = Number(created.id || created.Id);
         let createdItems = created.items || created.Items || [];
         if (!createdItems.length) {
@@ -3417,8 +3452,14 @@ WTPages.switchProjView = function(view) {
         }
         const newIdByLine = new Map(createdItems.map(item => [Number(item.lineNo ?? item.LineNo), Number(item.id || item.Id)]));
         lines.forEach(line => { line.itemId = newIdByLine.get(line.lineNo) || line.itemId; });
+        for (const row of removedRows) {
+          const copiedItemId = newIdByLine.get(Number(row.dataset.lineNo));
+          if (copiedItemId) await WisetrackAPI.removeBoqRevisionItem(boqId, targetVersionId, copiedItemId);
+        }
+      } else {
+        for (const row of removedRows) await WisetrackAPI.removeBoqRevisionItem(boqId, targetVersionId, Number(row.dataset.itemId));
       }
-      await WisetrackAPI.updateBoqRevisionItems(boqId, targetVersionId, lines);
+      if (lines.length) await WisetrackAPI.updateBoqRevisionItems(boqId, targetVersionId, lines);
       showToast(createVersionOnSave ? 'Changes saved. A new BOQ version was created; earlier versions remain unchanged.' : 'Changes saved to this BOQ version. Earlier versions remain unchanged.');
       await viewBoq(boqId);
     } catch (e) { showToast(e.message || 'Could not save BOQ lines.', 'danger'); }
@@ -3500,7 +3541,7 @@ WTPages.switchProjView = function(view) {
               </div>
             </div>
             <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
-            <input id="dailyReportDate" type="date" value="${new Date().toLocaleDateString('en-CA')}" style="max-width:150px">
+            <input id="dailyReportDate" type="date" value="${wtMaldivesDateInput()}" style="max-width:150px">
             <select id="dailyReportMode" style="max-width:210px"><option value="daily">Updates on date</option><option value="cumulative">Progress as of date</option></select>
             <button class="btn" onclick="WTPages.loadDailyTaskReport()">Load report</button>
             <button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>
@@ -4315,7 +4356,7 @@ WTPages.switchProjView = function(view) {
     const canPct = isSub
       ? (selectedSub?.canEditPercent ?? selectedSub?.CanEditPercent ?? selectedTask?.canEditPercent ?? true)
       : (selectedTask?.canEditPercent ?? selectedTask?.CanEditPercent ?? true);
-    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const today = wtMaldivesDateInput();
 
     openModal(isSub ? 'Update Sub-Task' : 'Update Task', `
       <form onsubmit="WTPages.saveTaskUpdate(event)">
@@ -4486,8 +4527,7 @@ WTPages.switchProjView = function(view) {
     const existing = id ? await WisetrackAPI.getIssue(id) : null;
     let priorities = [];
     try { priorities = await WisetrackAPI.getIssuePriorities(); } catch { /* optional */ }
-    const now = new Date();
-    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const local = wtMaldivesDateTimeInput();
     openModal(existing ? 'Edit Issue / Incident' : 'Log Issue / Incident', `
       <form onsubmit="WTPages.saveIssue(event)">
         <input type="hidden" id="iProj" value="${pid}">
@@ -4495,7 +4535,7 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field full"><label>What is the issue *</label><input id="iWhat" value="${esc(existing?.what || existing?.title || '')}" required placeholder="Short description of the incident"></div>
           <div class="field"><label>Where is the issue *</label><input id="iWhere" value="${esc(existing?.location || '')}" required placeholder="Location / area"></div>
-          <div class="field"><label>When it happened *</label><input id="iWhen" type="datetime-local" value="${existing?.occurredAt ? new Date(existing.occurredAt).toISOString().slice(0,16) : local}" required></div>
+          <div class="field"><label>When it happened (Maldives time) *</label><input id="iWhen" type="datetime-local" value="${existing?.occurredAt ? wtMaldivesDateTimeInput(existing.occurredAt) : local}" required></div>
           <div class="field full"><label>Impact *</label><textarea id="iImpact" required placeholder="Safety, schedule, cost, operations...">${esc(existing?.impact || '')}</textarea></div>
           <div class="field"><label>Priority</label><select id="iPri">${(priorities || []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="1">High</option>'}</select></div>
           ${existing ? `<div class="field"><label>Status</label><select id="iStatus">${['Open','In Progress','Resolved','Closed'].map(s => `<option ${s.toLowerCase() === String(existing.status || '').toLowerCase() ? 'selected' : ''}>${s}</option>`).join('')}</select></div>` : ''}
@@ -4517,7 +4557,7 @@ WTPages.switchProjView = function(view) {
         title: what,
         what,
         location: $('#iWhere').value.trim(),
-        occurredAt: $('#iWhen').value ? new Date($('#iWhen').value).toISOString() : null,
+        occurredAt: wtMaldivesInputToIso($('#iWhen').value),
         impact: $('#iImpact').value.trim(),
         priorityId: Number($('#iPri').value) || null,
         status: $('#iStatus')?.value || 'Open'
@@ -4668,8 +4708,8 @@ WTPages.switchProjView = function(view) {
           <div class="field full"><label>Project *</label><select id="snProject" required onchange="WTPages.loadScheduledTargets();WTPages.loadScheduledRecipients()">${projectOptions || '<option value="">No projects available</option>'}</select></div>
           <div class="field"><label>Target type *</label><select id="snTargetType" onchange="WTPages.loadScheduledTargets()"><option value="Project">Project</option><option value="Task">Task</option><option value="Milestone">Milestone</option></select></div>
           <div class="field" id="snTargetWrap" style="display:none"><label>Task / Milestone *</label><select id="snTargetId"></select></div>
-          <div class="field"><label>Notification date *</label><input id="snDate" type="date" min="${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)}" required></div>
-          <div class="field"><label>Notification time *</label><input id="snTime" type="time" value="09:00" required><small>Time uses your browser's local timezone.</small></div>
+          <div class="field"><label>Notification date (Maldives time) *</label><input id="snDate" type="date" min="${wtMaldivesDateInput()}" required></div>
+          <div class="field"><label>Notification time (Maldives time) *</label><input id="snTime" type="time" value="09:00" required></div>
           <div class="field full"><label>Title *</label><input id="snTitle" maxlength="250" required placeholder="e.g. Review milestone readiness"></div>
           <div class="field full"><label>Message *</label><textarea id="snBody" required placeholder="Enter the reminder or update to send"></textarea></div>
           <div class="field full"><label>Project team recipients * (active internal users only)</label><select id="snUsers" multiple required style="min-height:130px"><option value="">Loading project team...</option></select><small>Selected team members receive an in-app notification. Email is optional below.</small></div>
@@ -4732,7 +4772,7 @@ WTPages.switchProjView = function(view) {
     const projectId = Number($('#snProject').value);
     const relatedType = $('#snTargetType').value;
     const relatedId = relatedType === 'Project' ? projectId : Number($('#snTargetId').value);
-    const schedule = new Date(`${$('#snDate').value}T${$('#snTime').value}`);
+    const schedule = new Date(wtMaldivesInputToIso(`${$('#snDate').value}T${$('#snTime').value}`));
     if (!projectId || !relatedId || Number.isNaN(schedule.getTime())) {
       showToast('Choose a valid project target and date.', 'danger');
       return;
@@ -5959,7 +5999,7 @@ WTPages.switchProjView = function(view) {
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,
-    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, setBoqBaseline, downloadReport,
+    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,

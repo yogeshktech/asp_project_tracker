@@ -28,6 +28,14 @@ public interface IItemService
 
 public class ItemService : IItemService
 {
+    private static string NormalizeCurrency(string? currency)
+    {
+        var code = string.IsNullOrWhiteSpace(currency) ? "MVR" : currency.Trim().ToUpperInvariant();
+        if (code is not ("MVR" or "USD" or "EUR"))
+            throw new InvalidOperationException("Currency must be MVR, USD, or EUR.");
+        return code;
+    }
+
     private readonly IItemRepository _repository;
     private readonly IAuditService _audit;
     private readonly IPermissionService _permissions;
@@ -62,6 +70,7 @@ public class ItemService : IItemService
             CategoryId = request.CategoryId,
             UnitPrice = request.UnitPrice,
             StandardPrice = request.StandardPrice,
+            Currency = NormalizeCurrency(request.Currency),
             ImageUrl = request.ImageUrl,
             EffectiveDate = request.EffectiveDate,
             Source = request.Source,
@@ -92,6 +101,7 @@ public class ItemService : IItemService
         item.CategoryId = request.CategoryId;
         item.UnitPrice = request.UnitPrice;
         item.StandardPrice = request.StandardPrice;
+        item.Currency = NormalizeCurrency(request.Currency);
         item.ImageUrl = request.ImageUrl;
         item.EffectiveDate = request.EffectiveDate;
         item.Source = request.Source;

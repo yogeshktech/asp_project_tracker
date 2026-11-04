@@ -278,14 +278,14 @@ const WisetrackAPI = {
   getBoq(id) { return this.get(`/boq/${id}`); },
   updateBoq(id, data) { return this.put(`/boq/${id}`, data); },
   getBoqStatusHistory(id) { return this.get(`/boq/${id}/status-history`); },
-  createBoqRevision(id, remarks) { return this.post(`/boq/${id}/versions`, { remarks }); },
+  createBoqRevision(id, remarks, sourceVersionId = null) { return this.post(`/boq/${id}/versions`, { remarks, sourceVersionId }); },
   setBoqBaseline(id, versionId) { return this.post(`/boq/${id}/versions/${versionId}/baseline`, {}); },
   updateBoqRevisionItem(id, versionId, itemId, data) { return this.put(`/boq/${id}/versions/${versionId}/items/${itemId}`, data); },
   updateBoqRevisionItems(id, versionId, lines) { return this.put(`/boq/${id}/versions/${versionId}/items`, lines); },
   removeBoqRevisionItem(id, versionId, itemId) { return this.del(`/boq/${id}/versions/${versionId}/items/${itemId}`); },
   importBoq(data) { return this.post('/boq/import', data); },
   importBoqFile(data) { return this._fetch('/boq/import-file', { method: 'POST', body: data }); },
-  createBoqFromMaster(projectId, lines, boqId = null, revisionNotes = null) { return this.post('/boq/from-master', { projectId, boqId, revisionNotes, lines }); },
+  createBoqFromMaster(projectId, lines, boqId = null, revisionNotes = null, sourceVersionId = null) { return this.post('/boq/from-master', { projectId, boqId, revisionNotes, sourceVersionId, lines }); },
   uploadBoqAttachment(projectId, file) {
     const form = new FormData(); form.append('projectId', projectId); form.append('file', file);
     return this._fetch('/boq/attachments', { method: 'POST', body: form });

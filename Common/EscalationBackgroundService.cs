@@ -38,7 +38,8 @@ public class EscalationBackgroundService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var maldivesNow = DateTime.UtcNow.AddHours(5);
+        var today = DateOnly.FromDateTime(maldivesNow);
         var inactiveSince = DateTime.UtcNow.AddDays(-7);
         var activeRules = await db.EscalationRules.Where(r => r.IsActive).ToListAsync();
         var overdueRule = activeRules.FirstOrDefault(r => r.TriggerType == "TaskOverdue");
@@ -54,7 +55,7 @@ public class EscalationBackgroundService : BackgroundService
 
         foreach (var task in overdueTasks)
         {
-            if (overdueRule == null || DateTime.UtcNow < task.DueDate!.Value.ToDateTime(TimeOnly.MinValue).AddHours(overdueRule.DelayHours)) continue;
+            if (overdueRule == null || maldivesNow < task.DueDate!.Value.ToDateTime(TimeOnly.MinValue).AddHours(overdueRule.DelayHours)) continue;
             if (await WasRecentlyNotifiedAsync(db, "TaskOverdue", "Task", task.Id)) continue;
             var userIds = task.Project.ProjectUsers.Select(pu => pu.UserId).Distinct().ToList();
             if (task.AssignedTo.HasValue) userIds.Add(task.AssignedTo.Value);
@@ -112,7 +113,7 @@ public class EscalationBackgroundService : BackgroundService
             foreach (var milestone in milestones)
             {
                 if (milestone.DueDate!.Value < today && milestoneOverdueRule != null
-                    && DateTime.UtcNow >= milestone.DueDate.Value.ToDateTime(TimeOnly.MinValue).AddHours(milestoneOverdueRule.DelayHours)
+                    && maldivesNow >= milestone.DueDate.Value.ToDateTime(TimeOnly.MinValue).AddHours(milestoneOverdueRule.DelayHours)
                     && !await WasRecentlyNotifiedAsync(db, "MilestoneOverdue", "Milestone", milestone.Id))
                 {
                     var recipients = milestoneOverdueRule.TargetRoleId.HasValue
