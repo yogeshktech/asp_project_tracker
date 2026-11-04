@@ -157,6 +157,15 @@
     return `v1.${index}`;
   }
 
+  function sortBoqItems(items = []) {
+    const orderValue = item => {
+      const value = Number(item.displayLineNo ?? item.DisplayLineNo ?? item.lineNo ?? item.LineNo);
+      return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+    };
+    return [...items].sort((a, b) => orderValue(a) - orderValue(b)
+      || Number(a.lineNo ?? a.LineNo ?? a.id ?? a.Id ?? 0) - Number(b.lineNo ?? b.LineNo ?? b.id ?? b.Id ?? 0));
+  }
+
   function renderProjectContextTabs(page, projectId) {
     const el = document.getElementById('apiPageRoot');
     if (!el || !projectId || !PROJECT_CONTEXT_PAGES.has(page)) return;
@@ -2930,6 +2939,7 @@ WTPages.switchProjView = function(view) {
     const pid = await selectedProjectId();
     const canCreateBoq = !wtCan || wtCan('BOQ', 'edit', Number(pid));
     const canUpdateBoq = !wtCan || wtCan('BOQ', 'update', Number(pid));
+    const canDeleteBoq = !wtCan || wtCan('BOQ', 'delete', Number(pid));
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
       ` ${canCreateBoq ? `<button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>
         <button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>` : ''}`)
@@ -2966,6 +2976,8 @@ WTPages.switchProjView = function(view) {
           <td>${esc(v.remarks || v.Remarks || '-')}</td>
           <td>${isBaseline ? '<span class="badge green">Current Baseline</span>' : '-'}</td>
           <td><button class="btn sm" onclick="WTPages.viewBoqVersion(${b.id || b.Id},${versionId})">View</button>
+          ${canUpdateBoq ? `<button class="btn sm" onclick="WTPages.editBoqVersionRemarks(${b.id || b.Id},${versionId})">Edit remark</button>` : ''}
+          ${canDeleteBoq ? `<button class="btn sm danger" title="${isBaseline ? 'Set another version as baseline before deleting' : 'Delete version'}" aria-label="Delete version" ${isBaseline ? 'disabled' : `onclick="WTPages.deleteBoqVersion(${b.id || b.Id},${versionId})"`}><i class="fa-solid fa-trash"></i></button>` : ''}
           ${canCreateBoq ? `<button class="btn sm" onclick="WTPages.createBoqRevision(${b.id || b.Id},${versionId})">Add additional item</button>` : ''}</td></tr>`;
       }).join('') : emptyRow(6, 'No BOQ versions found.');
     } catch (e) { $('#boqBody').innerHTML = errRow(6, e); $('#boqVersionsBody').innerHTML = errRow(6, e); }
@@ -2987,6 +2999,36 @@ WTPages.switchProjView = function(view) {
         ${history.length ? history.map(h => `<tr><td>${esc(h.previousStatus || '—')}</td><td>${esc(h.newStatus || '—')}</td><td>${esc(h.userName || 'Unknown')}</td><td>${esc(h.userEmail || '—')}</td><td>${esc(new Date(h.createdAt).toLocaleString())}</td></tr>`).join('') : '<tr><td colspan="5">No status changes recorded yet.</td></tr>'}
         </tbody></table></div></div>`);
     } catch (error) { showToast(error.message || 'Could not load BOQ.', 'danger'); }
+  }
+
+  async function editBoqVersionRemarks(boqId, versionId) {
+    try {
+      const boq = await WisetrackAPI.getBoq(boqId);
+      const version = (boq.versions || boq.Versions || []).find(v => Number(v.id || v.Id) === Number(versionId));
+      if (!version) throw new Error('BOQ version was not found.');
+      const remarks = version.remarks || version.Remarks || '';
+    openModal('Edit BOQ version remark', `<form onsubmit="WTPages.saveBoqVersionRemarks(event, ${boqId}, ${versionId})">
+      <div class="field full"><label>Revision notes</label><textarea id="boqVersionRemarks" rows="4" maxlength="2000">${esc(remarks)}</textarea></div>
+      <div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save remark</button></div>
+    </form>`);
+    } catch (error) { showToast(error.message || 'Could not load version remark.', 'danger'); }
+  }
+
+  async function saveBoqVersionRemarks(event, boqId, versionId) {
+    event.preventDefault();
+    try {
+      await WisetrackAPI.updateBoqVersionRemarks(boqId, versionId, $('#boqVersionRemarks').value.trim() || null);
+      closeModal(); showToast('Version remark updated.'); await pageBoq();
+    } catch (error) { showToast(error.message || 'Could not update version remark.', 'danger'); }
+  }
+
+  async function deleteBoqVersion(boqId, versionId) {
+    if (!confirm('Delete this BOQ version and all its items? This cannot be undone.')) return;
+    try {
+      await WisetrackAPI.deleteBoqVersion(boqId, versionId);
+      showToast('BOQ version deleted.');
+      await pageBoq();
+    } catch (error) { showToast(error.message || 'Could not delete BOQ version.', 'danger'); }
   }
 
   async function saveBoqEdit(event, id) {
@@ -3098,9 +3140,16 @@ WTPages.switchProjView = function(view) {
         if (!revisionNotes) { showToast('Revision notes are required.', 'danger'); return; }
       }
       const sourceVersionId = Number($('#boqMasterSourceVersion')?.value) || null;
-      await WisetrackAPI.createBoqFromMaster(pid, lines, targetBoqId, revisionNotes, sourceVersionId);
-      closeModal(); showToast(`${lines.length} item(s) added${targetBoqId ? ' to a new BOQ revision' : ' to project BOQ'}`);
-      if (targetBoqId) await viewBoq(targetBoqId, true); else await pageBoq();
+      const result = await WisetrackAPI.createBoqFromMaster(pid, lines, targetBoqId, revisionNotes, sourceVersionId);
+      const updatedBoq = targetBoqId ? result : null;
+      const versions = updatedBoq?.versions || updatedBoq?.Versions || [];
+      const newVersion = [...versions].sort((a, b) => Number(b.versionNo || b.VersionNo || 0) - Number(a.versionNo || a.VersionNo || 0))[0];
+      const newVersionLabel = newVersion ? boqVersionLabel(newVersion, versions) : '';
+      closeModal();
+      showToast(targetBoqId
+        ? `${lines.length} item(s) added to new version ${newVersionLabel || ''}. Check that version in BOQ Version History.`
+        : `${lines.length} item(s) added to project BOQ.`);
+      await pageBoq();
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -3116,6 +3165,20 @@ WTPages.switchProjView = function(view) {
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
+  function downloadBoqImportTemplate() {
+    const rows = [
+      ['Description', 'Unit', 'Quantity', 'Unit Price', 'Additional Consumption', 'Price for Additional Consumption', 'Brand', 'Remarks'],
+      ['Example item - replace this row', 'Nos', '1', '0.00', '0', '0.00', '', 'Replace with your item details']
+    ];
+    const csv = '\uFEFF' + rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'boq-import-template.csv';
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function boqImport(targetBoqId = null, sourceVersionId = null) {
     const target = targetBoqId ? await WisetrackAPI.getBoq(targetBoqId) : null;
     const pid = Number(target?.projectId || target?.ProjectId) || await selectedProjectId();
@@ -3127,10 +3190,12 @@ WTPages.switchProjView = function(view) {
         <div class="field"><label>Title *</label><input id="boqTitle" value="${esc(target?.title || target?.Title || 'Imported BOQ')}" required></div>
         <div class="field"><label>Excel / CSV / TSV from 3rd party (flexible column names)</label>
           <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv">
+          <button type="button" class="btn sm" style="margin-top:8px" onclick="WTPages.downloadBoqImportTemplate()"><i class="fa-solid fa-download"></i> Download standard CSV template</button>
+          <small class="card-subtitle" style="display:block;margin-top:4px">Replace the sample row. Required: Description, Unit, Quantity, Unit Price. Additional consumption, brand, and remarks are optional.</small>
         </div>
         <div class="field"><label>Worksheet name (optional for Excel)</label><input id="boqWorksheet" placeholder="For example: Civil. Leave blank to auto-detect the BOQ sheet."></div>
         <div class="field"><label>Or paste rows</label>
-          <textarea id="boqJson" rows="8" placeholder="Item Code,Description,Qty,Rate&#10;ITM-1,Cable tray,10,1500"></textarea>
+          <textarea id="boqJson" rows="8" placeholder="Description,Unit,Quantity,Unit Price&#10;Cable tray,Nos,10,1500"></textarea>
         </div>
         <p style="font-size:12px;color:var(--text-muted)">Recognizes description/qty/rate aliases. Validation errors can be downloaded before commit.</p>
         <div class="modalfoot" style="padding:0;margin-top:12px">
@@ -3198,15 +3263,22 @@ WTPages.switchProjView = function(view) {
         return;
       }
       const targetBoqId = Number($('#boqTargetId')?.value) || null;
-      closeModal(); showToast(targetBoqId ? 'Imported as a new BOQ revision' : 'Imported');
-      if (targetBoqId) await viewBoq(targetBoqId); else await pageBoq();
+      const importedBoq = result.committedBoq || result.CommittedBoq;
+      const versions = importedBoq?.versions || importedBoq?.Versions || [];
+      const newVersion = [...versions].sort((a, b) => Number(b.versionNo || b.VersionNo || 0) - Number(a.versionNo || a.VersionNo || 0))[0];
+      const newVersionLabel = newVersion ? boqVersionLabel(newVersion, versions) : '';
+      closeModal();
+      showToast(targetBoqId
+        ? `Imported into new version ${newVersionLabel || ''}. Check that version in BOQ Version History.`
+        : 'Imported');
+      await pageBoq();
     } catch (err) {
       showToast(err.message || 'BOQ import failed. Please retry.', 'danger');
     }
   }
 
   function renderBoqReadOnlyItems(items, label) {
-    const rows = items.map((item, index) => {
+    const rows = sortBoqItems(items).map((item, index) => {
       const quantity = Number(item.quantity ?? item.Quantity ?? 0);
       const unitPrice = Number(item.unitPrice ?? item.UnitPrice ?? 0);
       const amount = Number(item.amount ?? item.Amount ?? quantity * unitPrice);
@@ -3215,7 +3287,7 @@ WTPages.switchProjView = function(view) {
       const additionalAmount = Number(item.additionalConsumptionAmount ?? item.AdditionalConsumptionAmount ?? additionalQty * additionalPrice);
       const allTotal = Number(item.allTotal ?? item.AllTotal ?? amount + additionalAmount);
       return `<tr>
-        <td>${esc(item.displayLineNo || item.DisplayLineNo || item.lineNo || item.LineNo || index + 1)}</td>
+        <td>${index + 1}</td>
         <td>${esc(item.itemName || item.ItemName || item.itemCode || item.ItemCode || item.description || item.Description || '—')}</td>
         <td>${esc(item.unit || item.Unit || '—')}</td>
         <td>${unitPrice.toLocaleString('en-US')}</td>
@@ -3248,7 +3320,7 @@ WTPages.switchProjView = function(view) {
       const sourceVersion = sourceVersionId ? versions.find(v => Number(v.id || v.Id) === Number(sourceVersionId)) : latest;
       if (sourceVersionId && !sourceVersion) throw new Error('The selected BOQ version was not found.');
       const currentBaseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline);
-      const items = sourceVersion?.items || sourceVersion?.Items || b.items || b.Items || [];
+      const items = sortBoqItems(sourceVersion?.items || sourceVersion?.Items || b.items || b.Items || []);
       const sourceVersionIdForSave = sourceVersion?.id || sourceVersion?.Id;
       const canEditRevision = editMode && canUpdate;
       const latestLabel = boqVersionLabel(sourceVersion, versions);
@@ -3270,9 +3342,9 @@ WTPages.switchProjView = function(view) {
         <div class="table-wrap"><table class="table" id="boqRevisionItemsTable">
           <thead><tr><th>#</th><th>Item</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Action</th></tr></thead>
           <tbody>
-            ${items.length ? items.map(it => `
+            ${items.length ? items.map((it, index) => `
               <tr data-item-id="${it.id || it.Id}" data-line-no="${it.lineNo ?? it.LineNo ?? ''}" data-unit-price="${it.unitPrice ?? it.UnitPrice ?? 0}" data-quantity="${it.quantity ?? it.Quantity ?? 0}" data-description="${esc(it.description ?? it.Description ?? '')}">
-                <td>${esc(it.displayLineNo || it.DisplayLineNo || it.lineNo || it.LineNo || it.id || '—')}</td>
+                <td>${index + 1}</td>
                 <td>${esc(it.itemName || it.ItemName || it.itemCode || it.ItemCode || it.item?.name || it.Item?.name || '—')}</td>
                 <td>${esc(it.unit || it.Unit || it.item?.unit?.name || it.Item?.unit?.name || '—')}</td>
                 <td>MVR ${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-US')}</td>
@@ -3375,10 +3447,10 @@ WTPages.switchProjView = function(view) {
       const versions = boq.versions || boq.Versions || [];
       const version = versions.find(v => Number(v.id || v.Id) === Number(versionId));
       if (!version) throw new Error('BOQ version was not found.');
-      const items = version.items || version.Items || [];
+      const items = sortBoqItems(version.items || version.Items || []);
       const label = boqVersionLabel(version, versions);
       const rows = items.map((item, index) => `<tr>
-        <td>${esc(item.displayLineNo || item.DisplayLineNo || item.lineNo || item.LineNo || index + 1)}</td>
+        <td>${index + 1}</td>
         <td>${esc(item.itemName || item.ItemName || item.description || item.Description || '—')}</td>
         <td>${esc(item.itemCode || item.ItemCode || '—')}</td>
         <td>${esc(item.unit || item.Unit || '—')}</td>
@@ -3399,6 +3471,7 @@ WTPages.switchProjView = function(view) {
         </div>
         <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Item name</th><th>Code</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Description</th></tr></thead>
           <tbody>${rows || '<tr><td colspan="12">No items in this version.</td></tr>'}</tbody></table></div>`);
+      if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 50);
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -5999,7 +6072,7 @@ WTPages.switchProjView = function(view) {
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,
-    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
+    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,

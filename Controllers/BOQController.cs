@@ -95,6 +95,30 @@ public class BOQController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    [HttpPut("{id:long}/versions/{versionId:long}/remarks")]
+    public async Task<IActionResult> UpdateVersionRemarks(long id, long versionId, [FromBody] UpdateBoqVersionRemarksRequest request)
+    {
+        try
+        {
+            var version = await _boqService.UpdateRevisionRemarksAsync(id, versionId, request.Remarks, UserId);
+            return version == null ? NotFound(new { message = "BOQ version not found." }) : Ok(version);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
+    [HttpDelete("{id:long}/versions/{versionId:long}")]
+    public async Task<IActionResult> DeleteVersion(long id, long versionId)
+    {
+        try
+        {
+            var deleted = await _boqService.DeleteVersionAsync(id, versionId, UserId);
+            return deleted ? NoContent() : NotFound(new { message = "BOQ version not found." });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
     [HttpPost("{id:long}/versions/{versionId:long}/baseline")]
     public async Task<IActionResult> SetBaseline(long id, long versionId)
     {

@@ -279,6 +279,8 @@ const WisetrackAPI = {
   updateBoq(id, data) { return this.put(`/boq/${id}`, data); },
   getBoqStatusHistory(id) { return this.get(`/boq/${id}/status-history`); },
   createBoqRevision(id, remarks, sourceVersionId = null) { return this.post(`/boq/${id}/versions`, { remarks, sourceVersionId }); },
+  updateBoqVersionRemarks(id, versionId, remarks) { return this.put(`/boq/${id}/versions/${versionId}/remarks`, { remarks }); },
+  deleteBoqVersion(id, versionId) { return this.del(`/boq/${id}/versions/${versionId}`); },
   setBoqBaseline(id, versionId) { return this.post(`/boq/${id}/versions/${versionId}/baseline`, {}); },
   updateBoqRevisionItem(id, versionId, itemId, data) { return this.put(`/boq/${id}/versions/${versionId}/items/${itemId}`, data); },
   updateBoqRevisionItems(id, versionId, lines) { return this.put(`/boq/${id}/versions/${versionId}/items`, lines); },

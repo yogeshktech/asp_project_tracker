@@ -17,6 +17,8 @@ public interface IBOQService
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
     Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId, long? boqId = null, string? revisionNotes = null, long? sourceVersionId = null);
     Task<BoqVersion> CreateRevisionAsync(long boqId, string? remarks, long userId, long? sourceVersionId = null);
+    Task<BoqVersion?> UpdateRevisionRemarksAsync(long boqId, long versionId, string? remarks, long userId);
+    Task<bool> DeleteVersionAsync(long boqId, long versionId, long userId);
     Task<BoqVersion?> SetCurrentBaselineAsync(long boqId, long versionId, long userId);
     Task<BoqItem?> UpdateRevisionItemAsync(long boqId, long versionId, long itemId, UpdateBoqVersionItemRequest request, long userId);
     Task<List<BoqItem>> UpdateRevisionItemsAsync(long boqId, long versionId, List<UpdateBoqRevisionLineRequest> lines, long userId);
@@ -359,6 +361,35 @@ public class BOQService : IBOQService
         await _audit.LogAsync(userId, "CreateRevision", "BOQ", boqId, $"Version {revision.VersionNo} from version {source.VersionNo}");
         revision.Items = copiedItems;
         return revision;
+    }
+
+    public async Task<BoqVersion?> UpdateRevisionRemarksAsync(long boqId, long versionId, string? remarks, long userId)
+    {
+        var boq = await _repository.GetAsync(boqId);
+        if (boq == null) return null;
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "update");
+        var version = boq.Versions.FirstOrDefault(v => v.Id == versionId);
+        if (version == null) return null;
+        version.Remarks = string.IsNullOrWhiteSpace(remarks) ? null : remarks.Trim();
+        _db.BoqVersions.Update(version);
+        await _db.SaveChangesAsync();
+        await _audit.LogAsync(userId, "UpdateVersionRemarks", "BOQ", boqId, $"Version {version.VersionNo} remarks updated");
+        return version;
+    }
+
+    public async Task<bool> DeleteVersionAsync(long boqId, long versionId, long userId)
+    {
+        var boq = await _repository.GetAsync(boqId);
+        if (boq == null) return false;
+        await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "delete");
+        var version = boq.Versions.FirstOrDefault(v => v.Id == versionId);
+        if (version == null) return false;
+        if (boq.Versions.Count <= 1) throw new InvalidOperationException("The last BOQ version cannot be deleted.");
+        if (version.IsCurrentBaseline) throw new InvalidOperationException("Set another version as the current baseline before deleting this version.");
+        _db.BoqVersions.Remove(version);
+        await _db.SaveChangesAsync();
+        await _audit.LogAsync(userId, "DeleteVersion", "BOQ", boqId, $"Version {version.VersionNo} deleted");
+        return true;
     }
 
     private static string NextBaselineVersionLabel(IEnumerable<BoqVersion> versions)

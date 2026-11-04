@@ -302,6 +302,11 @@ public class CreateBoqRevisionRequest
     public long? SourceVersionId { get; set; }
 }
 
+public class UpdateBoqVersionRemarksRequest
+{
+    public string? Remarks { get; set; }
+}
+
 public class UpdateBoqRequest
 {
     public string Title { get; set; } = string.Empty;
