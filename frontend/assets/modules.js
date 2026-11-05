@@ -2650,18 +2650,30 @@ WTPages.switchProjView = function(view) {
 
   // ---------- COSTS ----------
   let pendingCostImportRows = [];
+  let costImportBoqItemNames = new Map();
 
   async function openCostImportModal() {
     const projectId = await selectedProjectId();
     if (!projectId) { showToast('Select a project first.', 'danger'); return; }
+    costImportBoqItemNames = new Map();
+    try {
+      const boqs = await WisetrackAPI.getBoqs(projectId);
+      (boqs || []).forEach(boq => (boq.versions || boq.Versions || []).forEach(version =>
+        (version.items || version.Items || []).forEach(item => {
+          const id = item.id ?? item.Id;
+          const name = item.itemName || item.ItemName || item.item?.name || item.Item?.Name || item.description || item.Description;
+          if (id != null && name) costImportBoqItemNames.set(String(name).trim().toLowerCase(), id);
+        })
+      ));
+    } catch { /* BOQ item names remain optional if the project has no visible BOQ. */ }
     openModal('Import Purchase / Actual Cost CSV', `
       <form onsubmit="WTPages.saveCostImport(event)">
         <div class="form-grid">
           <div class="field"><label>Entry type *</label><select id="ciType"><option>Purchase</option><option>Actual</option></select></div>
           <div class="field"><label>CSV file *</label><input id="ciFile" type="file" accept=".csv,.tsv,.txt" required onchange="WTPages.previewCostImport(this)"></div>
-          <div class="field full"><small>Required column: Amount. Optional: Date (YYYY-MM-DD), Cost Center ID, BOQ Item ID, Vendor, Description. Leave both IDs empty for project-level costs.</small></div>
+          <div class="field full"><small>Required column: Amount. Optional: Date (YYYY-MM-DD), BOQ Item Name, Vendor, Remark. Leave BOQ Item Name blank for project-level costs.</small></div>
         </div>
-        <button class="btn sm" type="button" onclick="wtDownloadText('wisetrack-cost-import-template.csv','Amount,Date,Cost Center ID,BOQ Item ID,Vendor,Description\\n','text/csv;charset=utf-8')">Download CSV template</button>
+        <button class="btn sm" type="button" onclick="wtDownloadText('wisetrack-cost-import-template.csv','Amount,Date,BOQ Item Name,Vendor,Remark\\n','text/csv;charset=utf-8')">Download CSV template</button>
         <div id="ciPreview" style="margin-top:12px;color:var(--text-muted)">Choose a file to preview rows.</div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Import rows</button></div>
       </form>`);
@@ -2676,23 +2688,20 @@ WTPages.switchProjView = function(view) {
       pendingCostImportRows = parsed.map((r, index) => {
         const amountText = wtPick(r, ['Amount', 'Cost Amount', 'Total']);
         const dateText = wtPick(r, ['CostDate', 'PurchaseDate', 'Date']);
-        const centerText = wtPick(r, ['CostCenterId', 'Cost Center ID']);
-        const boqText = wtPick(r, ['BoqItemId', 'BOQ Item ID', 'BOQ Line ID']);
+        const boqName = String(wtPick(r, ['BOQ Item Name', 'Item Name', 'BOQ Item', 'Item']) || '').trim();
         const amount = Number(String(amountText).replace(/[,MVR $ ]/g, ''));
-        const costCenterId = centerText ? Number(centerText) : null;
-        const boqItemId = boqText ? Number(boqText) : null;
+        const boqItemId = boqName ? (costImportBoqItemNames.get(boqName.toLowerCase()) ?? null) : null;
         const parsedDate = dateText ? new Date(`${dateText}T00:00:00Z`) : null;
         const validDate = !dateText || (/^\d{4}-\d{2}-\d{2}$/.test(dateText)
           && !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === dateText);
         const errors = [];
         if (!Number.isFinite(amount) || amount <= 0) errors.push('Amount must be greater than zero');
-        if (centerText && (!Number.isInteger(costCenterId) || costCenterId <= 0)) errors.push('Invalid CostCenterId');
-        if (boqText && (!Number.isInteger(boqItemId) || boqItemId <= 0)) errors.push('Invalid BoqItemId');
+        if (boqName && boqItemId == null) errors.push(`BOQ item name not found: ${boqName}`);
         if (!validDate) errors.push('CostDate must use YYYY-MM-DD');
         return {
-          rowNo: index + 2, amount, costDate: dateText || null, costCenterId, boqItemId,
+          rowNo: index + 2, amount, costDate: dateText || null, boqItemId,
           vendor: wtPick(r, ['Vendor', 'Supplier']) || null,
-          description: wtPick(r, ['Description', 'Remarks', 'Reference']) || null,
+          description: wtPick(r, ['Remark', 'Remarks', 'Description', 'Reference']) || null,
           errors
         };
       });
@@ -3263,7 +3272,7 @@ WTPages.switchProjView = function(view) {
 
   function downloadBoqImportTemplate() {
     const rows = [
-      ['Description', 'Unit', 'Quantity', 'Unit Price', 'Additional Consumption', 'Price for Additional Consumption', 'Brand', 'Remarks'],
+      ['Item Name', 'Unit', 'Quantity', 'Unit Price', 'Additional Consumption', 'Price for Additional Consumption', 'Brand', 'Remarks'],
       ['Example item - replace this row', 'Nos', '1', '0.00', '0', '0.00', '', 'Replace with your item details']
     ];
     const csv = '\uFEFF' + rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -3287,7 +3296,7 @@ WTPages.switchProjView = function(view) {
         <div class="field"><label>Excel / CSV / TSV from 3rd party (flexible column names)</label>
           <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv">
           <button type="button" class="btn sm" style="margin-top:8px" onclick="WTPages.downloadBoqImportTemplate()"><i class="fa-solid fa-download"></i> Download standard CSV template</button>
-          <small class="card-subtitle" style="display:block;margin-top:4px">Replace the sample row. Required: Description, Unit, Quantity, Unit Price. Additional consumption, brand, and remarks are optional.</small>
+          <small class="card-subtitle" style="display:block;margin-top:4px">Replace the sample row. Required: Item Name, Unit, Quantity, Unit Price. Additional consumption, brand, and remarks are optional.</small>
         </div>
         <div class="field"><label>Worksheet name (optional for Excel)</label><input id="boqWorksheet" placeholder="For example: Civil. Leave blank to auto-detect the BOQ sheet."></div>
         <div class="field"><label>Or paste rows</label>
