@@ -2659,9 +2659,9 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field"><label>Entry type *</label><select id="ciType"><option>Purchase</option><option>Actual</option></select></div>
           <div class="field"><label>CSV file *</label><input id="ciFile" type="file" accept=".csv,.tsv,.txt" required onchange="WTPages.previewCostImport(this)"></div>
-          <div class="field full"><small>Required column: Amount. Optional: CostDate (YYYY-MM-DD), CostCenterId, BoqItemId, Vendor, Description. Leave both IDs empty for project-level costs.</small></div>
+          <div class="field full"><small>Required column: Amount. Optional: Date (YYYY-MM-DD), Cost Center ID, BOQ Item ID, Vendor, Description. Leave both IDs empty for project-level costs.</small></div>
         </div>
-        <button class="btn sm" type="button" onclick="wtDownloadText('wisetrack-cost-import-template.csv','Amount,CostDate,CostCenterId,BoqItemId,Vendor,Description\\n','text/csv;charset=utf-8')">Download CSV template</button>
+        <button class="btn sm" type="button" onclick="wtDownloadText('wisetrack-cost-import-template.csv','Amount,Date,Cost Center ID,BOQ Item ID,Vendor,Description\\n','text/csv;charset=utf-8')">Download CSV template</button>
         <div id="ciPreview" style="margin-top:12px;color:var(--text-muted)">Choose a file to preview rows.</div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Import rows</button></div>
       </form>`);
