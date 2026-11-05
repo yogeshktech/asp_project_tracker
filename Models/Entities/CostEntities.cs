@@ -24,6 +24,8 @@ public class ActualCost
     public long Id { get; set; }
     public long ProjectId { get; set; }
     public long? BoqItemId { get; set; }
+    public string? BoqItemIdsJson { get; set; }
+    public bool IncludesOther { get; set; }
     public long? CostCenterId { get; set; }
     public string? Description { get; set; }
     public decimal Amount { get; set; }

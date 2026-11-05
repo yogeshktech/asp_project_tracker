@@ -441,6 +441,8 @@ CREATE TABLE actual_costs (
     created_by     BIGINT REFERENCES users(id),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS boq_item_ids_json TEXT NULL;
+ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS includes_other BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- =============================================================================
 -- 09. Issue / Incident Tracker

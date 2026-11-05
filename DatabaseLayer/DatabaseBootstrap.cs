@@ -26,6 +26,12 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_drawing_uploads_project_created ON drawing_uploads(project_id, created_at DESC)""");
     }
 
+    public static async Task EnsureActualCostBoqItemsSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS boq_item_ids_json TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS includes_other BOOLEAN NOT NULL DEFAULT FALSE""");
+    }
+
     public static async Task EnsureProjectBudgetAllocationSchemaAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync(
@@ -158,6 +164,7 @@ public static class DatabaseBootstrap
         await EnsureScheduledNotificationSchemaAsync(db, logger);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
         await EnsureDrawingUploadSchemaAsync(db);
+        await EnsureActualCostBoqItemsSchemaAsync(db);
         await DbSeeder.SeedAsync(db);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
         await EnsureUserResortAccessSchemaAsync(db);

@@ -3,6 +3,7 @@ using project_tracker_madhu.DatabaseLayer.Costs;
 using project_tracker_madhu.Models.Entities;
 using project_tracker_madhu.Models.Requests;
 using project_tracker_madhu.Models.Responses;
+using System.Text.Json;
 
 namespace project_tracker_madhu.BusinessLayer.Costs;
 
@@ -59,12 +60,14 @@ public class CostService : ICostService
     {
         if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
             throw new UnauthorizedAccessException("No permission.");
-        await ValidateCostDimensionsAsync(request.ProjectId, request.BoqItemId, request.CostCenterId);
+        var boqItemIds = await ValidateActualBoqItemsAsync(request);
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var cost = await _repository.AddActualAsync(new ActualCost
         {
             ProjectId = request.ProjectId,
-            BoqItemId = request.BoqItemId,
+            BoqItemId = boqItemIds.Count == 0 ? null : boqItemIds[0],
+            BoqItemIdsJson = boqItemIds.Count == 0 ? null : JsonSerializer.Serialize(boqItemIds),
+            IncludesOther = request.IncludesOther,
             CostCenterId = request.CostCenterId,
             Description = request.Description,
             Amount = request.Amount,
@@ -105,8 +108,11 @@ public class CostService : ICostService
         await _permissions.EnsureModuleAsync(userId, cost.ProjectId, "Costs", "update");
         if (request.ProjectId != cost.ProjectId) throw new InvalidOperationException("Cost project cannot be changed.");
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
-        await ValidateCostDimensionsAsync(cost.ProjectId, request.BoqItemId, request.CostCenterId);
-        cost.BoqItemId = request.BoqItemId; cost.CostCenterId = request.CostCenterId;
+        var boqItemIds = await ValidateActualBoqItemsAsync(request);
+        cost.BoqItemId = boqItemIds.Count == 0 ? null : boqItemIds[0];
+        cost.BoqItemIdsJson = boqItemIds.Count == 0 ? null : JsonSerializer.Serialize(boqItemIds);
+        cost.IncludesOther = request.IncludesOther;
+        cost.CostCenterId = request.CostCenterId;
         cost.Description = request.Description; cost.Amount = request.Amount;
         cost.CostDate = request.CostDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         await _repository.UpdateActualAsync(cost);
@@ -164,6 +170,19 @@ public class CostService : ICostService
             throw new InvalidOperationException("BOQ line does not belong to this project.");
         if (costCenterId.HasValue && !await _repository.CostCenterBelongsToProjectAsync(projectId, costCenterId.Value))
             throw new InvalidOperationException("Cost Center does not belong to this project.");
+    }
+
+    private async Task<List<long>> ValidateActualBoqItemsAsync(CreateActualCostRequest request)
+    {
+        if (request.IncludesOther && string.IsNullOrWhiteSpace(request.Description))
+            throw new InvalidOperationException("Remarks are required when Other is selected.");
+        var ids = (request.BoqItemIds ?? new List<long>()).Where(id => id > 0).Distinct().ToList();
+        if (ids.Count == 0 && request.BoqItemId.HasValue) ids.Add(request.BoqItemId.Value);
+        if (request.ProjectId <= 0) throw new InvalidOperationException("Project is required.");
+        foreach (var id in ids)
+            await ValidateCostDimensionsAsync(request.ProjectId, id, null);
+        await ValidateCostDimensionsAsync(request.ProjectId, null, request.CostCenterId);
+        return ids;
     }
 
     public async Task<List<PurchaseCost>> GetPurchasesAsync(long userId, long projectId)

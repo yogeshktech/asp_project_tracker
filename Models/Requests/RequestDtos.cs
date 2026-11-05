@@ -410,6 +410,8 @@ public class CreateActualCostRequest
 {
     public long ProjectId { get; set; }
     public long? BoqItemId { get; set; }
+    public List<long> BoqItemIds { get; set; } = new();
+    public bool IncludesOther { get; set; }
     public long? CostCenterId { get; set; }
     public string? Description { get; set; }
     public decimal Amount { get; set; }

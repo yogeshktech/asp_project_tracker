@@ -2792,9 +2792,13 @@ WTPages.switchProjView = function(view) {
       $('#costsBody').innerHTML = rows.length ? rows.map(r => {
         const canUpdate = !wtCan || wtCan('Costs', 'update', Number(pid));
         const canDelete = !wtCan || wtCan('Costs', 'delete', Number(pid));
-        const boqName = r.boqItemId ? boqItemNames.get(String(r.boqItemId)) : '';
         const vendor = r.vendor || r.Vendor || '—';
-        const itemName = boqName || (r.boqItemId ? `BOQ Line #${r.boqItemId}` : 'Other');
+        let boqItemIds = [];
+        try { boqItemIds = JSON.parse(r.boqItemIdsJson || r.BoqItemIdsJson || '[]'); } catch { boqItemIds = []; }
+        if (!boqItemIds.length && r.boqItemId) boqItemIds = [r.boqItemId];
+        const itemNames = boqItemIds.map(itemId => boqItemNames.get(String(itemId)) || `BOQ Line #${itemId}`);
+        if (r.includesOther || r.IncludesOther) itemNames.push('Other');
+        const itemName = itemNames.join(', ') || 'Other';
         return `<tr><td>${r.id}</td><td>${esc(vendor)}</td><td>${esc(itemName)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
           <td>${esc(r.costDate || r.purchaseDate || r.createdAt || 'N/A')}</td><td>${esc(r.remarks || r.description || r.notes || 'N/A')}</td><td class="table-actions">${canUpdate ? `<button class="btn sm" title="Edit ${r._t.toLowerCase()}" aria-label="Edit ${r._t.toLowerCase()}" onclick="WTPages.open${r._t}Modal(${r.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete ${r._t.toLowerCase()}" aria-label="Delete ${r._t.toLowerCase()}" onclick="WTPages.deleteCost('${r._t}', ${r.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') : emptyRow(7, 'No cost entries');
@@ -2948,7 +2952,7 @@ WTPages.switchProjView = function(view) {
       const itemName = i.itemName || i.ItemName || i.item?.name || i.Item?.name || i.description || i.Description || i.itemCode || i.ItemCode || 'BOQ line';
       const price = i.unitPrice ?? i.UnitPrice ?? i.unitRate ?? i.UnitRate ?? i.rate ?? i.Rate ?? i.price ?? i.Price;
       const label = itemName;
-      return `<option value="${i.id}" data-price="${Number(price) || 0}">${esc(label)}</option>`;
+      return `<option value="${i.id || i.Id}" data-price="${Number(price) || 0}">${esc(label)}</option>`;
     }).join('');
     const today = new Date();
     const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -2959,23 +2963,32 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field"><label>Amount *</label><input id="aAmt" type="number" min="0.01" step="0.01" value="${existing?.amount ?? ''}" required></div>
           <div class="field"><label>Date</label><input id="aDate" type="date" value="${existing?.costDate?.slice(0, 10) || todayLocal}"></div>
-          <div class="field full"><label>BOQ Line *</label><select id="aBoq" required><option value="">Select</option>${lineOptions}<option value="other">Other</option></select></div>
+          <div class="field full"><label>BOQ Line *</label><select id="aBoq" multiple size="5" required style="min-height:130px">${lineOptions}<option value="other">Other</option></select><small>Use Ctrl (Windows) or Command (Mac) to select multiple BOQ lines.</small></div>
           <div class="field full"><label id="aRemLabel">Remarks</label><input id="aRem" value="${esc(existing?.description || '')}"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
-    if (existing) $('#aBoq').value = existing.boqItemId || 'other';
+    if (existing) {
+      let existingBoqIds = [];
+      try { existingBoqIds = JSON.parse(existing.boqItemIdsJson || existing.BoqItemIdsJson || '[]'); } catch { existingBoqIds = []; }
+      if (!existingBoqIds.length && (existing.boqItemId || existing.BoqItemId)) existingBoqIds = [existing.boqItemId || existing.BoqItemId];
+      if (existing.includesOther || existing.IncludesOther) existingBoqIds.push('other');
+      if (!existingBoqIds.length) existingBoqIds = ['other'];
+      const selectedIds = new Set(existingBoqIds.map(String));
+      [...$('#aBoq').options].forEach(option => { option.selected = selectedIds.has(option.value); });
+    }
     const updateActualRemarksRequired = () => {
-      const isOther = $('#aBoq').value === 'other';
+      const isOther = [...$('#aBoq').selectedOptions].some(option => option.value === 'other');
       $('#aRem').required = isOther;
       $('#aRemLabel').textContent = isOther ? 'Remarks *' : 'Remarks';
     };
     $('#aBoq').addEventListener('change', updateActualRemarksRequired);
     updateActualRemarksRequired();
     $('#aBoq').addEventListener('change', () => {
-      const selected = $('#aBoq').selectedOptions[0];
-      const price = Number(selected?.dataset.price || 0);
-      if (price > 0) $('#aAmt').value = price;
+      const selected = [...$('#aBoq').selectedOptions];
+      const totalPrice = selected.reduce((sum, option) => sum + Number(option.dataset.price || 0), 0);
+      if (totalPrice > 0) $('#aAmt').value = totalPrice.toFixed(2);
+      else if (selected.some(option => option.value === 'other')) $('#aAmt').value = '';
     });
   }
 
@@ -2983,16 +2996,21 @@ WTPages.switchProjView = function(view) {
     e.preventDefault();
     try {
       const id = Number($('#aId')?.value) || 0;
+      const selectedValues = [...$('#aBoq').selectedOptions].map(option => option.value).filter(Boolean);
+      const selectedBoqIds = selectedValues.filter(value => value !== 'other').map(Number).filter(Number.isInteger);
+      const isOther = selectedValues.includes('other');
       const data = {
         projectId: Number($('#aProj').value),
-        boqItemId: Number($('#aBoq').value) || null,
+        boqItemId: selectedBoqIds[0] || null,
+        boqItemIds: selectedBoqIds,
+        includesOther: isOther,
         amount: Number($('#aAmt').value),
         costDate: $('#aDate').value || null,
         costCenterId: null,
         description: $('#aRem').value.trim()
       };
-      if (!$('#aBoq').value) { showToast('Select a BOQ line or Other.', 'danger'); return; }
-      if ($('#aBoq').value === 'other' && !data.description) { showToast('Remarks are required when Other is selected.', 'danger'); return; }
+      if (!selectedValues.length) { showToast('Select one or more BOQ lines or Other.', 'danger'); return; }
+      if (isOther && !data.description) { showToast('Remarks are required when Other is selected.', 'danger'); return; }
       if (id) await WisetrackAPI.updateActual(id, data); else await WisetrackAPI.addActual(data);
       closeModal(); showToast(id ? 'Actual updated' : 'Actual saved'); await pageCosts();
     } catch (err) { showToast(err.message, 'danger'); }
