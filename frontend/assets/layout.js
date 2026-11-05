@@ -16,6 +16,7 @@ const WT_NAV = [
   { href: 'boq.html', icon: 'fa-list-check', label: 'BOQ' },
   { href: 'budget.html', icon: 'fa-coins', label: 'Budgets & Cost Centers' },
   { href: 'costs.html', icon: 'fa-chart-line', label: 'Purchases & Actuals' },
+  { href: 'drawing-upload.html', icon: 'fa-compass-drafting', label: 'Drawing Upload' },
   { href: 'items.html', icon: 'fa-box', label: 'Item Master' },
   { href: 'inventory.html', icon: 'fa-boxes-stacked', label: 'Inventory' },
   { href: 'closure.html', icon: 'fa-file-signature', label: 'Project Closure' },
@@ -40,6 +41,7 @@ const WT_NAV_ACCESS = {
   'boq.html': 'BOQ',
   'budget.html': 'Budgets',
   'costs.html': 'Costs',
+  'drawing-upload.html': 'Drawings',
   'items.html': 'Module',
   'inventory.html': 'Closure',
   'closure.html': 'Closure',
@@ -139,7 +141,6 @@ function wtBuildSidebar() {
       html += `<div class="nav-group-title">${item.group}</div>`;
       continue;
     }
-    if (typeof wtPageAllowed === 'function' && !wtPageAllowed(item.href)) continue;
     const active = page === item.href ? ' active' : '';
     html += `<a class="nav-link${active}" href="${item.href}" title="${item.label}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
   }
@@ -221,6 +222,7 @@ function wtApplyLayout() {
   if (side) side.innerHTML = wtBuildSidebar();
   const top = document.querySelector('header.topbar');
   if (top) top.innerHTML = wtBuildTopbar();
+  if (wtCurrentPage() === 'drawing-upload.html') localStorage.setItem('WISETRACK_SIDEBAR_COLLAPSED', 'false');
   wtSetSidebarCollapsed(localStorage.getItem('WISETRACK_SIDEBAR_COLLAPSED') === 'true', false);
 
   // Apply active theme
