@@ -43,13 +43,13 @@ public class FilesController : ControllerBase
         var files = await _db.FileRecords.AsNoTracking()
             .Where(f => f.Module == module && f.RelatedId == relatedId)
             .OrderByDescending(f => f.UploadedAt)
-            .Select(f => new { f.Id, f.FileName, f.ContentType, f.SizeBytes, f.Module, f.RelatedId, f.UploadedBy, f.UploadedAt })
+            .Select(f => new { f.Id, f.FileName, f.FilePath, f.ContentType, f.SizeBytes, f.Module, f.RelatedId, f.UploadedBy, f.UploadedAt })
             .ToListAsync();
         return Ok(files);
     }
 
     [HttpGet("{id:long}")]
-    public async Task<IActionResult> Download(long id)
+    public async Task<IActionResult> Download(long id, [FromQuery] bool inline = false)
     {
         var record = await _db.FileRecords.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id);
         if (record == null) return NotFound();
@@ -65,7 +65,9 @@ public class FilesController : ControllerBase
             !await _permissions.CanViewModuleAsync(UserContext.GetUserId(User)!.Value, record.RelatedId.Value, "Closure")) return Forbid();
         var stream = await _storage.OpenReadAsync(Path.GetFileName(record.FilePath));
         if (stream == null) return NotFound();
-        return File(stream, record.ContentType ?? "application/octet-stream", record.FileName, enableRangeProcessing: true);
+        return inline
+            ? File(stream, record.ContentType ?? "application/octet-stream", enableRangeProcessing: true)
+            : File(stream, record.ContentType ?? "application/octet-stream", record.FileName, enableRangeProcessing: true);
     }
 
     [HttpPost]

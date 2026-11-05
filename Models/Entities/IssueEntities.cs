@@ -54,3 +54,19 @@ public class IssueAttachment
     public long? UploadedBy { get; set; }
     public DateTime UploadedAt { get; set; }
 }
+
+[Table("drawing_uploads")]
+public class DrawingUpload
+{
+    public long Id { get; set; }
+    public long ProjectId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long SizeBytes { get; set; }
+    public long? UploadedBy { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+}

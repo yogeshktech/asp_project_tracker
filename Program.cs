@@ -91,6 +91,7 @@ using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await DatabaseBootstrap.EnsureProjectBudgetAllocationSchemaAsync(db);
+        await DatabaseBootstrap.EnsureDrawingUploadSchemaAsync(db);
     }
     catch (Exception ex)
     {

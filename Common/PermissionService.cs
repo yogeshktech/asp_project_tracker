@@ -25,7 +25,7 @@ public class PermissionService : IPermissionService
 {
     public static readonly string[] ProjectModules =
     {
-        "Projects", "Budgets", "Costs", "BOQ", "Tasks", "Issues", "Reports", "Closure"
+        "Projects", "Budgets", "Costs", "BOQ", "Tasks", "Issues", "Drawings", "Reports", "Closure"
     };
 
     public static readonly string[] GlobalModules =

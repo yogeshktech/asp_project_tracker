@@ -107,6 +107,39 @@ const WisetrackAPI = {
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
   },
+  async viewFileById(id) {
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const { blob } = await this.fetchFile(`/files/${id}?inline=true`);
+      const blobUrl = URL.createObjectURL(blob);
+      if (tab) {
+        tab.location.href = blobUrl;
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      } else {
+        const link = document.createElement('a'); link.href = blobUrl; link.target = '_blank'; link.rel = 'noopener';
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      }
+    } catch (error) {
+      tab?.close();
+      throw error;
+    }
+  },
+  async viewFile(path) {
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const { blob } = await this.fetchFile(path);
+      const blobUrl = URL.createObjectURL(blob);
+      if (tab) {
+        tab.location.href = blobUrl;
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      } else {
+        const link = document.createElement('a'); link.href = blobUrl; link.target = '_blank'; link.rel = 'noopener';
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      }
+    } catch (error) { tab?.close(); throw error; }
+  },
 
   get(url) { return this._fetch(url); },
   post(url, body) { return this._fetch(url, { method: 'POST', body: JSON.stringify(body) }); },
@@ -191,6 +224,7 @@ const WisetrackAPI = {
   getProjectFiles(projectId) { return this.get(`/files?module=Project&relatedId=${projectId}`); },
   getTaskFiles(taskId) { return this.get(`/files?module=Tasks&relatedId=${taskId}`); },
   getMilestoneFiles(milestoneId) { return this.get(`/files?module=Milestones&relatedId=${milestoneId}`); },
+  getInventoryFiles(projectId) { return this.get(`/files?module=Inventory&relatedId=${projectId}`); },
   downloadFileById(id) { return this.downloadFile(`/files/${id}`); },
   async downloadFile(path) {
     const res = await fetch(`${API_BASE}${path}`, { headers: this._headers(false) });
@@ -328,6 +362,12 @@ const WisetrackAPI = {
   deleteActual(id) { return this.del(`/costs/actuals/${id}`); },
   importCosts(data) { return this.post('/costs/import', data); },
   getVariance(projectId) { return this.get(`/costs/variance/${projectId}`); },
+
+  // Project drawings
+  getDrawings(projectId) { return this.get(`/drawings?projectId=${projectId}`); },
+  createDrawing(data) { return this._fetch('/drawings', { method: 'POST', body: data }); },
+  updateDrawing(id, data) { return this._fetch(`/drawings/${id}`, { method: 'PUT', body: data }); },
+  deleteDrawing(id) { return this.del(`/drawings/${id}`); },
 
   // Issues
   getIssuePriorities() { return this.get('/issues/priorities'); },

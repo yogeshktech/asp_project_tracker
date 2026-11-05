@@ -5,6 +5,27 @@ namespace project_tracker_madhu.DatabaseLayer;
 
 public static class DatabaseBootstrap
 {
+    public static async Task EnsureDrawingUploadSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS drawing_uploads (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                name VARCHAR(200) NOT NULL,
+                description VARCHAR(2000) NULL,
+                file_name VARCHAR(260) NOT NULL,
+                file_path TEXT NOT NULL,
+                content_type VARCHAR(150) NOT NULL,
+                size_bytes BIGINT NOT NULL,
+                uploaded_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NULL
+            )
+            """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_drawing_uploads_project_created ON drawing_uploads(project_id, created_at DESC)""");
+    }
+
     public static async Task EnsureProjectBudgetAllocationSchemaAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync(
@@ -136,6 +157,7 @@ public static class DatabaseBootstrap
         await EnsureMilestonePlanningColumnsAsync(db, logger);
         await EnsureScheduledNotificationSchemaAsync(db, logger);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+        await EnsureDrawingUploadSchemaAsync(db);
         await DbSeeder.SeedAsync(db);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
         await EnsureUserResortAccessSchemaAsync(db);

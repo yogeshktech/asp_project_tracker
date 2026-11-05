@@ -485,6 +485,21 @@ CREATE TABLE issue_attachments (
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE drawing_uploads (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name VARCHAR(200) NOT NULL,
+    description VARCHAR(2000),
+    file_name VARCHAR(260) NOT NULL,
+    file_path TEXT NOT NULL,
+    content_type VARCHAR(150) NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    uploaded_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+);
+CREATE INDEX ix_drawing_uploads_project_created ON drawing_uploads(project_id, created_at DESC);
+
 -- =============================================================================
 -- 10. Notification & Escalation
 -- =============================================================================
