@@ -27,12 +27,14 @@ public class UserService : IUserService
     private readonly IUserRepository _repository;
     private readonly IPermissionService _permissions;
     private readonly IAuditService _audit;
+    private readonly IEmailService _email;
 
-    public UserService(IUserRepository repository, IPermissionService permissions, IAuditService audit)
+    public UserService(IUserRepository repository, IPermissionService permissions, IAuditService audit, IEmailService email)
     {
         _repository = repository;
         _permissions = permissions;
         _audit = audit;
+        _email = email;
     }
 
     public async Task<List<UserResponseDto>> GetAllAsync() =>
@@ -96,6 +98,12 @@ public class UserService : IUserService
         user = await _repository.AddAsync(user, roleIds);
         await ApplyPermissionsAsync(user.Id, request.IsAdmin, request.Permissions);
         await _audit.LogAsync(actorId, "Create", "User", user.Id);
+        var phone = string.IsNullOrWhiteSpace(user.Phone) ? "Not provided" : user.Phone;
+        var body = $"Welcome to Wisetrack, {user.FullName}!\n\n"
+            + "Your user account has been created.\n\n"
+            + $"Name: {user.FullName}\nEmail: {user.Email}\nPhone: {phone}\n\n"
+            + "Use your email address to sign in. If you forget your password, please contact your system administrator for help resetting it.";
+        await _email.SendAsync(new[] { user.Email }, "Welcome to Wisetrack", body);
         return Map(await _repository.GetByIdAsync(user.Id) ?? user);
     }
 
