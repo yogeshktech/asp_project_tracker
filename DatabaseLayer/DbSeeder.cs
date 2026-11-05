@@ -1020,11 +1020,12 @@ public static class DbSeeder
 
         foreach (var row in owned)
         {
+            var hasConfiguredPermissions = await db.ProjectPermissions.AnyAsync(p =>
+                p.UserId == row.OwnerId && p.ProjectId == row.Id);
+            if (hasConfiguredPermissions) continue;
+
             foreach (var module in modules)
             {
-                var exists = await db.ProjectPermissions.AnyAsync(p =>
-                    p.UserId == row.OwnerId && p.ProjectId == row.Id && p.Module == module);
-                if (exists) continue;
                 db.ProjectPermissions.Add(new ProjectPermission
                 {
                     UserId = row.OwnerId,

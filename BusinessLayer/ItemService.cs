@@ -49,6 +49,8 @@ public class ItemService : IItemService
 
     private async Task EnsureItemReadAsync(long userId)
     {
+        // BOQ users need read access to the shared catalog while building BOQs;
+        // opening or modifying the Item Master itself still requires Module rights.
         if (await _permissions.CanViewModuleAsync(userId, 0, "Module")
             || await _permissions.CanViewAnyModuleAsync(userId, "BOQ")) return;
         throw new UnauthorizedAccessException("No view permission on Item Master or BOQ.");

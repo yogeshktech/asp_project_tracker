@@ -12,7 +12,7 @@ public interface INotificationService
 {
     Task<Notification> SendAsync(CreateNotificationRequest request);
     Task<PagedResponse<InboxNotificationDto>> GetInboxAsync(long userId, int page, int pageSize);
-    Task MarkReadAsync(long recipientId);
+    Task MarkReadAsync(long recipientId, long userId);
     Task<EscalationRule> CreateRuleAsync(CreateEscalationRuleRequest request);
     Task<EscalationRule?> SetRuleActiveAsync(long ruleId, bool isActive);
     Task<List<EscalationRule>> GetRulesAsync();
@@ -89,7 +89,7 @@ public class NotificationService : INotificationService
             TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
         };
     }
-    public Task MarkReadAsync(long recipientId) => _repository.MarkReadAsync(recipientId);
+    public Task MarkReadAsync(long recipientId, long userId) => _repository.MarkReadAsync(recipientId, userId);
 
     public Task<EscalationRule> CreateRuleAsync(CreateEscalationRuleRequest request) =>
         _repository.AddRuleAsync(new EscalationRule
@@ -110,6 +110,7 @@ public class NotificationService : INotificationService
         var title = request.Title.Trim();
         var body = request.Body.Trim();
         var relatedType = request.RelatedType.Trim();
+        await _permissions.EnsureModuleAsync(createdBy, 0, "Notifications", "edit");
         if (string.IsNullOrWhiteSpace(title)) throw new InvalidOperationException("Notification title is required.");
         if (string.IsNullOrWhiteSpace(body)) throw new InvalidOperationException("Notification message is required.");
         if (request.ScheduledAt <= DateTimeOffset.UtcNow) throw new InvalidOperationException("Schedule date and time must be in the future.");
@@ -162,6 +163,7 @@ public class NotificationService : INotificationService
 
     public async Task<List<ScheduledNotificationDto>> GetScheduledAsync(long? projectId, long userId)
     {
+        await _permissions.EnsureModuleAsync(userId, 0, "Notifications", "view");
         var accessibleProjectIds = await _permissions.GetAccessibleProjectIdsAsync(userId);
         var query = _db.ScheduledNotifications.AsNoTracking().Include(s => s.Project)
             .Include(s => s.Recipients).ThenInclude(r => r.User)
@@ -183,6 +185,7 @@ public class NotificationService : INotificationService
             .Where(s => s.Id == id && s.Status == "Pending")
             .Select(s => new { s.Id, s.ProjectId }).FirstOrDefaultAsync();
         if (row == null) return false;
+        await _permissions.EnsureModuleAsync(userId, 0, "Notifications", "update");
         if (!await _permissions.CanViewProjectAsync(userId, row.ProjectId))
             throw new UnauthorizedAccessException("You cannot cancel this project notification.");
         var updated = await _db.ScheduledNotifications

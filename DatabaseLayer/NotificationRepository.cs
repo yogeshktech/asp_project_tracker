@@ -8,7 +8,7 @@ public interface INotificationRepository
 {
     Task<Notification> AddAsync(Notification notification, IEnumerable<long> userIds);
     Task<(List<NotificationRecipient> Items, int TotalCount)> GetInboxAsync(long userId, int page, int pageSize);
-    Task MarkReadAsync(long recipientId);
+    Task MarkReadAsync(long recipientId, long userId);
     Task<EscalationRule> AddRuleAsync(EscalationRule rule);
     Task<EscalationRule?> SetRuleActiveAsync(long ruleId, bool isActive);
     Task<List<EscalationRule>> GetRulesAsync();
@@ -49,13 +49,13 @@ public class NotificationRepository : INotificationRepository
         return (items, totalCount);
     }
 
-    public async Task MarkReadAsync(long recipientId)
+    public async Task MarkReadAsync(long recipientId, long userId)
     {
-        var rec = await _db.NotificationRecipients.FindAsync(recipientId);
-        if (rec == null) return;
-        rec.IsRead = true;
-        rec.ReadAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
+        await _db.NotificationRecipients
+            .Where(recipient => recipient.Id == recipientId && recipient.UserId == userId)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(recipient => recipient.IsRead, true)
+                .SetProperty(recipient => recipient.ReadAt, DateTime.UtcNow));
     }
 
     public async Task<EscalationRule> AddRuleAsync(EscalationRule rule)

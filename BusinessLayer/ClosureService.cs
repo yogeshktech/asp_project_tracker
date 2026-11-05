@@ -28,7 +28,7 @@ public class ClosureService : IClosureService
 
     public async Task<Inventory> AddInventoryAsync(CreateInventoryRequest request, long? userId)
     {
-        if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Closure"))
+        if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Inventory"))
             throw new UnauthorizedAccessException("No permission.");
         if (string.IsNullOrWhiteSpace(request.Description))
             throw new InvalidOperationException("Inventory description is required. Enter 'No leftover inventory' with quantity 0 when applicable.");
@@ -60,7 +60,7 @@ public class ClosureService : IClosureService
     {
         var inventory = await _repository.GetInventoryItemAsync(id);
         if (inventory == null) return null;
-        await _permissions.EnsureModuleAsync(userId, inventory.ProjectId, "Closure", "update");
+        await _permissions.EnsureModuleAsync(userId, inventory.ProjectId, "Inventory", "update");
         if (string.IsNullOrWhiteSpace(request.Description)) throw new InvalidOperationException("Inventory description is required.");
         if (request.Quantity < 0) throw new InvalidOperationException("Inventory quantity cannot be negative.");
         if (request.OrderQuantity < 0) throw new InvalidOperationException("Order quantity cannot be negative.");
@@ -80,7 +80,7 @@ public class ClosureService : IClosureService
 
     public async Task<List<Inventory>> GetInventoryAsync(long projectId, long userId)
     {
-        await _permissions.EnsureModuleAsync(userId, projectId, "Closure", "view");
+        await _permissions.EnsureModuleAsync(userId, projectId, "Inventory", "view");
         return await _repository.GetInventoryAsync(projectId);
     }
 

@@ -424,10 +424,13 @@
     { id: 'Budgets', label: 'Budget', global: false },
     { id: 'Costs', label: 'Costs', global: false },
     { id: 'Issues', label: 'Issues', global: false },
+    { id: 'Drawings', label: 'Drawings', global: false },
+    { id: 'Inventory', label: 'Inventory', global: false },
     { id: 'Reports', label: 'Reports', global: false },
-    { id: 'Closure', label: 'Closure', global: false },
+    { id: 'Closure', label: 'Project Closure', global: false },
     { id: 'Audit', label: 'Audit', global: true, rows: [{ key: 'Audit', name: 'Audit logs' }] },
-    { id: 'Module', label: 'Module', global: true, rows: [{ key: 'Module', name: 'Item master' }] }
+    { id: 'Module', label: 'Item Master', global: true, rows: [{ key: 'Module', name: 'Item master' }] },
+    { id: 'Notifications', label: 'Notifications', global: true, rows: [{ key: 'Notifications', name: 'Notifications' }] }
   ];
   const GLOBAL_PERM_MODULES = PERM_TABS.filter(t => t.global).map(t => t.id);
   const PERM_RIGHTS = [
@@ -802,6 +805,132 @@
       }
       closeModal(); showToast(isAdmin ? 'Admin saved — full access' : 'User access saved'); await pageUsers();
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function pagePermissions() {
+    const el = root();
+    if (typeof wtIsAdmin === 'function' && !wtIsAdmin()) {
+      el.innerHTML = pageHead('Permissions', 'Only Admin can manage permissions.')
+        + '<div class="card"><p>You do not have access to permission management.</p></div>';
+      return;
+    }
+    el.innerHTML = pageHead('Permissions', 'Manage each user’s global and project permissions by module.')
+      + `<div class="card" style="margin-bottom:16px"><div class="form-grid">
+          <div class="field"><label>User *</label><select id="permissionPageUser" onchange="WTPages.loadPermissionPageMatrix()"></select></div>
+          <div class="field"><label>Project *</label><select id="permissionPageProject" onchange="WTPages.loadPermissionPageMatrix()"></select></div>
+        </div></div>
+        <div id="permissionPageAdminNotice"></div>
+        <div class="grid g2">
+          <div class="card"><h3 class="card-title">Global modules</h3><p class="card-subtitle">These permissions apply across the system.</p><div class="table-wrap"><table class="table"><thead><tr><th>Module</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th></tr></thead><tbody id="permissionGlobalRows"></tbody></table></div></div>
+          <div class="card"><h3 class="card-title">Project modules</h3><p class="card-subtitle">Set rights for the selected project.</p><div class="table-wrap"><table class="table"><thead><tr><th>Module</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th></tr></thead><tbody id="permissionProjectRows"></tbody></table></div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px"><button id="permissionPageSave" class="btn primary" onclick="WTPages.savePermissionPageMatrix()">Save permissions</button></div>`;
+    try {
+      const [users, projects] = await Promise.all([WisetrackAPI.getUsers(), WisetrackAPI.getProjects()]);
+      const state = window._wtPermissionPage = { users, projects };
+      $('#permissionPageUser').innerHTML = users.map(u => `<option value="${u.id}">${esc(u.fullName || u.email)} (${esc(u.email)})</option>`).join('');
+      $('#permissionPageProject').innerHTML = projects.map(p => `<option value="${p.id}">${esc(projectLabel(p))}</option>`).join('') || '<option value="">No projects available</option>';
+      if (!users.length) {
+        $('#permissionPageAdminNotice').innerHTML = '<div class="card">No users available.</div>';
+        return;
+      }
+      await loadPermissionPageMatrix();
+    } catch (error) {
+      $('#permissionPageAdminNotice').innerHTML = `<div class="card" style="color:var(--danger)">${esc(error.message || error)}</div>`;
+    }
+  }
+
+  function renderPermissionPageRows(target, tabs, scope, grants, projectId, disabled) {
+    const body = document.getElementById(target);
+    if (!body) return;
+    const rows = tabs.flatMap(tab => (tab.global ? tab.rows : [{ key: tab.id, name: tab.label }]).map(module => ({
+      module: module.key,
+      name: module.name,
+      grant: grants.find(p => String(p.module || p.Module) === module.key &&
+        (scope === 'global' ? (p.projectId ?? p.ProjectId) == null : Number(p.projectId ?? p.ProjectId) === Number(projectId)))
+    })));
+    body.innerHTML = rows.map(row => `<tr><td><strong>${esc(row.name)}</strong></td>${PERM_RIGHTS.map(right => {
+      const checked = right.id === 'view'
+        ? permFlag(row.grant, 'view') || permFlag(row.grant, 'edit') || permFlag(row.grant, 'update') || permFlag(row.grant, 'delete')
+        : permFlag(row.grant, right.id);
+      return `<td class="center"><input type="checkbox" class="permission-page-right" data-scope="${scope}" data-module="${esc(row.module)}" data-right="${right.id}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} onchange="WTPages.onPermissionPageToggle(this)"></td>`;
+    }).join('')}</tr>`).join('') || '<tr><td colspan="5">No modules available.</td></tr>';
+  }
+
+  async function loadPermissionPageMatrix() {
+    const userId = Number($('#permissionPageUser')?.value || 0);
+    const projectId = Number($('#permissionPageProject')?.value || 0);
+    if (!userId) return;
+    try {
+      const access = await WisetrackAPI.getUserAccess(userId);
+      const grants = access.permissions || access.Permissions || [];
+      window._wtPermissionPage.access = access;
+      const isAdmin = !!(access.isAdmin ?? access.IsAdmin);
+      $('#permissionPageAdminNotice').innerHTML = isAdmin ? '<div class="card" style="margin-bottom:16px">This user is an Admin and already has full access.</div>' : '';
+      renderPermissionPageRows('permissionGlobalRows', PERM_TABS.filter(t => t.global), 'global', grants, 0, isAdmin);
+      renderPermissionPageRows('permissionProjectRows', PERM_TABS.filter(t => !t.global), 'project', grants, projectId, isAdmin || !projectId);
+      $('#permissionPageSave').disabled = isAdmin;
+    } catch (error) { showToast(error.message || 'Could not load user permissions.', 'danger'); }
+  }
+
+  async function savePermissionPageMatrix() {
+    const state = window._wtPermissionPage;
+    const userId = Number($('#permissionPageUser')?.value || 0);
+    const projectId = Number($('#permissionPageProject')?.value || 0);
+    const access = state?.access;
+    if (!state || !access || !userId || (access.isAdmin ?? access.IsAdmin)) return;
+    const globalModules = new Set(PERM_TABS.filter(t => t.global).map(t => t.id));
+    const projectModules = new Set(PERM_TABS.filter(t => !t.global).map(t => t.id));
+    const oldPermissions = access.permissions || access.Permissions || [];
+    const permissions = oldPermissions.filter(p => {
+      const module = p.module || p.Module;
+      const pid = p.projectId ?? p.ProjectId;
+      return !(pid == null && globalModules.has(module)) && !(Number(pid) === projectId && projectModules.has(module));
+    });
+    const grants = new Map();
+    document.querySelectorAll('.permission-page-right').forEach(input => {
+      const key = `${input.dataset.scope}|${input.dataset.module}`;
+      if (!grants.has(key)) grants.set(key, { scope: input.dataset.scope, module: input.dataset.module, view: false, edit: false, update: false, delete: false });
+      grants.get(key)[input.dataset.right] = input.checked;
+    });
+    let projectHasGrant = false;
+    grants.forEach(row => {
+      if (!(row.view || row.edit || row.update || row.delete)) return;
+      if (row.edit || row.update || row.delete) row.view = true;
+      const previous = oldPermissions.find(p => String(p.module || p.Module) === row.module &&
+        (row.scope === 'global' ? (p.projectId ?? p.ProjectId) == null : Number(p.projectId ?? p.ProjectId) === projectId));
+      permissions.push({
+        userId,
+        projectId: row.scope === 'global' ? null : projectId,
+        module: row.module,
+        canView: row.view,
+        canEdit: row.edit,
+        canUpdate: row.update,
+        canDelete: row.delete,
+        fieldPermissions: previous?.fieldPermissions || previous?.FieldPermissions || {}
+      });
+      if (row.scope === 'project') projectHasGrant = true;
+    });
+    const resortIds = (access.resortIds || access.ResortIds || []).map(Number);
+    const selectedProject = state.projects.find(p => Number(p.id) === projectId);
+    const resortId = Number(selectedProject?.resortId || selectedProject?.ResortId || 0);
+    if (projectHasGrant && resortId && !resortIds.includes(resortId)) resortIds.push(resortId);
+    try {
+      await WisetrackAPI.replaceUserAccess(userId, { isAdmin: false, permissions, resortIds });
+      showToast('Permissions saved');
+      await loadPermissionPageMatrix();
+    } catch (error) { showToast(error.message || 'Could not save permissions.', 'danger'); }
+  }
+
+  function onPermissionPageToggle(input) {
+    const row = input.closest('tr');
+    if (!row) return;
+    if (input.dataset.right === 'view' && !input.checked) {
+      row.querySelectorAll('.permission-page-right').forEach(right => { right.checked = false; });
+    } else if (input.dataset.right !== 'view' && input.checked) {
+      const view = row.querySelector('.permission-page-right[data-right="view"]');
+      if (view) view.checked = true;
+    }
   }
 
   // ---------- DASHBOARD ----------
@@ -4779,10 +4908,12 @@ WTPages.switchProjView = function(view) {
 
   async function pageNotifications() {
     const el = root();
+    const canCreateNotifications = !wtCan || wtCan('Notifications', 'edit');
+    const canUpdateNotifications = !wtCan || wtCan('Notifications', 'update');
     el.innerHTML = pageHead('Notification Master & Escalation Rules', 'Schedule project, task, and milestone notifications with email delivery.',
-      `<button class="btn" onclick="WTPages.openEscRuleModal()">+ Escalation Rule</button>
+      `${canCreateNotifications ? `<button class="btn" onclick="WTPages.openEscRuleModal()">+ Escalation Rule</button>
        <button class="btn" onclick="WTPages.openNotifyModal()">Send Now</button>
-       <button class="btn primary" onclick="WTPages.openScheduledNotificationModal()">+ Schedule Notification</button>`)
+       <button class="btn primary" onclick="WTPages.openScheduledNotificationModal()">+ Schedule Notification</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><div class="card-header"><div><h3 class="card-title">Scheduled notification master</h3><div class="card-subtitle">Select a project, task, or milestone, set the delivery date and choose recipients. Showing latest 100 records.</div></div></div>`
       + tableWrap(['ID', 'Project / Target', 'Notification', 'Scheduled for', 'Recipients', 'Delivery', 'Status', 'Action'], 'scheduledNotificationsBody')
       + `</section>`
@@ -4837,7 +4968,7 @@ WTPages.switchProjView = function(view) {
           <td>${esc(formatTriggerLabel(r.triggerType))}</td>
           <td>${r.delayHours ?? 0}</td>
           <td>${esc(roleName(r.targetRoleId))}</td>
-          <td><span class="badge ${r.isActive === false ? 'gray' : 'green'}">${r.isActive === false ? 'Inactive' : 'Active'}</span> <button class="btn sm" onclick="WTPages.setEscRuleActive(${Number(r.id)},${r.isActive === false ? 'true' : 'false'})">${r.isActive === false ? 'Enable' : 'Pause'}</button></td>
+          <td><span class="badge ${r.isActive === false ? 'gray' : 'green'}">${r.isActive === false ? 'Inactive' : 'Active'}</span> ${canUpdateNotifications ? `<button class="btn sm" onclick="WTPages.setEscRuleActive(${Number(r.id)},${r.isActive === false ? 'true' : 'false'})">${r.isActive === false ? 'Enable' : 'Pause'}</button>` : ''}</td>
           <td>${r.createdAt ? esc(new Date(r.createdAt).toLocaleString()) : '—'}</td>
         </tr>`).join('') : emptyRow(7, 'No escalation rules');
 
@@ -4851,7 +4982,7 @@ WTPages.switchProjView = function(view) {
           <td>${(n.recipients || []).map(u => esc(u.fullName || u.email)).join(', ')}</td>
           <td>${n.sendEmail ? 'In-app + Email' : 'In-app'}</td>
           <td><span class="badge ${n.status === 'Sent' ? 'green' : n.status === 'Failed' ? 'red' : n.status === 'Cancelled' ? 'gray' : 'amber'}">${esc(n.status)}</span>${n.lastError ? `<small style="display:block;color:var(--danger)">${esc(n.lastError)}</small>` : ''}</td>
-          <td>${n.status === 'Pending' ? `<button class="btn sm danger" onclick="WTPages.cancelScheduledNotification(${n.id})">Cancel</button>` : '—'}</td>
+          <td>${n.status === 'Pending' && canUpdateNotifications ? `<button class="btn sm danger" onclick="WTPages.cancelScheduledNotification(${n.id})">Cancel</button>` : '—'}</td>
         </tr>`).join('') : emptyRow(8, 'No scheduled notifications for the selected project');
 
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 150);
@@ -4975,7 +5106,7 @@ WTPages.switchProjView = function(view) {
   }
 
   async function openNotifyModal() {
-    const users = await WisetrackAPI.getUsers();
+    const users = await WisetrackAPI.getNotificationRecipients();
     openModal('Send Notification', `
       <form onsubmit="WTPages.saveNotify(event)">
         <div class="form-grid">
@@ -5290,8 +5421,8 @@ WTPages.switchProjView = function(view) {
   async function pageInventory() {
     const el = root();
     const pid = await selectedProjectId();
-    const canCreateInventory = !wtCan || wtCan('Closure', 'edit', Number(pid));
-    const canUpdateInventory = !wtCan || wtCan('Closure', 'update', Number(pid));
+    const canCreateInventory = !wtCan || wtCan('Inventory', 'edit', Number(pid));
+    const canUpdateInventory = !wtCan || wtCan('Inventory', 'update', Number(pid));
     const headers = ['BOQ Version', 'Item Name', 'Unit', 'Purchase Price', 'Ordered QTY', 'Description', 'Image', 'Total Amount', 'Brand', 'Used QTY', 'Remaining QTY', 'Remark', 'Attachment', 'Action'];
     el.innerHTML = pageHead('Project Inventory', 'Inventory items come from the latest BOQ version.') +
       '<div class="card"><div class="table-wrap" style="overflow-x:auto"><table class="table"><thead><tr>' +
@@ -5365,7 +5496,7 @@ WTPages.switchProjView = function(view) {
 
   async function openInventoryModal(itemId = null, description = '', inventoryId = null, quantity = '', remarks = '', attachmentPath = '', attachmentName = '', orderQuantity = '', totalAmount = '', usedQuantity = 0) {
     const pid = await selectedProjectId();
-    if (typeof wtCan === 'function' && !wtCan('Closure', inventoryId ? 'update' : 'edit', Number(pid))) { showToast('You do not have permission for this action.', 'danger'); return; }
+    if (typeof wtCan === 'function' && !wtCan('Inventory', inventoryId ? 'update' : 'edit', Number(pid))) { showToast('You do not have permission for this action.', 'danger'); return; }
     const scopeIds = await projectScopeIds(pid).catch(() => [Number(pid)]);
     const boqBatches = await Promise.all(scopeIds.map(id => WisetrackAPI.getBoqs(id).catch(() => [])));
     const inventoryFiles = await WisetrackAPI.getInventoryFiles(pid).catch(() => []);
@@ -6023,7 +6154,7 @@ WTPages.switchProjView = function(view) {
           canSee('Tasks', projectId) ? WisetrackAPI.getMilestones(projectId).catch(() => []) : Promise.resolve([]),
           canSee('Issues', projectId) ? WisetrackAPI.getIssues(projectId).catch(() => []) : Promise.resolve([]),
           canSee('BOQ', projectId) ? WisetrackAPI.getBoqs(projectId).catch(() => []) : Promise.resolve([]),
-          (canSee('Inventory', projectId) || canSee('Closure', projectId)) ? WisetrackAPI.getInventory(projectId).catch(() => []) : Promise.resolve([])
+          canSee('Inventory', projectId) ? WisetrackAPI.getInventory(projectId).catch(() => []) : Promise.resolve([])
         ];
         return Promise.all(requests);
       }));
@@ -6124,6 +6255,7 @@ WTPages.switchProjView = function(view) {
         'index.html': () => pageDashboard(),
         '': () => pageDashboard(),
         'roles.html': () => pageRoles(),
+        'permissions.html': () => pagePermissions(),
         'users.html': () => pageUsers(),
         'resorts.html': () => pageResorts(),
         'projects.html': () => pageProjects(),
@@ -6169,6 +6301,7 @@ WTPages.switchProjView = function(view) {
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
     openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, addUserPermResort, removeUserPermResort, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
+    loadPermissionPageMatrix, savePermissionPageMatrix, onPermissionPageToggle,
     openPropertyModal, openEditPropertyModal, saveProperty, updateProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
     refreshResorts: refreshResortsTable,
     addTeam, saveWorkspaceVariance,

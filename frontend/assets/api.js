@@ -381,6 +381,7 @@ const WisetrackAPI = {
 
   // Notifications
   sendNotification(data) { return this.post('/notifications', data); },
+  getNotificationRecipients() { return this.get('/notifications/recipients'); },
   getInbox(page = 1, pageSize = 25) { return this.get(`/notifications/inbox?page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`); },
   markRead(recipientId) { return this.post(`/notifications/${recipientId}/read`); },
   getEscalationRules() { return this.get('/notifications/escalation-rules'); },

@@ -22,6 +22,7 @@ const WT_NAV = [
   { href: 'closure.html', icon: 'fa-file-signature', label: 'Project Closure' },
   { group: 'Governance' },
   { href: 'users.html', icon: 'fa-users', label: 'Users & Access' },
+  { href: 'permissions.html', icon: 'fa-key', label: 'Permissions' },
   { href: 'notifications.html', icon: 'fa-bell', label: 'Notifications' },
   { href: 'audit-logs.html', icon: 'fa-scroll', label: 'Audit Logs' },
   { href: 'reports.html', icon: 'fa-file-lines', label: 'Reports' },
@@ -43,11 +44,12 @@ const WT_NAV_ACCESS = {
   'costs.html': 'Costs',
   'drawing-upload.html': 'Drawings',
   'items.html': 'Module',
-  'inventory.html': 'Closure',
+  'inventory.html': 'Inventory',
   'closure.html': 'Closure',
   'users.html': 'admin',
   'roles.html': 'admin',
-  'notifications.html': '*',
+  'permissions.html': 'admin',
+  'notifications.html': 'Notifications',
   'audit-logs.html': 'Audit',
   'reports.html': 'Reports',
   'settings.html': 'admin'
@@ -83,7 +85,7 @@ function wtCan(module, right, projectId) {
 
 function wtPageAllowed(href) {
   if (href === 'dashboard.html') return wtIsAdmin() || wtCanViewModule('*') || wtCanViewModule('Dashboard');
-  if (href === 'items.html') return wtCanViewModule('Module') || wtCanViewModule('BOQ');
+  if (href === 'items.html') return wtCanViewModule('Module');
   if (href === 'resorts.html') return wtCanViewModule('Resorts') || wtCanViewModule('Projects');
   const need = WT_NAV_ACCESS[href];
   if (!need) return true;
@@ -151,6 +153,7 @@ function wtBuildSidebar() {
 
 function wtBuildTopbar() {
   const currentTheme = localStorage.getItem('WISETRACK_THEME') || 'blue';
+  const canViewNotifications = wtIsAdmin() || wtCanViewModule('Notifications');
   const storedName = localStorage.getItem('WISETRACK_USER_NAME') || 'User';
   const initials = storedName.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
   const profileImage = localStorage.getItem('WISETRACK_PROFILE_IMAGE') || '';
@@ -192,7 +195,7 @@ function wtBuildTopbar() {
           <a href="login.html" class="user-menu-logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
         </div>
       </div>
-      <a href="notifications.html" class="header-action-btn" title="Notifications & Escalations"><i class="fa-solid fa-bell"></i></a>
+      ${canViewNotifications ? '<a href="notifications.html" class="header-action-btn" title="Notifications & Escalations"><i class="fa-solid fa-bell"></i></a>' : ''}
     </div>`;
 }
 
