@@ -2115,6 +2115,8 @@ WTPages.switchProjView = function(view) {
   }
 
   async function refreshItemsAll() {
+    const canUpdate = !wtCan || wtCan('Module', 'update');
+    const canDelete = !wtCan || wtCan('Module', 'delete');
     try {
       const [items, brands, units, cats] = await Promise.all([
         WisetrackAPI.getItems(), WisetrackAPI.getBrands(), WisetrackAPI.getUnits(), WisetrackAPI.getCategories()
