@@ -51,13 +51,18 @@ async function fillResortSelector() {
   if (!sel) return;
   try {
     const resorts = await WisetrackAPI.getResorts();
-    const selected = localStorage.getItem('WISETRACK_SELECTED_RESORT') || '';
+    let selected = localStorage.getItem('WISETRACK_SELECTED_RESORT') || '';
+    if (selected && !(resorts || []).some(r => String(r.id) === String(selected))) {
+      selected = '';
+      localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
+    }
+    if (!selected && resorts?.length) {
+      selected = String(resorts[0].id);
+      localStorage.setItem('WISETRACK_SELECTED_RESORT', selected);
+    }
     sel.innerHTML = (resorts || []).map(r =>
       `<option value="${r.id}" ${String(r.id) === String(selected) ? 'selected' : ''}>${esc(r.name)}</option>`
     ).join('') || '<option value="">No resorts</option>';
-    if (resorts?.length && !selected) {
-      localStorage.setItem('WISETRACK_SELECTED_RESORT', String(resorts[0].id));
-    }
   } catch (err) {
     sel.innerHTML = `<option value="">API error: ${esc(err.message)}</option>`;
   }

@@ -66,14 +66,7 @@ public class PermissionService : IPermissionService
         return await _db.UserResorts.AnyAsync(x => x.UserId == userId && x.ResortId == resortId);
     }
 
-    public async Task<bool> CanCreateRootProjectAsync(long userId, long resortId)
-    {
-        if (await IsAdminAsync(userId)) return true;
-        if (!await CanAccessResortAsync(userId, resortId)) return false;
-        return await _db.ProjectPermissions.AnyAsync(p =>
-            p.UserId == userId && p.Module == "Projects" && p.CanEdit && p.ProjectId != null &&
-            _db.Projects.Any(project => project.Id == p.ProjectId && project.ResortId == resortId));
-    }
+    public Task<bool> CanCreateRootProjectAsync(long userId, long resortId) => IsAdminAsync(userId);
 
     public async Task<List<long>> GetAccessibleResortIdsAsync(long userId)
     {

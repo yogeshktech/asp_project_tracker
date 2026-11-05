@@ -6,7 +6,7 @@
   <title>Sign In — WISETRACK Engineering Project Control</title>
   <link rel="stylesheet" href="assets/style.css?v=20261008d">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer">
-  <script src="assets/api.js?v=20261008f"></script>
+  <script src="assets/api.js?v=20261105a"></script>
 </head>
 <body>
 <div class="auth-wrapper">
@@ -124,8 +124,14 @@ async function handleLogin(e) {
     setTimeout(() => { window.location.href = 'dashboard.html'; }, 350);
   } catch (err) {
     errBox.style.display = 'block';
-    errBox.textContent = 'API sign-in failed: ' + err.message +
-      ' | Ensure ASP.NET Core server and PostgreSQL database are running.';
+    const errorMessage = String(err?.message || '').toLowerCase();
+    if (errorMessage.includes('invalid email or password')) {
+      errBox.textContent = 'Incorrect email or password. Please check your details and try again.';
+    } else if (errorMessage.includes('timed out') || errorMessage.includes('failed to fetch') || err?.name === 'TypeError') {
+      errBox.textContent = 'Login service se connection nahi ho pa raha. Thodi der baad dobara try karein.';
+    } else {
+      errBox.textContent = 'Abhi sign in nahi ho pa raha. Kripya thodi der baad dobara try karein.';
+    }
     btn.disabled = false;
     btn.innerHTML = `<span>Sign In to Workspace</span> <i class="fa-solid fa-arrow-right"></i>`;
   }
