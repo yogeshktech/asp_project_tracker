@@ -12,11 +12,17 @@ namespace project_tracker_madhu.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
-    public UsersController(IUserService userService) => _userService = userService;
+    private readonly IPermissionService _permissions;
+    public UsersController(IUserService userService, IPermissionService permissions)
+    {
+        _userService = userService;
+        _permissions = permissions;
+    }
     private long UserId => UserContext.GetUserId(User)!.Value;
+    private async Task<bool> IsAdminAsync() => await _permissions.IsAdminAsync(UserId);
 
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await _userService.GetAllAsync());
+    public async Task<IActionResult> GetAll() => await IsAdminAsync() ? Ok(await _userService.GetAllAsync()) : Forbid();
 
     [HttpGet("me/access")]
     public async Task<IActionResult> MyAccess() => Ok(await _userService.GetAccessAsync(UserId));
@@ -53,6 +59,7 @@ public class UsersController : ControllerBase
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
     {
+        if (id != UserId && !await IsAdminAsync()) return Forbid();
         var user = await _userService.GetByIdAsync(id);
         return user == null ? NotFound() : Ok(user);
     }
@@ -72,18 +79,19 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("roles")]
-    public async Task<IActionResult> Roles() => Ok(await _userService.GetRolesAsync());
+    public async Task<IActionResult> Roles() => await IsAdminAsync() ? Ok(await _userService.GetRolesAsync()) : Forbid();
 
     [HttpGet("permissions")]
-    public async Task<IActionResult> Permissions() => Ok(await _userService.GetPermissionsAsync());
+    public async Task<IActionResult> Permissions() => await IsAdminAsync() ? Ok(await _userService.GetPermissionsAsync()) : Forbid();
 
     [HttpGet("{id:long}/project-permissions")]
     public async Task<IActionResult> GetPermissions(long id) =>
-        Ok(await _userService.GetProjectPermissionsAsync(id));
+        id != UserId && !await IsAdminAsync() ? Forbid() : Ok(await _userService.GetProjectPermissionsAsync(id));
 
     [HttpPost("project-permissions")]
     public async Task<IActionResult> SetPermission([FromBody] UserProjectPermissionDto dto)
     {
+        if (!await IsAdminAsync()) return Forbid();
         await _userService.SetProjectPermissionAsync(dto, UserId);
         return Ok();
     }
@@ -91,10 +99,12 @@ public class UsersController : ControllerBase
     [HttpPut("{id:long}/access")]
     public async Task<IActionResult> ReplaceAccess(long id, [FromBody] ReplaceUserAccessRequest request)
     {
+        if (!await IsAdminAsync()) return Forbid();
         await _userService.ReplaceAccessAsync(id, request, UserId);
         return Ok(await _userService.GetAccessAsync(id));
     }
 
     [HttpGet("{id:long}/access")]
-    public async Task<IActionResult> GetAccess(long id) => Ok(await _userService.GetAccessAsync(id));
+    public async Task<IActionResult> GetAccess(long id) =>
+        id != UserId && !await IsAdminAsync() ? Forbid() : Ok(await _userService.GetAccessAsync(id));
 }

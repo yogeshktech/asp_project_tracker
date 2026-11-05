@@ -7,20 +7,20 @@ namespace project_tracker_madhu.BusinessLayer.Items;
 
 public interface IItemService
 {
-    Task<List<Item>> GetAllAsync();
-    Task<Item?> GetAsync(long id);
+    Task<List<Item>> GetAllAsync(long userId);
+    Task<Item?> GetAsync(long id, long? userId = null);
     Task<Item> CreateAsync(CreateItemRequest request, long? userId);
     Task<Item?> UpdateAsync(long id, CreateItemRequest request, long? userId);
     Task DeleteAsync(long id, long? userId);
-    Task<List<Brand>> GetBrandsAsync();
+    Task<List<Brand>> GetBrandsAsync(long userId);
     Task<Brand> CreateBrandAsync(string name, long? userId);
     Task<Brand?> UpdateBrandAsync(long id, string name, long? userId);
     Task DeleteBrandAsync(long id, long? userId);
-    Task<List<Unit>> GetUnitsAsync();
+    Task<List<Unit>> GetUnitsAsync(long userId);
     Task<Unit> CreateUnitAsync(string code, string name, long? userId);
     Task<Unit?> UpdateUnitAsync(long id, string code, string name, long? userId);
     Task DeleteUnitAsync(long id, long? userId);
-    Task<List<ItemCategory>> GetCategoriesAsync();
+    Task<List<ItemCategory>> GetCategoriesAsync(long userId);
     Task<ItemCategory> CreateCategoryAsync(string name, long? parentId, long? userId);
     Task<ItemCategory?> UpdateCategoryAsync(long id, UpdateCategoryRequest request, long? userId);
     Task DeleteCategoryAsync(long id, long? userId);
@@ -47,8 +47,24 @@ public class ItemService : IItemService
         _permissions = permissions;
     }
 
-    public Task<List<Item>> GetAllAsync() => _repository.GetAllAsync();
-    public Task<Item?> GetAsync(long id) => _repository.GetAsync(id);
+    private async Task EnsureItemReadAsync(long userId)
+    {
+        if (await _permissions.CanViewModuleAsync(userId, 0, "Module")
+            || await _permissions.CanViewAnyModuleAsync(userId, "BOQ")) return;
+        throw new UnauthorizedAccessException("No view permission on Item Master or BOQ.");
+    }
+
+    public async Task<List<Item>> GetAllAsync(long userId)
+    {
+        await EnsureItemReadAsync(userId);
+        return await _repository.GetAllAsync();
+    }
+
+    public async Task<Item?> GetAsync(long id, long? userId = null)
+    {
+        if (userId.HasValue) await EnsureItemReadAsync(userId.Value);
+        return await _repository.GetAsync(id);
+    }
 
     public async Task<Item> CreateAsync(CreateItemRequest request, long? userId)
     {
@@ -123,7 +139,11 @@ public class ItemService : IItemService
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Module", right);
     }
 
-    public Task<List<Brand>> GetBrandsAsync() => _repository.GetBrandsAsync();
+    public async Task<List<Brand>> GetBrandsAsync(long userId)
+    {
+        await EnsureItemReadAsync(userId);
+        return await _repository.GetBrandsAsync();
+    }
 
     public async Task<Brand> CreateBrandAsync(string name, long? userId)
     {
@@ -151,7 +171,11 @@ public class ItemService : IItemService
         await _audit.LogAsync(userId, "Delete", "Brand", id);
     }
 
-    public Task<List<Unit>> GetUnitsAsync() => _repository.GetUnitsAsync();
+    public async Task<List<Unit>> GetUnitsAsync(long userId)
+    {
+        await EnsureItemReadAsync(userId);
+        return await _repository.GetUnitsAsync();
+    }
 
     public async Task<Unit> CreateUnitAsync(string code, string name, long? userId)
     {
@@ -182,7 +206,11 @@ public class ItemService : IItemService
         await _audit.LogAsync(userId, "Delete", "Unit", id);
     }
 
-    public Task<List<ItemCategory>> GetCategoriesAsync() => _repository.GetCategoriesAsync();
+    public async Task<List<ItemCategory>> GetCategoriesAsync(long userId)
+    {
+        await EnsureItemReadAsync(userId);
+        return await _repository.GetCategoriesAsync();
+    }
 
     public async Task<ItemCategory> CreateCategoryAsync(string name, long? parentId, long? userId)
     {

@@ -2097,11 +2097,14 @@ WTPages.switchProjView = function(view) {
   // ---------- ITEMS / BRANDS / UNITS / CATEGORIES ----------
   async function pageItems() {
     const el = root();
+    const canCreate = !wtCan || wtCan('Module', 'edit');
+    const canUpdate = !wtCan || wtCan('Module', 'update');
+    const canDelete = !wtCan || wtCan('Module', 'delete');
     el.innerHTML = pageHead('Reusable Item / Price Master', 'Shared item database available to reuse across projects',
-      `<button class="btn" onclick="WTPages.openBrandModal()">Brand</button>
+      `${canCreate ? `<button class="btn" onclick="WTPages.openBrandModal()">Brand</button>
        <button class="btn" onclick="WTPages.openUnitModal()">Unit</button>
        <button class="btn" onclick="WTPages.openCategoryModal()">Category</button>
-       <button class="btn primary" onclick="WTPages.openItemModal()"><i class="fa-solid fa-plus"></i> Item</button>`)
+       <button class="btn primary" onclick="WTPages.openItemModal()"><i class="fa-solid fa-plus"></i> Item</button>` : ''}`)
       + tableWrap(['ID', 'Code', 'Name', 'Purchase Price', 'Brand', 'Unit', 'Standard Price', 'Effective Date', 'Source', 'Image', 'Actions'], 'itemsBody')
       + `<div class="grid g3" style="margin-top:16px">
           ${tableWrap(['ID', 'Brand', 'Actions'], 'brandsBody')}
@@ -2124,14 +2127,11 @@ WTPages.switchProjView = function(view) {
           <td>${it.standardPrice == null ? '—' : `${esc(it.currency || it.Currency || 'MVR')} ${Number(it.standardPrice).toLocaleString('en-US')}`}</td>
           <td>${esc(it.effectiveDate || '—')}</td><td>${esc(it.source || '—')}</td>
           <td>${it.imageUrl ? `<a href="${esc(it.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
-          <td class="table-actions">
-            <button class="btn sm" onclick="WTPages.openItemModal(${it.id})"><i class="fa-solid fa-pen"></i></button>
-            <button class="btn sm danger" onclick="WTPages.deleteItem(${it.id})"><i class="fa-solid fa-trash"></i></button>
-          </td>
+          <td class="table-actions">${canUpdate ? `<button class="btn sm" onclick="WTPages.openItemModal(${it.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? ` <button class="btn sm danger" onclick="WTPages.deleteItem(${it.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td>
         </tr>`).join('') : emptyRow(11, 'No items');
-      $('#brandsBody').innerHTML = brands.map(b => `<tr><td>${b.id}</td><td>${esc(b.name)}</td><td><button class="btn sm danger" onclick="WTPages.deleteBrand(${b.id})"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') || emptyRow(3, '—');
-      $('#unitsBody').innerHTML = units.map(u => `<tr><td>${u.id}</td><td>${esc(u.code)}</td><td>${esc(u.name)}</td><td><button class="btn sm danger" onclick="WTPages.deleteUnit(${u.id})"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') || emptyRow(4, '—');
-      $('#catsBody').innerHTML = cats.map(c => `<tr><td>${c.id}</td><td>${esc(c.name)}</td><td><button class="btn sm danger" onclick="WTPages.deleteCategory(${c.id})"><i class="fa-solid fa-trash"></i></button></td></tr>`).join('') || emptyRow(3, '—');
+      $('#brandsBody').innerHTML = brands.map(b => `<tr><td>${b.id}</td><td>${esc(b.name)}</td><td>${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteBrand(${b.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`).join('') || emptyRow(3, '—');
+      $('#unitsBody').innerHTML = units.map(u => `<tr><td>${u.id}</td><td>${esc(u.code)}</td><td>${esc(u.name)}</td><td>${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteUnit(${u.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`).join('') || emptyRow(4, '—');
+      $('#catsBody').innerHTML = cats.map(c => `<tr><td>${c.id}</td><td>${esc(c.name)}</td><td>${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteCategory(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`).join('') || emptyRow(3, '—');
     } catch (e) { showToast(e.message, 'danger'); }
   }
 

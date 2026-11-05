@@ -69,7 +69,7 @@ public class ProjectsController : ControllerBase
     }
 
     [HttpGet("types")]
-    public async Task<IActionResult> ProjectTypes() => Ok(await _projectService.GetProjectTypesAsync());
+    public async Task<IActionResult> ProjectTypes() => Ok(await _projectService.GetProjectTypesAsync(UserId));
 
     [HttpPost("types")]
     public async Task<IActionResult> CreateProjectType([FromBody] CreateProjectTypeRequest request) =>

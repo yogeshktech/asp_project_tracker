@@ -141,6 +141,7 @@ function wtBuildSidebar() {
       html += `<div class="nav-group-title">${item.group}</div>`;
       continue;
     }
+    if (typeof wtPageAllowed === 'function' && !wtPageAllowed(item.href)) continue;
     const active = page === item.href ? ' active' : '';
     html += `<a class="nav-link${active}" href="${item.href}" title="${item.label}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
   }

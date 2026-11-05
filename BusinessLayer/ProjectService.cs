@@ -23,7 +23,7 @@ public interface IProjectService
     Task<Property> CreatePropertyAsync(CreatePropertyRequest request, long? userId);
     Task<Property?> UpdatePropertyAsync(long id, UpdatePropertyRequest request, long? userId);
     Task DeletePropertyAsync(long id, long? userId);
-    Task<List<ProjectType>> GetProjectTypesAsync();
+    Task<List<ProjectType>> GetProjectTypesAsync(long userId);
     Task<ProjectType> CreateProjectTypeAsync(CreateProjectTypeRequest request, long? userId);
     Task<ProjectType?> UpdateProjectTypeAsync(long id, UpdateProjectTypeRequest request, long? userId);
     Task DeleteProjectTypeAsync(long id, long? userId);
@@ -176,10 +176,17 @@ public class ProjectService : IProjectService
         await _audit.LogAsync(userId, "Delete", "Property", id);
     }
 
-    public Task<List<ProjectType>> GetProjectTypesAsync() => _repository.GetProjectTypesAsync();
+    public async Task<List<ProjectType>> GetProjectTypesAsync(long userId)
+    {
+        if (!await _permissions.CanViewModuleAsync(userId, 0, "Resorts")
+            && !await _permissions.CanViewAnyModuleAsync(userId, "Projects"))
+            throw new UnauthorizedAccessException("No view permission on Resorts or Projects.");
+        return await _repository.GetProjectTypesAsync();
+    }
 
     public async Task<ProjectType> CreateProjectTypeAsync(CreateProjectTypeRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "edit");
         var type = await _repository.AddProjectTypeAsync(new ProjectType
         {
             Name = request.Name,
@@ -193,6 +200,7 @@ public class ProjectService : IProjectService
 
     public async Task<ProjectType?> UpdateProjectTypeAsync(long id, UpdateProjectTypeRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "update");
         var type = await _repository.GetProjectTypeAsync(id);
         if (type == null) return null;
         type.Name = request.Name;
@@ -205,6 +213,7 @@ public class ProjectService : IProjectService
 
     public async Task DeleteProjectTypeAsync(long id, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, 0, "Resorts", "delete");
         await _repository.DeleteProjectTypeAsync(id);
         await _audit.LogAsync(userId, "Delete", "ProjectType", id);
     }

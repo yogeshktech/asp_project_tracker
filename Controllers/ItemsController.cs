@@ -16,12 +16,12 @@ public class ItemsController : ControllerBase
     private long UserId => UserContext.GetUserId(User)!.Value;
 
     [HttpGet]
-    public async Task<IActionResult> GetAll() => Ok(await _itemService.GetAllAsync());
+    public async Task<IActionResult> GetAll() => Ok(await _itemService.GetAllAsync(UserId));
 
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
     {
-        var item = await _itemService.GetAsync(id);
+        var item = await _itemService.GetAsync(id, UserId);
         return item == null ? NotFound() : Ok(item);
     }
 
@@ -44,7 +44,7 @@ public class ItemsController : ControllerBase
     }
 
     [HttpGet("brands")]
-    public async Task<IActionResult> Brands() => Ok(await _itemService.GetBrandsAsync());
+    public async Task<IActionResult> Brands() => Ok(await _itemService.GetBrandsAsync(UserId));
 
     [HttpPost("brands")]
     public async Task<IActionResult> CreateBrand([FromBody] NameRequest request) =>
@@ -65,7 +65,7 @@ public class ItemsController : ControllerBase
     }
 
     [HttpGet("units")]
-    public async Task<IActionResult> Units() => Ok(await _itemService.GetUnitsAsync());
+    public async Task<IActionResult> Units() => Ok(await _itemService.GetUnitsAsync(UserId));
 
     [HttpPost("units")]
     public async Task<IActionResult> CreateUnit([FromBody] UnitRequest request) =>
@@ -86,7 +86,7 @@ public class ItemsController : ControllerBase
     }
 
     [HttpGet("categories")]
-    public async Task<IActionResult> Categories() => Ok(await _itemService.GetCategoriesAsync());
+    public async Task<IActionResult> Categories() => Ok(await _itemService.GetCategoriesAsync(UserId));
 
     [HttpPost("categories")]
     public async Task<IActionResult> CreateCategory([FromBody] CategoryRequest request) =>
