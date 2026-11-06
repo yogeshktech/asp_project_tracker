@@ -2112,8 +2112,9 @@ WTPages.switchProjView = function(view) {
           : 'No open exceptions for this package.'}</div>
       </div>`);
       extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
-        <strong>Variance explanations (PM-24)</strong>
-        <div id="wsVarList" style="margin-top:8px;font-size:12.5px;">${(explanations || []).length
+        <strong>Variance Explanations (PM-24)</strong>
+        <style>#wsVarList > p{display:none}</style>
+        <div id="wsVarList" class="table-wrap" style="margin-top:8px;font-size:12.5px;"><table class="table"><thead><tr><th>Variance Type</th><th>Explanation</th><th>Updated By</th><th>Date and Time</th></tr></thead><tbody>${(explanations || []).map(v => `<tr><td>${esc(v.varianceType || v.VarianceType || '—')}</td><td>${esc(v.explanation || v.Explanation || '—')}</td><td>${esc(v.updatedBy || v.UpdatedBy || 'Unknown')}</td><td>${(v.createdAt || v.CreatedAt) ? esc(new Date(v.createdAt || v.CreatedAt).toLocaleString()) : '—'}</td></tr>`).join('')}</tbody></table>${(explanations || []).length
           ? explanations.map(v => `<p><b>${esc(v.varianceType || v.VarianceType)}</b> — ${esc(v.explanation || v.Explanation)}</p>`).join('')
           : 'No explanations recorded.'}</div>
         <div class="form-grid" style="margin-top:10px;">
@@ -2123,6 +2124,7 @@ WTPages.switchProjView = function(view) {
         <button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveWorkspaceVariance(${numericPid})">Save explanation</button>
       </div>`);
       $('#wsExtra').innerHTML = extra.join('');
+      addVarianceActionColumn('wsVarList', explanations, numericPid);
     } catch (_) {
       $('#teamList').innerHTML = '<small class="card-subtitle">Team list unavailable.</small>';
     }
@@ -2894,8 +2896,9 @@ WTPages.switchProjView = function(view) {
           <div><div class="kpi-label">RAG</div><span class="badge ${ragStatus === 'Red' ? 'red' : ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(ragStatus)}</span></div>
         </div>
         <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
-          <strong>Variance explanations (PM-24)</strong>
-          <div id="varExplainList" style="margin:8px 0;font-size:13px;">${(explanations || []).length
+          <strong>Variance Explanations</strong>
+          <style>#varExplainList > p{display:none}</style>
+          <div id="varExplainList" class="table-wrap" style="margin:8px 0;font-size:13px;"><table class="table"><thead><tr><th>Variance Type</th><th>Explanation</th><th>Updated By</th><th>Date and Time</th></tr></thead><tbody>${(explanations || []).map(v => `<tr><td>${esc(v.varianceType || v.VarianceType || '—')}</td><td>${esc(v.explanation || v.Explanation || '—')}</td><td>${esc(v.updatedBy || v.UpdatedBy || 'Unknown')}</td><td>${(v.createdAt || v.CreatedAt) ? esc(new Date(v.createdAt || v.CreatedAt).toLocaleString()) : '—'}</td></tr>`).join('')}</tbody></table>${(explanations || []).length
             ? explanations.map(v => `<p style="margin:4px 0;"><b>${esc(v.varianceType || v.VarianceType)}</b> — ${esc(v.explanation || v.Explanation)}</p>`).join('')
             : '<p style="color:var(--text-muted);margin:4px 0;">No explanations yet. Record why cost or schedule moved.</p>'}</div>
           <div class="form-grid">
@@ -2904,6 +2907,7 @@ WTPages.switchProjView = function(view) {
           </div>
           ${(!wtCan || wtCan('Costs', 'update', Number(pid))) ? `<button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveVarianceExplanation()">Save explanation</button>` : ''}
         </div>`;
+      addVarianceActionColumn('varExplainList', explanations, Number(pid));
       $('#costCenterFinanceBody').innerHTML = (variance.costCenters || []).length ? variance.costCenters.map(c => {
         const status = c.ragStatus || 'Green';
         return `<tr><td>${money(c.budget ?? c.allocated)}</td>
@@ -2964,11 +2968,58 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="drawingName" maxlength="200" value="${esc(existing?.name || existing?.Name || '')}" required></div>
           <div class="field full"><label>Description</label><textarea id="drawingDescription" maxlength="2000" rows="3">${esc(existing?.description || existing?.Description || '')}</textarea></div>
-          <div class="field full"><label>File ${existing ? '(optional)' : '*'}</label><input id="drawingFile" type="file" accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx" ${existing ? '' : 'required'}>
-            <small>${existing ? `Current file: ${esc(existing.fileName || existing.FileName || '')}` : 'Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX. Maximum 25 MB.'}</small></div>
+          <div class="field full"><label>Files ${existing ? '(optional)' : '*'}</label><input id="drawingFile" type="file" ${existing ? '' : 'multiple'} accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx" onchange="WTPages.previewDrawingFiles(this)">
+            <small>Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX. Maximum 25 MB.</small>
+            <div id="drawingFilePreview" style="display:grid;gap:8px;margin-top:10px"></div>
+            ${existing && (existing.fileName || existing.FileName) ? `<div id="drawingCurrentFile" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border:1px solid var(--border-color);border-radius:6px;margin-top:10px"><span>Current file: ${esc(existing.fileName || existing.FileName)}</span><button class="btn sm danger" type="button" title="Remove uploaded file" aria-label="Remove uploaded file" onclick="WTPages.removeDrawingCurrentFile()"><i class="fa-solid fa-xmark"></i></button></div><div id="drawingCurrentPreview" style="margin-top:8px"></div><input id="drawingRemoveFile" type="hidden" value="false">` : ''}
+          </div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:14px"><button class="btn" type="button" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
       </form>`);
+    previewDrawingFiles($('#drawingFile'));
+    if (existing && (existing.fileName || existing.FileName)) loadDrawingCurrentPreview(existing);
+  }
+
+  async function loadDrawingCurrentPreview(drawing) {
+    const target = $('#drawingCurrentPreview');
+    if (!target) return;
+    try {
+      const { blob, contentType } = await WisetrackAPI.fetchFile(`/drawings/${Number(drawing.id || drawing.Id)}/file`);
+      const url = URL.createObjectURL(blob);
+      target.dataset.blobUrl = url;
+      if ((contentType || '').startsWith('image/')) target.innerHTML = `<img src="${url}" alt="Current drawing preview" style="max-width:100%;max-height:220px;object-fit:contain;border:1px solid var(--border-color);border-radius:6px">`;
+      else if (contentType === 'application/pdf') target.innerHTML = `<iframe src="${url}" title="Current drawing preview" style="width:100%;height:240px;border:1px solid var(--border-color);border-radius:6px"></iframe>`;
+      else target.innerHTML = `<small>${esc(drawing.fileName || drawing.FileName)} is attached.</small>`;
+    } catch (error) { target.innerHTML = `<small style="color:var(--danger)">${esc(error.message || 'Could not load file preview.')}</small>`; }
+  }
+
+  function previewDrawingFiles(input) {
+    const preview = $('#drawingFilePreview');
+    if (!preview || !input) return;
+    const files = Array.from(input.files || []);
+    preview.innerHTML = files.map((file, index) => {
+      const imagePreview = /^image\//i.test(file.type) ? `<img src="${URL.createObjectURL(file)}" alt="${esc(file.name)} preview" style="width:48px;height:48px;object-fit:cover;border-radius:4px">` : `<i class="fa-regular fa-file" style="font-size:24px;width:48px;text-align:center"></i>`;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px">${imagePreview}<span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeDrawingSelectedFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`;
+    }).join('');
+  }
+
+  function removeDrawingSelectedFile(index) {
+    const input = $('#drawingFile');
+    if (!input) return;
+    const transfer = new DataTransfer();
+    Array.from(input.files).forEach((file, currentIndex) => { if (currentIndex !== index) transfer.items.add(file); });
+    input.files = transfer.files;
+    previewDrawingFiles(input);
+  }
+
+  function removeDrawingCurrentFile() {
+    const preview = $('#drawingCurrentPreview');
+    if (preview?.dataset.blobUrl) URL.revokeObjectURL(preview.dataset.blobUrl);
+    const row = $('#drawingCurrentFile');
+    const removeFlag = $('#drawingRemoveFile');
+    if (row) row.remove();
+    if (preview) preview.remove();
+    if (removeFlag) removeFlag.value = 'true';
   }
 
   async function saveDrawing(event) {
@@ -2978,10 +3029,23 @@ WTPages.switchProjView = function(view) {
       data.append('ProjectId', $('#drawingProjectId').value);
       data.append('Name', $('#drawingName').value.trim());
       data.append('Description', $('#drawingDescription').value.trim());
-      const file = $('#drawingFile').files[0];
-      if (file) data.append('File', file);
+      const files = Array.from($('#drawingFile').files || []);
       const id = Number($('#drawingId').value) || 0;
-      if (id) await WisetrackAPI.updateDrawing(id, data); else await WisetrackAPI.createDrawing(data);
+      if (!id && !files.length) { showToast('Choose at least one drawing file.', 'danger'); return; }
+      if (id) {
+        data.append('RemoveFile', $('#drawingRemoveFile')?.value === 'true' ? 'true' : 'false');
+        if (files.length) data.append('File', files[0]);
+        await WisetrackAPI.updateDrawing(id, data);
+      } else {
+        for (const file of files) {
+          const upload = new FormData();
+          upload.append('ProjectId', $('#drawingProjectId').value);
+          upload.append('Name', $('#drawingName').value.trim());
+          upload.append('Description', $('#drawingDescription').value.trim());
+          upload.append('File', file);
+          await WisetrackAPI.createDrawing(upload);
+        }
+      }
       closeModal(); showToast(id ? 'Drawing updated.' : 'Drawing uploaded.'); await pageDrawings();
     } catch (error) { showToast(error.message || 'Could not save drawing.', 'danger'); }
   }
@@ -3013,6 +3077,66 @@ WTPages.switchProjView = function(view) {
       });
       showToast('Variance explanation saved');
       await pageCosts();
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  function addVarianceActionColumn(containerId, explanations, projectId) {
+    if (typeof wtIsAdmin !== 'function' || !wtIsAdmin()) return;
+    const table = document.getElementById(containerId)?.querySelector('table');
+    if (!table) return;
+    const header = document.createElement('th');
+    header.textContent = 'Action';
+    table.tHead?.rows[0]?.appendChild(header);
+    table.querySelectorAll('tbody tr').forEach((row, index) => {
+      const item = explanations[index];
+      if (!item) return;
+      const id = item.id || item.Id;
+      const cell = document.createElement('td');
+      cell.innerHTML = `<button class="btn sm" onclick="WTPages.editVarianceExplanation(${Number(id)}, ${Number(projectId)})">Edit</button> <button class="btn sm danger" onclick="WTPages.deleteVarianceExplanation(${Number(id)}, ${Number(projectId)})">Delete</button>`;
+      row.appendChild(cell);
+    });
+  }
+
+  async function editVarianceExplanation(id, projectId) {
+    if (typeof wtIsAdmin !== 'function' || !wtIsAdmin()) { showToast('Only Admin can edit variance explanations.', 'danger'); return; }
+    try {
+      const rows = await WisetrackAPI.getVarianceExplanations(projectId);
+      const row = rows.find(v => Number(v.id || v.Id) === Number(id));
+      if (!row) return;
+      const type = row.varianceType || row.VarianceType || 'Cost';
+      const explanation = row.explanation || row.Explanation || '';
+      openModal('Edit Variance Explanation', `<form onsubmit="WTPages.saveVarianceExplanationEdit(event, ${Number(id)}, ${Number(projectId)})">
+        <div class="form-grid">
+          <div class="field full"><label for="editVarianceType">Variance Type *</label><select id="editVarianceType" required><option value="Cost" ${type === 'Cost' ? 'selected' : ''}>Cost</option><option value="Schedule" ${type === 'Schedule' ? 'selected' : ''}>Schedule</option></select></div>
+          <div class="field full"><label for="editVarianceExplanation">Explanation *</label><textarea id="editVarianceExplanation" rows="4" required>${esc(explanation)}</textarea></div>
+        </div>
+        <div class="modalfoot" style="padding:0;margin-top:16px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button type="submit" class="btn primary">Save changes</button></div>
+      </form>`);
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function saveVarianceExplanationEdit(event, id, projectId) {
+    event.preventDefault();
+    if (typeof wtIsAdmin !== 'function' || !wtIsAdmin()) { showToast('Only Admin can edit variance explanations.', 'danger'); return; }
+    const explanation = ($('#editVarianceExplanation')?.value || '').trim();
+    if (!explanation) { showToast('Enter an explanation', 'danger'); return; }
+    const fromWorkspace = Boolean($('#wsExtra'));
+    try {
+      await WisetrackAPI.updateVarianceExplanation(id, { projectId: Number(projectId), varianceType: $('#editVarianceType')?.value || 'Cost', explanation });
+      closeModal();
+      showToast('Variance explanation updated');
+      if (fromWorkspace) await pageProjectDetail(); else await pageCosts();
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  async function deleteVarianceExplanation(id, projectId) {
+    if (typeof wtIsAdmin !== 'function' || !wtIsAdmin()) { showToast('Only Admin can delete variance explanations.', 'danger'); return; }
+    const fromWorkspace = Boolean($('#wsExtra'));
+    if (!confirm('Delete this variance explanation?')) return;
+    try {
+      await WisetrackAPI.deleteVarianceExplanation(id);
+      showToast('Variance explanation deleted');
+      if (fromWorkspace) await pageProjectDetail(); else await pageCosts();
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -6310,8 +6434,8 @@ WTPages.switchProjView = function(view) {
     openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
-    openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile,
-    openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation,
+    openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
+    openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,

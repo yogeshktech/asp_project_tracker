@@ -154,6 +154,20 @@ public class ProjectsController : ControllerBase
     public async Task<IActionResult> GetVariance(long id) =>
         Ok(await _projectService.GetVarianceExplanationsAsync(UserId, id));
 
+    [HttpPut("variance-explanations/{id:long}")]
+    public async Task<IActionResult> UpdateVariance(long id, [FromBody] VarianceExplanationRequest request)
+    {
+        await _projectService.UpdateVarianceExplanationAsync(UserId, id, request);
+        return NoContent();
+    }
+
+    [HttpDelete("variance-explanations/{id:long}")]
+    public async Task<IActionResult> DeleteVariance(long id)
+    {
+        await _projectService.DeleteVarianceExplanationAsync(UserId, id);
+        return NoContent();
+    }
+
     [HttpGet("milestone-templates")]
     public async Task<IActionResult> GetTemplates() =>
         Ok(await _projectService.GetTemplatesAsync());

@@ -279,8 +279,10 @@ public class ProjectStatusRowDto
 
 public class VarianceExplanationDto
 {
+    public long Id { get; set; }
     public string VarianceType { get; set; } = string.Empty;
     public string Explanation { get; set; } = string.Empty;
+    public string UpdatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
 }
 

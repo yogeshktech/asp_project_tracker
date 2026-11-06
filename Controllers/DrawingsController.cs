@@ -102,6 +102,7 @@ public sealed class DrawingsController : ControllerBase
 
         var oldKey = drawing.FilePath;
         string? newKey = null;
+        var removeExistingFile = form.RemoveFile && form.File is not { Length: > 0 };
         if (form.File is { Length: > 0 })
         {
             if (!TryGetContentType(form.File.FileName, out var contentType)) return BadRequest(new { message = "Allowed file types: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX." });
@@ -113,6 +114,13 @@ public sealed class DrawingsController : ControllerBase
             drawing.ContentType = contentType;
             drawing.SizeBytes = form.File.Length;
             drawing.UploadedBy = UserId;
+        }
+        else if (removeExistingFile)
+        {
+            drawing.FilePath = string.Empty;
+            drawing.FileName = string.Empty;
+            drawing.ContentType = "application/octet-stream";
+            drawing.SizeBytes = 0;
         }
 
         drawing.Name = form.Name.Trim();
@@ -127,7 +135,7 @@ public sealed class DrawingsController : ControllerBase
             if (newKey != null) await _storage.DeleteAsync(newKey);
             throw;
         }
-        if (newKey != null) await _storage.DeleteAsync(oldKey);
+        if (newKey != null || removeExistingFile) await _storage.DeleteAsync(oldKey);
         return Ok(ToDto(drawing));
     }
 
@@ -149,6 +157,7 @@ public sealed class DrawingsController : ControllerBase
         var drawing = await _db.DrawingUploads.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         if (drawing == null) return NotFound();
         if (!await _permissions.CanViewModuleAsync(UserId, drawing.ProjectId, "Drawings")) return Forbid();
+        if (string.IsNullOrWhiteSpace(drawing.FilePath)) return NotFound();
         var stream = await _storage.OpenReadAsync(drawing.FilePath);
         if (stream == null) return NotFound();
         return download
@@ -172,4 +181,5 @@ public sealed class DrawingUploadForm
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public IFormFile? File { get; set; }
+    public bool RemoveFile { get; set; }
 }

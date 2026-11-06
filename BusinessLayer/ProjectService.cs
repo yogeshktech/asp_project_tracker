@@ -37,7 +37,9 @@ public interface IProjectService
     Task RemoveUserAsync(long userId, long projectId, long memberUserId);
     Task<List<ProjectTeamMemberDto>> GetTeamAsync(long userId, long projectId);
     Task AddVarianceExplanationAsync(long userId, VarianceExplanationRequest request);
-    Task<List<VarianceExplanation>> GetVarianceExplanationsAsync(long userId, long projectId);
+    Task<List<VarianceExplanationDto>> GetVarianceExplanationsAsync(long userId, long projectId);
+    Task UpdateVarianceExplanationAsync(long userId, long id, VarianceExplanationRequest request);
+    Task DeleteVarianceExplanationAsync(long userId, long id);
     Task<MilestoneTemplate> SaveTemplateAsync(MilestoneTemplateRequest request);
     Task<List<MilestoneTemplate>> GetTemplatesAsync();
     Task<List<Milestone>> CloneTemplateAsync(long userId, CloneTemplateRequest request);
@@ -468,13 +470,45 @@ public class ProjectService : IProjectService
         });
     }
 
-    public async Task<List<VarianceExplanation>> GetVarianceExplanationsAsync(long userId, long projectId)
+    public async Task<List<VarianceExplanationDto>> GetVarianceExplanationsAsync(long userId, long projectId)
     {
         if (!await _permissions.CanViewProjectAsync(userId, projectId)) return new();
         var rows = await _repository.GetVarianceExplanationsAsync(projectId);
         var canViewCost = await _permissions.CanViewModuleAsync(userId, projectId, "Costs");
         var canViewSchedule = await _permissions.CanViewModuleAsync(userId, projectId, "Tasks");
-        return rows.Where(v => v.VarianceType == "Cost" ? canViewCost : canViewSchedule).ToList();
+        return rows.Where(v => v.VarianceType == "Cost" ? canViewCost : canViewSchedule)
+            .Select(v => new VarianceExplanationDto
+            {
+                VarianceType = v.VarianceType,
+                Id = v.Id,
+                Explanation = v.Explanation,
+                UpdatedBy = _db.Users.Where(u => u.Id == v.CreatedBy).Select(u => u.FullName).FirstOrDefault() ?? "Unknown",
+                CreatedAt = v.CreatedAt
+            }).ToList();
+    }
+
+    public async Task UpdateVarianceExplanationAsync(long userId, long id, VarianceExplanationRequest request)
+    {
+        if (!await _permissions.IsAdminAsync(userId)) throw new UnauthorizedAccessException("Only Admin can edit variance explanations.");
+        var row = await _db.VarianceExplanations.FirstOrDefaultAsync(v => v.Id == id);
+        if (row == null) throw new KeyNotFoundException("Variance explanation not found.");
+        if (request.ProjectId != row.ProjectId) throw new InvalidOperationException("Project cannot be changed.");
+        if (request.VarianceType is not ("Cost" or "Schedule")) throw new InvalidOperationException("Variance type must be Cost or Schedule.");
+        if (string.IsNullOrWhiteSpace(request.Explanation)) throw new InvalidOperationException("Variance explanation is required.");
+        row.VarianceType = request.VarianceType;
+        row.Explanation = request.Explanation.Trim();
+        row.CreatedBy = userId;
+        row.CreatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task DeleteVarianceExplanationAsync(long userId, long id)
+    {
+        if (!await _permissions.IsAdminAsync(userId)) throw new UnauthorizedAccessException("Only Admin can delete variance explanations.");
+        var row = await _db.VarianceExplanations.FirstOrDefaultAsync(v => v.Id == id);
+        if (row == null) return;
+        _db.VarianceExplanations.Remove(row);
+        await _db.SaveChangesAsync();
     }
 
     public Task<MilestoneTemplate> SaveTemplateAsync(MilestoneTemplateRequest request) =>

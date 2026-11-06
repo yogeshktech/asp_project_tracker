@@ -429,6 +429,8 @@ const WisetrackAPI = {
 
   addVarianceExplanation(data) { return this.post('/projects/variance-explanations', data); },
   getVarianceExplanations(projectId) { return this.get(`/projects/${projectId}/variance-explanations`); },
+  updateVarianceExplanation(id, data) { return this.put(`/projects/variance-explanations/${id}`, data); },
+  deleteVarianceExplanation(id) { return this.del(`/projects/variance-explanations/${id}`); },
   getTemplates() { return this.get('/projects/milestone-templates'); },
   saveTemplate(data) { return this.post('/projects/milestone-templates', data); },
   cloneTemplate(data) { return this.post('/projects/milestone-templates/clone', data); },
