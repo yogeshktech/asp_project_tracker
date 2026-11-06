@@ -32,8 +32,6 @@ public class ClosureService : IClosureService
             throw new UnauthorizedAccessException("No permission.");
         if (string.IsNullOrWhiteSpace(request.Description))
             throw new InvalidOperationException("Inventory description is required. Enter 'No leftover inventory' with quantity 0 when applicable.");
-        if (request.Quantity < 0)
-            throw new InvalidOperationException("Inventory quantity cannot be negative.");
         if (request.OrderQuantity < 0)
             throw new InvalidOperationException("Order quantity cannot be negative.");
         if (request.TotalAmount < 0)
@@ -62,7 +60,6 @@ public class ClosureService : IClosureService
         if (inventory == null) return null;
         await _permissions.EnsureModuleAsync(userId, inventory.ProjectId, "Inventory", "update");
         if (string.IsNullOrWhiteSpace(request.Description)) throw new InvalidOperationException("Inventory description is required.");
-        if (request.Quantity < 0) throw new InvalidOperationException("Inventory quantity cannot be negative.");
         if (request.OrderQuantity < 0) throw new InvalidOperationException("Order quantity cannot be negative.");
         if (request.TotalAmount < 0) throw new InvalidOperationException("Total amount cannot be negative.");
         inventory.ItemId = request.ItemId;

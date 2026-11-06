@@ -424,7 +424,7 @@
     { id: 'Budgets', label: 'Budget', global: false },
     { id: 'Costs', label: 'Costs', global: false },
     { id: 'Issues', label: 'Issues', global: false },
-    { id: 'Drawings', label: 'Drawings', global: false },
+    { id: 'Drawings', label: 'Drawings', global: true, rows: [{ key: 'Drawings', name: 'Drawing Upload' }] },
     { id: 'Inventory', label: 'Inventory', global: false },
     { id: 'Reports', label: 'Reports', global: false },
     { id: 'Closure', label: 'Project Closure', global: false },
@@ -2962,34 +2962,30 @@ WTPages.switchProjView = function(view) {
 
   async function pageDrawings() {
     const el = root();
-    const pid = await selectedProjectId();
-    const canCreate = !wtCan || wtCan('Drawings', 'edit', Number(pid));
-    const canUpdate = !wtCan || wtCan('Drawings', 'update', Number(pid));
-    const canDelete = !wtCan || wtCan('Drawings', 'delete', Number(pid));
-    el.innerHTML = pageHead('Drawing Upload', 'Upload and manage project drawings and supporting documents.',
+    const canCreate = !wtCan || wtCan('Drawings', 'edit', 0);
+    const canUpdate = !wtCan || wtCan('Drawings', 'update', 0);
+    const canDelete = !wtCan || wtCan('Drawings', 'delete', 0);
+    el.innerHTML = pageHead('Drawing Upload', 'Upload and manage drawings and supporting documents.',
       ` ${canCreate ? '<button class="btn primary" onclick="WTPages.openDrawingModal()">+ Upload drawing</button>' : ''}`) +
       tableWrap(['Name', 'Description', 'File', 'Uploaded', 'Actions'], 'drawingsBody');
-    if (!pid) { $('#drawingsBody').innerHTML = emptyRow(5, 'No project available.'); return; }
     try {
-      const drawings = await WisetrackAPI.getDrawings(pid);
+      const drawings = await WisetrackAPI.getDrawings();
       $('#drawingsBody').innerHTML = drawings.length ? drawings.map(d => `<tr>
         <td>${esc(d.name || d.Name)}</td><td>${esc(d.description || d.Description || '—')}</td>
         <td>${esc(d.fileName || d.FileName || '—')}</td><td>${esc(String(d.createdAt || d.CreatedAt || '').slice(0, 10) || '—')}</td>
         <td class="table-actions"><button class="btn sm" onclick="WTPages.viewDrawingFile(${Number(d.id || d.Id)})">View</button>
           <button class="btn sm" onclick="WTPages.downloadDrawingFile(${Number(d.id || d.Id)})">Download</button>
           ${canUpdate ? `<button class="btn sm" onclick="WTPages.openDrawingModal(${Number(d.id || d.Id)})">Edit</button>` : ''}
-          ${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteDrawing(${Number(d.id || d.Id)})">Delete</button>` : ''}</td></tr>`).join('') : emptyRow(5, 'No drawings uploaded for this project yet.');
+          ${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteDrawing(${Number(d.id || d.Id)})">Delete</button>` : ''}</td></tr>`).join('') : emptyRow(5, 'No drawings uploaded yet.');
     } catch (error) { $('#drawingsBody').innerHTML = errRow(5, error); }
   }
 
   async function openDrawingModal(id = null) {
-    const projectId = await selectedProjectId();
-    const existing = id ? (await WisetrackAPI.getDrawings(projectId)).find(d => Number(d.id || d.Id) === Number(id)) : null;
+    const existing = id ? (await WisetrackAPI.getDrawings()).find(d => Number(d.id || d.Id) === Number(id)) : null;
     if (id && !existing) { showToast('Drawing not found.', 'danger'); return; }
     openModal(existing ? 'Edit Drawing' : 'Upload Drawing', `
       <form onsubmit="WTPages.saveDrawing(event)">
         <input type="hidden" id="drawingId" value="${existing?.id || existing?.Id || ''}">
-        <input type="hidden" id="drawingProjectId" value="${projectId}">
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="drawingName" maxlength="200" value="${esc(existing?.name || existing?.Name || '')}" required></div>
           <div class="field full"><label>Description</label><textarea id="drawingDescription" maxlength="2000" rows="3">${esc(existing?.description || existing?.Description || '')}</textarea></div>
@@ -3051,7 +3047,6 @@ WTPages.switchProjView = function(view) {
     event.preventDefault();
     try {
       const data = new FormData();
-      data.append('ProjectId', $('#drawingProjectId').value);
       data.append('Name', $('#drawingName').value.trim());
       data.append('Description', $('#drawingDescription').value.trim());
       const files = Array.from($('#drawingFile').files || []);
@@ -3064,7 +3059,6 @@ WTPages.switchProjView = function(view) {
       } else {
         for (const file of files) {
           const upload = new FormData();
-          upload.append('ProjectId', $('#drawingProjectId').value);
           upload.append('Name', $('#drawingName').value.trim());
           upload.append('Description', $('#drawingDescription').value.trim());
           upload.append('File', file);
@@ -5676,7 +5670,7 @@ WTPages.switchProjView = function(view) {
         <p class="card-subtitle">Record all leftovers before closure. If none remain, enter “No leftover inventory” with quantity 0.</p>
         <div class="form-grid">
           <div class="field full" style="position:relative"><label>Item Name *</label><input id="invItemSearch" type="text" autocomplete="off" placeholder="Search or select an item" readonly><select id="invItemSelect" style="display:none"><option value="">-- Select item --</option>${itemOptions}</select><div id="invItemDropdown" style="display:none;position:absolute;z-index:20;top:100%;left:0;right:0;max-height:220px;overflow-y:auto;background:var(--surface,#fff);border:1px solid var(--border,#d1d5db);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.14)"></div></div>
-          <div class="field"><label>Ordered / Received QTY *</label><input id="invOrderQty" type="number" min="0" step="0.01" value="${orderQuantity}" required><small>Increase this when more material arrives.</small></div>
+          <div class="field"><label>Ordered QTY *</label><input id="invOrderQty" type="number" min="0" step="0.01" value="${orderQuantity}" readonly required></div>
           <div class="field"><label>Used QTY *</label><input id="invUsedQty" type="number" min="0" step="0.01" value="${usedQuantity ?? 0}" required></div>
           <div class="field"><label>Total Amount *</label><input id="invTotalAmount" type="number" min="0" step="0.01" value="${totalAmount}" readonly required></div>
           <div class="field"><label>Remark / Action</label><input id="invAct" value="${esc(remarks)}" placeholder="Transfer / Store"></div>
@@ -5740,7 +5734,6 @@ WTPages.switchProjView = function(view) {
       const orderQuantity = Number($('#invOrderQty').value);
       const usedQuantity = Number($('#invUsedQty').value);
       if (!Number($('#invItemId').value)) { showToast('Select an item from the dropdown.', 'danger'); return; }
-      if (usedQuantity > orderQuantity) { showToast('Used quantity cannot exceed ordered quantity.', 'danger'); return; }
       if (file) {
         const uploaded = await WisetrackAPI.uploadFile(file, 'Inventory', Number($('#invProj').value));
         attachmentPath = uploaded.filePath || uploaded.FilePath;

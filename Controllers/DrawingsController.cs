@@ -35,11 +35,10 @@ public sealed class DrawingsController : ControllerBase
     private long UserId => UserContext.GetUserId(User)!.Value;
 
     [HttpGet]
-    public async Task<IActionResult> List([FromQuery] long projectId)
+    public async Task<IActionResult> List()
     {
-        if (!await _permissions.CanViewModuleAsync(UserId, projectId, "Drawings")) return Forbid();
+        if (!await _permissions.CanViewModuleAsync(UserId, 0, "Drawings")) return Forbid();
         var rows = await _db.DrawingUploads.AsNoTracking()
-            .Where(x => x.ProjectId == projectId)
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync();
         return Ok(rows.Select(ToDto));
@@ -50,21 +49,20 @@ public sealed class DrawingsController : ControllerBase
     [RequestSizeLimit(25_000_000)]
     public async Task<IActionResult> Create([FromForm] DrawingUploadForm form)
     {
-        if (!await _permissions.CanEditModuleAsync(UserId, form.ProjectId, "Drawings")) return Forbid();
+        if (!await _permissions.CanEditModuleAsync(UserId, 0, "Drawings")) return Forbid();
         if (string.IsNullOrWhiteSpace(form.Name)) return BadRequest(new { message = "Name is required." });
         if (form.Name.Trim().Length > 200) return BadRequest(new { message = "Name must be 200 characters or fewer." });
         if (form.Description?.Length > 2000) return BadRequest(new { message = "Description must be 2000 characters or fewer." });
         if (form.File == null || form.File.Length == 0) return BadRequest(new { message = "Choose a drawing file to upload." });
-        if (!await _db.Projects.AnyAsync(x => x.Id == form.ProjectId)) return NotFound(new { message = "Project not found." });
         if (!TryGetContentType(form.File.FileName, out var contentType)) return BadRequest(new { message = "Allowed file types: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX." });
 
-        var storedKey = $"drawing_{form.ProjectId}_{Guid.NewGuid():N}{Path.GetExtension(form.File.FileName).ToLowerInvariant()}";
+        var storedKey = $"drawing_global_{Guid.NewGuid():N}{Path.GetExtension(form.File.FileName).ToLowerInvariant()}";
         await using (var stream = form.File.OpenReadStream())
             await _storage.SaveAsync(storedKey, stream, contentType);
 
         var drawing = new DrawingUpload
         {
-            ProjectId = form.ProjectId,
+            ProjectId = null,
             Name = form.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(form.Description) ? null : form.Description.Trim(),
             FileName = Path.GetFileName(form.File.FileName),
@@ -94,8 +92,7 @@ public sealed class DrawingsController : ControllerBase
     {
         var drawing = await _db.DrawingUploads.FirstOrDefaultAsync(x => x.Id == id);
         if (drawing == null) return NotFound();
-        if (!await _permissions.CanUpdateModuleAsync(UserId, drawing.ProjectId, "Drawings")) return Forbid();
-        if (form.ProjectId != drawing.ProjectId) return BadRequest(new { message = "A drawing cannot be moved to another project." });
+        if (!await _permissions.CanUpdateModuleAsync(UserId, 0, "Drawings")) return Forbid();
         if (string.IsNullOrWhiteSpace(form.Name)) return BadRequest(new { message = "Name is required." });
         if (form.Name.Trim().Length > 200) return BadRequest(new { message = "Name must be 200 characters or fewer." });
         if (form.Description?.Length > 2000) return BadRequest(new { message = "Description must be 2000 characters or fewer." });
@@ -106,7 +103,7 @@ public sealed class DrawingsController : ControllerBase
         if (form.File is { Length: > 0 })
         {
             if (!TryGetContentType(form.File.FileName, out var contentType)) return BadRequest(new { message = "Allowed file types: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX." });
-            newKey = $"drawing_{drawing.ProjectId}_{Guid.NewGuid():N}{Path.GetExtension(form.File.FileName).ToLowerInvariant()}";
+            newKey = $"drawing_global_{Guid.NewGuid():N}{Path.GetExtension(form.File.FileName).ToLowerInvariant()}";
             await using var stream = form.File.OpenReadStream();
             await _storage.SaveAsync(newKey, stream, contentType);
             drawing.FilePath = newKey;
@@ -144,7 +141,7 @@ public sealed class DrawingsController : ControllerBase
     {
         var drawing = await _db.DrawingUploads.FirstOrDefaultAsync(x => x.Id == id);
         if (drawing == null) return NotFound();
-        if (!await _permissions.CanDeleteModuleAsync(UserId, drawing.ProjectId, "Drawings")) return Forbid();
+        if (!await _permissions.CanDeleteModuleAsync(UserId, 0, "Drawings")) return Forbid();
         _db.DrawingUploads.Remove(drawing);
         await _db.SaveChangesAsync();
         await _storage.DeleteAsync(drawing.FilePath);
@@ -156,7 +153,7 @@ public sealed class DrawingsController : ControllerBase
     {
         var drawing = await _db.DrawingUploads.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         if (drawing == null) return NotFound();
-        if (!await _permissions.CanViewModuleAsync(UserId, drawing.ProjectId, "Drawings")) return Forbid();
+        if (!await _permissions.CanViewModuleAsync(UserId, 0, "Drawings")) return Forbid();
         if (string.IsNullOrWhiteSpace(drawing.FilePath)) return NotFound();
         var stream = await _storage.OpenReadAsync(drawing.FilePath);
         if (stream == null) return NotFound();
@@ -177,7 +174,6 @@ public sealed class DrawingsController : ControllerBase
 
 public sealed class DrawingUploadForm
 {
-    public long ProjectId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public IFormFile? File { get; set; }

@@ -11,7 +11,7 @@ public static class DatabaseBootstrap
             """
             CREATE TABLE IF NOT EXISTS drawing_uploads (
                 id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                project_id BIGINT NULL,
                 name VARCHAR(200) NOT NULL,
                 description VARCHAR(2000) NULL,
                 file_name VARCHAR(260) NOT NULL,
@@ -23,7 +23,38 @@ public static class DatabaseBootstrap
                 updated_at TIMESTAMPTZ NULL
             )
             """);
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE drawing_uploads ALTER COLUMN project_id DROP NOT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE drawing_uploads DROP CONSTRAINT IF EXISTS drawing_uploads_project_id_fkey""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE drawing_uploads SET project_id = NULL WHERE project_id IS NOT NULL""");
         await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_drawing_uploads_project_created ON drawing_uploads(project_id, created_at DESC)""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_drawing_uploads_created ON drawing_uploads(created_at DESC)""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            UPDATE project_permissions AS global_permission
+            SET can_view = global_permission.can_view OR legacy.can_view,
+                can_edit = global_permission.can_edit OR legacy.can_edit,
+                can_update = global_permission.can_update OR legacy.can_update,
+                can_delete = global_permission.can_delete OR legacy.can_delete
+            FROM (
+                SELECT user_id, BOOL_OR(can_view) AS can_view, BOOL_OR(can_edit) AS can_edit,
+                       BOOL_OR(can_update) AS can_update, BOOL_OR(can_delete) AS can_delete
+                FROM project_permissions
+                WHERE module = 'Drawings' AND project_id IS NOT NULL
+                GROUP BY user_id
+            ) AS legacy
+            WHERE global_permission.user_id = legacy.user_id
+              AND global_permission.module = 'Drawings' AND global_permission.project_id IS NULL
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO project_permissions (user_id, project_id, module, can_view, can_edit, can_update, can_delete)
+            SELECT user_id, NULL, 'Drawings', BOOL_OR(can_view), BOOL_OR(can_edit), BOOL_OR(can_update), BOOL_OR(can_delete)
+            FROM project_permissions
+            WHERE module = 'Drawings' AND project_id IS NOT NULL
+            GROUP BY user_id
+            ON CONFLICT (user_id, module) WHERE project_id IS NULL DO NOTHING
+            """);
+        await db.Database.ExecuteSqlRawAsync("""DELETE FROM project_permissions WHERE module = 'Drawings' AND project_id IS NOT NULL""");
     }
 
     public static async Task EnsureActualCostBoqItemsSchemaAsync(AppDbContext db)
