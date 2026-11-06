@@ -2859,12 +2859,13 @@ WTPages.switchProjView = function(view) {
       ` ${(!wtCan || wtCan('Costs', 'edit', Number(pid))) ? `<button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>` : ''}`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
-      + tableWrap(['Budget', 'Actual Spend', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)'], 'costCenterFinanceBody')
+      + '<h3 style="margin:22px 0 10px">Actual Spend by Date</h3>'
+      + tableWrap(['Date', 'Actual Spend', 'Balance (Remaining Budget - Actual)', 'Budget Status'], 'actualSpendByDateBody')
       + '<h3 style="margin:22px 0 10px">Actual Cost</h3>'
       + tableWrap(['ID', 'Vendor', 'Item Name', 'Amount', 'Date', 'Notes', 'Actions'], 'costsBody');
     if (!pid) {
       $('#varianceBox').innerHTML = 'No project available.';
-      $('#costCenterFinanceBody').innerHTML = emptyRow(5, 'No project available.');
+      $('#actualSpendByDateBody').innerHTML = emptyRow(4, 'No project available.');
       $('#costsBody').innerHTML = emptyRow(7, 'No project available.');
       return;
     }
@@ -2908,13 +2909,23 @@ WTPages.switchProjView = function(view) {
           ${(!wtCan || wtCan('Costs', 'update', Number(pid))) ? `<button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveVarianceExplanation()">Save explanation</button>` : ''}
         </div>`;
       addVarianceActionColumn('varExplainList', explanations, Number(pid));
-      $('#costCenterFinanceBody').innerHTML = (variance.costCenters || []).length ? variance.costCenters.map(c => {
-        const status = c.ragStatus || 'Green';
-        return `<tr><td>${money(c.budget ?? c.allocated)}</td>
-          <td>${money(c.actualSpend)}</td><td>${money(c.variance)}</td>
-          <td><span class="badge ${c.budgetStatus === 'Over Budget' ? 'red' : c.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(c.budgetStatus || 'On Budget')}</span></td>
-          <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td></tr>`;
-      }).join('') : emptyRow(5, 'No budget variance data.');
+      const actualsByDate = new Map();
+      (actuals || []).forEach(item => {
+        const date = String(item.costDate || item.CostDate || '').slice(0, 10);
+        if (!date) return;
+        if (!actualsByDate.has(date)) actualsByDate.set(date, []);
+        actualsByDate.get(date).push(item);
+      });
+      let cumulativeSpend = 0;
+      const actualDates = [...actualsByDate.keys()].sort();
+      $('#actualSpendByDateBody').innerHTML = actualDates.length ? actualDates.map(date => {
+        const daySpend = actualsByDate.get(date).reduce((sum, item) => sum + Number(item.amount ?? item.Amount ?? 0), 0);
+        cumulativeSpend += daySpend;
+        const remaining = budget - cumulativeSpend;
+        const status = cumulativeSpend > budget ? 'Over Budget' : cumulativeSpend < budget ? 'Under Budget' : 'On Budget';
+        return `<tr data-actual-date="${esc(date)}"><td><button class="btn sm" onclick="WTPages.showActualsForDate('${esc(date)}')">${esc(date)}</button></td>
+          <td>${money(daySpend)}</td><td>${money(remaining)}</td><td><span class="badge ${status === 'Over Budget' ? 'red' : status === 'Under Budget' ? 'green' : 'gray'}">${esc(status)}</span></td></tr>`;
+      }).join('') : emptyRow(4, 'No dated actual spend recorded.');
       const rows = [
         ...(purchases || []).map(x => ({ ...x, _t: 'Purchase' })),
         ...(actuals || []).map(x => ({ ...x, _t: 'Actual' }))
@@ -2929,10 +2940,24 @@ WTPages.switchProjView = function(view) {
         const itemNames = boqItemIds.map(itemId => boqItemNames.get(String(itemId)) || `BOQ Line #${itemId}`);
         if (r.includesOther || r.IncludesOther) itemNames.push('Other');
         const itemName = itemNames.join(', ') || 'Other';
-        return `<tr><td>${r.id}</td><td>${esc(vendor)}</td><td>${esc(itemName)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
+        return `<tr data-cost-type="${esc(r._t)}"><td>${r.id}</td><td>${esc(vendor)}</td><td>${esc(itemName)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
           <td>${esc(r.costDate || r.purchaseDate || r.createdAt || 'N/A')}</td><td>${esc(r.remarks || r.description || r.notes || 'N/A')}</td><td class="table-actions">${canUpdate ? `<button class="btn sm" title="Edit ${r._t.toLowerCase()}" aria-label="Edit ${r._t.toLowerCase()}" onclick="WTPages.open${r._t}Modal(${r.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete ${r._t.toLowerCase()}" aria-label="Delete ${r._t.toLowerCase()}" onclick="WTPages.deleteCost('${r._t}', ${r.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') : emptyRow(7, 'No cost entries');
     } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  function showActualsForDate(date) {
+    const row = [...document.querySelectorAll('#actualSpendByDateBody tr[data-actual-date]')]
+      .find(item => item.dataset.actualDate === date);
+    if (row) {
+      row.style.backgroundColor = 'var(--surface-hover, #fff3cd)';
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    const matching = [...document.querySelectorAll('#costsBody tr[data-cost-type="Actual"]')].filter(item =>
+      item.cells?.[4]?.textContent.trim().slice(0, 10) === date);
+    const body = matching.length ? matching.map(item => `<tr>${item.innerHTML}</tr>`).join('')
+      : '<tr><td colspan="7">No actual cost details found for this date.</td></tr>';
+    openModal(`Actual spend on ${esc(date)}`, `<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Vendor</th><th>Item Name</th><th>Amount</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>`);
   }
 
   async function pageDrawings() {
@@ -6435,7 +6460,7 @@ WTPages.switchProjView = function(view) {
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
-    openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
+    openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
