@@ -60,6 +60,7 @@ public class CostService : ICostService
     {
         if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
             throw new UnauthorizedAccessException("No permission.");
+        var canChangeDate = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
         var boqItemIds = await ValidateActualBoqItemsAsync(request);
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var cost = await _repository.AddActualAsync(new ActualCost
@@ -71,7 +72,9 @@ public class CostService : ICostService
             CostCenterId = request.CostCenterId,
             Description = request.Description,
             Amount = request.Amount,
-            CostDate = request.CostDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            CostDate = canChangeDate && request.CostDate.HasValue
+                ? request.CostDate.Value
+                : DateOnly.FromDateTime(DateTime.UtcNow),
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow
         });
@@ -106,6 +109,7 @@ public class CostService : ICostService
     {
         var cost = await _repository.GetActualAsync(id) ?? throw new InvalidOperationException("Actual cost not found.");
         await _permissions.EnsureModuleAsync(userId, cost.ProjectId, "Costs", "update");
+        var canChangeDate = await _permissions.IsAdminAsync(userId);
         if (request.ProjectId != cost.ProjectId) throw new InvalidOperationException("Cost project cannot be changed.");
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var boqItemIds = await ValidateActualBoqItemsAsync(request);
@@ -114,7 +118,7 @@ public class CostService : ICostService
         cost.IncludesOther = request.IncludesOther;
         cost.CostCenterId = request.CostCenterId;
         cost.Description = request.Description; cost.Amount = request.Amount;
-        cost.CostDate = request.CostDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (canChangeDate && request.CostDate.HasValue) cost.CostDate = request.CostDate.Value;
         await _repository.UpdateActualAsync(cost);
         await _audit.LogAsync(userId, "Update", "ActualCost", id);
         return cost;

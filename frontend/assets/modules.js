@@ -3231,13 +3231,14 @@ WTPages.switchProjView = function(view) {
     }).join('');
     const today = new Date();
     const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const canChangeActualDate = typeof wtIsAdmin === 'function' && wtIsAdmin();
     openModal(existing ? 'Edit Actual Cost' : 'Add Actual Cost', `
       <form onsubmit="WTPages.saveActual(event)">
         <input type="hidden" id="aProj" value="${pid}">
         <input type="hidden" id="aId" value="${existing?.id || ''}">
         <div class="form-grid">
           <div class="field"><label>Amount *</label><input id="aAmt" type="number" min="0.01" step="0.01" value="${existing?.amount ?? ''}" required></div>
-          <div class="field"><label>Date</label><input id="aDate" type="date" value="${existing?.costDate?.slice(0, 10) || todayLocal}"></div>
+          <div class="field"><label>Date</label><input id="aDate" type="date" value="${existing?.costDate?.slice(0, 10) || todayLocal}" ${canChangeActualDate ? '' : 'disabled'}>${canChangeActualDate ? '' : '<small>Only an Admin can change this date.</small>'}</div>
           <div class="field full"><label>BOQ Line *</label><select id="aBoq" multiple size="5" required style="min-height:130px">${lineOptions}<option value="other">Other</option></select><small>Use Ctrl (Windows) or Command (Mac) to select multiple BOQ lines.</small></div>
           <div class="field full"><label id="aRemLabel">Remarks</label><input id="aRem" value="${esc(existing?.description || '')}"></div>
         </div>
