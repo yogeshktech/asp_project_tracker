@@ -1,6 +1,7 @@
 // Full API UI modules — replaces page .content with live Swagger-backed screens
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
+  let drawingQueuedFiles = [];
   const WT_TIME_ZONE = 'Indian/Maldives';
   function wtMaldivesParts(value = new Date()) {
     const parts = new Intl.DateTimeFormat('en-GB', { timeZone: WT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
@@ -424,7 +425,7 @@
     { id: 'Budgets', label: 'Budget', global: false },
     { id: 'Costs', label: 'Costs', global: false },
     { id: 'Issues', label: 'Issues', global: false },
-    { id: 'Drawings', label: 'Drawings', global: true, rows: [{ key: 'Drawings', name: 'Drawing Upload' }] },
+    { id: 'Drawings', label: 'Drawings', global: false },
     { id: 'Inventory', label: 'Inventory', global: false },
     { id: 'Reports', label: 'Reports', global: false },
     { id: 'Closure', label: 'Project Closure', global: false },
@@ -2962,35 +2963,41 @@ WTPages.switchProjView = function(view) {
 
   async function pageDrawings() {
     const el = root();
-    const canCreate = !wtCan || wtCan('Drawings', 'edit', 0);
-    const canUpdate = !wtCan || wtCan('Drawings', 'update', 0);
-    const canDelete = !wtCan || wtCan('Drawings', 'delete', 0);
-    el.innerHTML = pageHead('Drawing Upload', 'Upload and manage drawings and supporting documents.',
+    const pid = await selectedProjectId();
+    const canCreate = !wtCan || wtCan('Drawings', 'edit', Number(pid));
+    const canUpdate = !wtCan || wtCan('Drawings', 'update', Number(pid));
+    const canDelete = !wtCan || wtCan('Drawings', 'delete', Number(pid));
+    el.innerHTML = pageHead('Drawing Upload', 'Upload and manage project drawings and supporting documents.',
       ` ${canCreate ? '<button class="btn primary" onclick="WTPages.openDrawingModal()">+ Upload drawing</button>' : ''}`) +
       tableWrap(['Name', 'Description', 'File', 'Uploaded', 'Actions'], 'drawingsBody');
+    if (!pid) { $('#drawingsBody').innerHTML = emptyRow(5, 'No project available.'); return; }
     try {
-      const drawings = await WisetrackAPI.getDrawings();
+      const projectDrawings = await WisetrackAPI.getDrawings(pid);
+      const drawings = (projectDrawings || []).filter(d => Number(d.projectId ?? d.ProjectId) === Number(pid));
       $('#drawingsBody').innerHTML = drawings.length ? drawings.map(d => `<tr>
         <td>${esc(d.name || d.Name)}</td><td>${esc(d.description || d.Description || '—')}</td>
         <td>${esc(d.fileName || d.FileName || '—')}</td><td>${esc(String(d.createdAt || d.CreatedAt || '').slice(0, 10) || '—')}</td>
         <td class="table-actions"><button class="btn sm" onclick="WTPages.viewDrawingFile(${Number(d.id || d.Id)})">View</button>
           <button class="btn sm" onclick="WTPages.downloadDrawingFile(${Number(d.id || d.Id)})">Download</button>
           ${canUpdate ? `<button class="btn sm" onclick="WTPages.openDrawingModal(${Number(d.id || d.Id)})">Edit</button>` : ''}
-          ${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteDrawing(${Number(d.id || d.Id)})">Delete</button>` : ''}</td></tr>`).join('') : emptyRow(5, 'No drawings uploaded yet.');
+          ${canDelete ? `<button class="btn sm danger" onclick="WTPages.deleteDrawing(${Number(d.id || d.Id)})">Delete</button>` : ''}</td></tr>`).join('') : emptyRow(5, 'No drawings uploaded for this project yet.');
     } catch (error) { $('#drawingsBody').innerHTML = errRow(5, error); }
   }
 
   async function openDrawingModal(id = null) {
-    const existing = id ? (await WisetrackAPI.getDrawings()).find(d => Number(d.id || d.Id) === Number(id)) : null;
+    drawingQueuedFiles = [];
+    const projectId = await selectedProjectId();
+    const existing = id ? (await WisetrackAPI.getDrawings(projectId)).find(d => Number(d.id || d.Id) === Number(id)) : null;
     if (id && !existing) { showToast('Drawing not found.', 'danger'); return; }
     openModal(existing ? 'Edit Drawing' : 'Upload Drawing', `
       <form onsubmit="WTPages.saveDrawing(event)">
         <input type="hidden" id="drawingId" value="${existing?.id || existing?.Id || ''}">
+        <input type="hidden" id="drawingProjectId" value="${projectId}">
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="drawingName" maxlength="200" value="${esc(existing?.name || existing?.Name || '')}" required></div>
           <div class="field full"><label>Description</label><textarea id="drawingDescription" maxlength="2000" rows="3">${esc(existing?.description || existing?.Description || '')}</textarea></div>
           <div class="field full"><label>Files ${existing ? '(optional)' : '*'}</label><input id="drawingFile" type="file" ${existing ? '' : 'multiple'} accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx" onchange="WTPages.previewDrawingFiles(this)">
-            <small>Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX. Maximum 25 MB.</small>
+            <small>${existing ? 'Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX. Maximum 25 MB.' : 'Choose files one by one; each selection is added to the list. Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX. Maximum 25 MB per file.'}</small>
             <div id="drawingFilePreview" style="display:grid;gap:8px;margin-top:10px"></div>
             ${existing && (existing.fileName || existing.FileName) ? `<div id="drawingCurrentFile" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border:1px solid var(--border-color);border-radius:6px;margin-top:10px"><span>Current file: ${esc(existing.fileName || existing.FileName)}</span><button class="btn sm danger" type="button" title="Remove uploaded file" aria-label="Remove uploaded file" onclick="WTPages.removeDrawingCurrentFile()"><i class="fa-solid fa-xmark"></i></button></div><div id="drawingCurrentPreview" style="margin-top:8px"></div><input id="drawingRemoveFile" type="hidden" value="false">` : ''}
           </div>
@@ -3017,7 +3024,24 @@ WTPages.switchProjView = function(view) {
   function previewDrawingFiles(input) {
     const preview = $('#drawingFilePreview');
     if (!preview || !input) return;
-    const files = Array.from(input.files || []);
+    const isEditing = Number($('#drawingId')?.value || 0) > 0;
+    const pickedFiles = Array.from(input.files || []);
+    if (isEditing) {
+      drawingQueuedFiles = pickedFiles;
+    } else {
+      const seen = new Set(drawingQueuedFiles.map(file => `${file.name}\u0000${file.size}\u0000${file.lastModified}`));
+      pickedFiles.forEach(file => {
+        const key = `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+        if (!seen.has(key)) { drawingQueuedFiles.push(file); seen.add(key); }
+      });
+      const transfer = new DataTransfer();
+      drawingQueuedFiles.forEach(file => transfer.items.add(file));
+      input.files = transfer.files;
+    }
+    renderDrawingFileQueue(preview, drawingQueuedFiles);
+  }
+
+  function renderDrawingFileQueue(preview, files) {
     preview.innerHTML = files.map((file, index) => {
       const imagePreview = /^image\//i.test(file.type) ? `<img src="${URL.createObjectURL(file)}" alt="${esc(file.name)} preview" style="width:48px;height:48px;object-fit:cover;border-radius:4px">` : `<i class="fa-regular fa-file" style="font-size:24px;width:48px;text-align:center"></i>`;
       return `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px">${imagePreview}<span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeDrawingSelectedFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`;
@@ -3027,10 +3051,14 @@ WTPages.switchProjView = function(view) {
   function removeDrawingSelectedFile(index) {
     const input = $('#drawingFile');
     if (!input) return;
+    const isEditing = Number($('#drawingId')?.value || 0) > 0;
+    const files = isEditing ? Array.from(input.files || []) : drawingQueuedFiles;
     const transfer = new DataTransfer();
-    Array.from(input.files).forEach((file, currentIndex) => { if (currentIndex !== index) transfer.items.add(file); });
+    files.forEach((file, currentIndex) => { if (currentIndex !== index) transfer.items.add(file); });
     input.files = transfer.files;
-    previewDrawingFiles(input);
+    drawingQueuedFiles = Array.from(transfer.files);
+    const preview = $('#drawingFilePreview');
+    if (preview) renderDrawingFileQueue(preview, drawingQueuedFiles);
   }
 
   function removeDrawingCurrentFile() {
@@ -3047,6 +3075,7 @@ WTPages.switchProjView = function(view) {
     event.preventDefault();
     try {
       const data = new FormData();
+      data.append('ProjectId', $('#drawingProjectId').value);
       data.append('Name', $('#drawingName').value.trim());
       data.append('Description', $('#drawingDescription').value.trim());
       const files = Array.from($('#drawingFile').files || []);
@@ -3059,13 +3088,14 @@ WTPages.switchProjView = function(view) {
       } else {
         for (const file of files) {
           const upload = new FormData();
+          upload.append('ProjectId', $('#drawingProjectId').value);
           upload.append('Name', $('#drawingName').value.trim());
           upload.append('Description', $('#drawingDescription').value.trim());
           upload.append('File', file);
           await WisetrackAPI.createDrawing(upload);
         }
       }
-      closeModal(); showToast(id ? 'Drawing updated.' : 'Drawing uploaded.'); await pageDrawings();
+      closeModal(); drawingQueuedFiles = []; showToast(id ? 'Drawing updated.' : 'Drawing uploaded.'); await pageDrawings();
     } catch (error) { showToast(error.message || 'Could not save drawing.', 'danger'); }
   }
 

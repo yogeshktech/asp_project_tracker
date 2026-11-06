@@ -16,7 +16,6 @@ const WT_NAV = [
   { href: 'boq.html', icon: 'fa-list-check', label: 'BOQ' },
   { href: 'budget.html', icon: 'fa-coins', label: 'Budgets & Cost Centers' },
   { href: 'costs.html', icon: 'fa-chart-line', label: 'Purchases & Actuals' },
-  { href: 'drawing-upload.html', icon: 'fa-compass-drafting', label: 'Drawing Upload' },
   { href: 'items.html', icon: 'fa-box', label: 'Item Master' },
   { href: 'inventory.html', icon: 'fa-boxes-stacked', label: 'Inventory' },
   { href: 'closure.html', icon: 'fa-file-signature', label: 'Project Closure' },

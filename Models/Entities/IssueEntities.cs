@@ -59,7 +59,7 @@ public class IssueAttachment
 public class DrawingUpload
 {
     public long Id { get; set; }
-    public long? ProjectId { get; set; }
+    public long ProjectId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string FileName { get; set; } = string.Empty;

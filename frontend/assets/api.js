@@ -364,7 +364,7 @@ const WisetrackAPI = {
   getVariance(projectId) { return this.get(`/costs/variance/${projectId}`); },
 
   // Project drawings
-  getDrawings() { return this.get('/drawings'); },
+  getDrawings(projectId) { return this.get(`/drawings?projectId=${projectId}`); },
   createDrawing(data) { return this._fetch('/drawings', { method: 'POST', body: data }); },
   updateDrawing(id, data) { return this._fetch(`/drawings/${id}`, { method: 'PUT', body: data }); },
   deleteDrawing(id) { return this.del(`/drawings/${id}`); },

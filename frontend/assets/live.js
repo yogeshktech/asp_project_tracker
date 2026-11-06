@@ -590,6 +590,8 @@ async function handleCreateProject(e) {
       }
     }
     if (attachmentWarning) budgetWarning += attachmentWarning;
+    localStorage.setItem('WISETRACK_SELECTED_RESORT', String(resortId));
+    if (projectId > 0) localStorage.setItem('WISETRACK_SELECTED_PROJECT', String(projectId));
     closeModal();
     const label = level === 1 ? 'Level 1 Root Project' : level === 2 ? 'Level 2 Sub-Project' : level === 3 ? 'Level 3 Work Package' : `Level ${level} Child`;
     showToast(`${label} "${name}" saved (${saved.code || saved.Code || ''})${initialBudget > 0 && !budgetWarning ? ' · initial budget added' : ''}${budgetWarning}`, budgetWarning ? 'warning' : 'success');
@@ -660,8 +662,10 @@ async function openCreateProjectModal(preselectedParentId = null) {
   projects = typeof computeProjectLevels === 'function' ? computeProjectLevels(projects) : projects;
   window.__modalProjects = projects;
 
-  const creatableResorts = resorts.filter(r => projects.some(p =>
-    String(p.resortId || p.ResortId) === String(r.id) && canCreateUnder(p.id || p.Id)));
+  const creatableResorts = typeof wtIsAdmin === 'function' && wtIsAdmin()
+    ? resorts
+    : resorts.filter(r => projects.some(p =>
+        String(p.resortId || p.ResortId) === String(r.id) && canCreateUnder(p.id || p.Id)));
   const savedResort = localStorage.getItem('WISETRACK_SELECTED_RESORT');
   const selectedResort = creatableResorts.some(r => String(r.id) === String(savedResort))
     ? String(savedResort)
