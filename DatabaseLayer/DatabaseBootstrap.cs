@@ -24,6 +24,17 @@ public static class DatabaseBootstrap
             )
             """);
         await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_drawing_uploads_project_created ON drawing_uploads(project_id, created_at DESC)""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS drawing_upload_files (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                drawing_upload_id BIGINT NOT NULL REFERENCES drawing_uploads(id) ON DELETE CASCADE,
+                file_name VARCHAR(260) NOT NULL,
+                file_path TEXT NOT NULL,
+                content_type VARCHAR(150) NOT NULL,
+                size_bytes BIGINT NOT NULL
+            )
+            """);
     }
 
     public static async Task EnsureActualCostBoqItemsSchemaAsync(AppDbContext db)

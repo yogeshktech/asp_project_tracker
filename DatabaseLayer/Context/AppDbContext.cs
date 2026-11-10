@@ -48,6 +48,7 @@ public class AppDbContext : DbContext
     public DbSet<IssueComment> IssueComments => Set<IssueComment>();
     public DbSet<IssueAttachment> IssueAttachments => Set<IssueAttachment>();
     public DbSet<DrawingUpload> DrawingUploads => Set<DrawingUpload>();
+    public DbSet<DrawingUploadFile> DrawingUploadFiles => Set<DrawingUploadFile>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationRecipient> NotificationRecipients => Set<NotificationRecipient>();
     public DbSet<ScheduledNotification> ScheduledNotifications => Set<ScheduledNotification>();

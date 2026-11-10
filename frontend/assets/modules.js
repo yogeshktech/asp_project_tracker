@@ -2976,7 +2976,7 @@ WTPages.switchProjView = function(view) {
       const drawings = (projectDrawings || []).filter(d => Number(d.projectId ?? d.ProjectId) === Number(pid));
       $('#drawingsBody').innerHTML = drawings.length ? drawings.map(d => `<tr>
         <td>${esc(d.name || d.Name)}</td><td>${esc(d.description || d.Description || '—')}</td>
-        <td>${esc(d.fileName || d.FileName || '—')}</td><td>${esc(String(d.createdAt || d.CreatedAt || '').slice(0, 10) || '—')}</td>
+        <td>${(d.files || d.Files || [{ id: 0, fileName: d.fileName || d.FileName }]).map(f => `<button class="btn sm" onclick="WTPages.viewDrawingAttachment(${Number(d.id || d.Id)},${Number(f.id || f.Id || 0)})">${esc(f.fileName || f.FileName || 'File')}</button>`).join(' ')}</td><td>${esc(String(d.createdAt || d.CreatedAt || '').slice(0, 10) || '—')}</td>
         <td class="table-actions"><button class="btn sm" onclick="WTPages.viewDrawingFile(${Number(d.id || d.Id)})">View</button>
           <button class="btn sm" onclick="WTPages.downloadDrawingFile(${Number(d.id || d.Id)})">Download</button>
           ${canUpdate ? `<button class="btn sm" onclick="WTPages.openDrawingModal(${Number(d.id || d.Id)})">Edit</button>` : ''}
@@ -2996,13 +2996,14 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="drawingName" maxlength="200" value="${esc(existing?.name || existing?.Name || '')}" required></div>
           <div class="field full"><label>Description</label><textarea id="drawingDescription" maxlength="2000" rows="3">${esc(existing?.description || existing?.Description || '')}</textarea></div>
-          <div class="field full"><label>Files ${existing ? '(optional)' : '*'}</label><input id="drawingFile" type="file" ${existing ? '' : 'multiple'} accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx" onchange="WTPages.previewDrawingFiles(this)">
-            <small>${existing ? 'Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX. Maximum 25 MB.' : 'Choose files one by one; each selection is added to the list. Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX. Maximum 25 MB per file.'}</small>
+          <div class="field full"><label>Files ${existing ? '(optional)' : '*'}</label><input id="drawingFile" type="file" multiple accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx" onchange="WTPages.previewDrawingFiles(this)">
+            <small>${existing ? 'Select replacement files to update this entry. Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX.' : 'Select one or more files; they will be saved in a single entry. Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX.'} Maximum 25 MB per request.</small>
             <div id="drawingFilePreview" style="display:grid;gap:8px;margin-top:10px"></div>
             ${existing && (existing.fileName || existing.FileName) ? `<div id="drawingCurrentFile" style="display:flex;align-items:center;justify-content:space-between;padding:8px;border:1px solid var(--border-color);border-radius:6px;margin-top:10px"><span>Current file: ${esc(existing.fileName || existing.FileName)}</span><button class="btn sm danger" type="button" title="Remove uploaded file" aria-label="Remove uploaded file" onclick="WTPages.removeDrawingCurrentFile()"><i class="fa-solid fa-xmark"></i></button></div><div id="drawingCurrentPreview" style="margin-top:8px"></div><input id="drawingRemoveFile" type="hidden" value="false">` : ''}
           </div>
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:14px"><button class="btn" type="button" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Save</button></div>
+        <div id="drawingUploadStatus" role="status" aria-live="polite" style="display:none;margin-top:12px;color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin"></i> Uploading files, please wait...</div>
+        <div class="modalfoot" style="padding:0;margin-top:14px"><button class="btn" type="button" onclick="closeModal()">Cancel</button><button id="drawingSaveButton" class="btn primary" type="submit">Save</button></div>
       </form>`);
     previewDrawingFiles($('#drawingFile'));
     if (existing && (existing.fileName || existing.FileName)) loadDrawingCurrentPreview(existing);
@@ -3073,6 +3074,11 @@ WTPages.switchProjView = function(view) {
 
   async function saveDrawing(event) {
     event.preventDefault();
+    const saveButton = $('#drawingSaveButton');
+    const uploadStatus = $('#drawingUploadStatus');
+    if (saveButton?.disabled) return;
+    if (saveButton) { saveButton.disabled = true; saveButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...'; }
+    if (uploadStatus) uploadStatus.style.display = 'block';
     try {
       const data = new FormData();
       data.append('ProjectId', $('#drawingProjectId').value);
@@ -3083,20 +3089,18 @@ WTPages.switchProjView = function(view) {
       if (!id && !files.length) { showToast('Choose at least one drawing file.', 'danger'); return; }
       if (id) {
         data.append('RemoveFile', $('#drawingRemoveFile')?.value === 'true' ? 'true' : 'false');
-        if (files.length) data.append('File', files[0]);
+        files.forEach(file => data.append('Files', file));
         await WisetrackAPI.updateDrawing(id, data);
       } else {
-        for (const file of files) {
-          const upload = new FormData();
-          upload.append('ProjectId', $('#drawingProjectId').value);
-          upload.append('Name', $('#drawingName').value.trim());
-          upload.append('Description', $('#drawingDescription').value.trim());
-          upload.append('File', file);
-          await WisetrackAPI.createDrawing(upload);
-        }
+        files.forEach(file => data.append('Files', file));
+        await WisetrackAPI.createDrawing(data);
       }
       closeModal(); drawingQueuedFiles = []; showToast(id ? 'Drawing updated.' : 'Drawing uploaded.'); await pageDrawings();
     } catch (error) { showToast(error.message || 'Could not save drawing.', 'danger'); }
+    finally {
+      if (saveButton?.isConnected) { saveButton.disabled = false; saveButton.textContent = 'Save'; }
+      if (uploadStatus?.isConnected) uploadStatus.style.display = 'none';
+    }
   }
 
   async function deleteDrawing(id) {
@@ -3113,6 +3117,10 @@ WTPages.switchProjView = function(view) {
   async function downloadDrawingFile(id) {
     try { await WisetrackAPI.downloadFile(`/drawings/${id}/file?download=true`); }
     catch (error) { showToast(error.message || 'Could not download drawing.', 'danger'); }
+  }
+  async function viewDrawingAttachment(id, fileId) {
+    try { await WisetrackAPI.viewFile(fileId ? `/drawings/${id}/files/${fileId}` : `/drawings/${id}/file`); }
+    catch (error) { showToast(error.message || 'Could not open drawing file.', 'danger'); }
   }
   async function saveVarianceExplanation() {
     const pid = await selectedProjectId();
@@ -6483,7 +6491,7 @@ WTPages.switchProjView = function(view) {
     openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
-    openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
+    openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,

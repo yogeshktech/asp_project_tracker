@@ -70,3 +70,14 @@ public class DrawingUpload
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
+
+[Table("drawing_upload_files")]
+public class DrawingUploadFile
+{
+    public long Id { get; set; }
+    public long DrawingUploadId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long SizeBytes { get; set; }
+}
