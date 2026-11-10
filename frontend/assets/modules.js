@@ -2669,12 +2669,18 @@ WTPages.switchProjView = function(view) {
   }
 
   async function openAttachmentFile(kind, id, attachmentId, download) {
-    const baseUrl = kind === 'budget' ? `/budgets/${id}/attachments/${attachmentId}/file` : `/budgets/cost-centers/${id}/attachments/${attachmentId}/file`;
+    const baseUrl = kind === 'drawing'
+      ? (Number(attachmentId) ? `/drawings/${id}/files/${attachmentId}` : `/drawings/${id}/file`)
+      : kind === 'budget' ? `/budgets/${id}/attachments/${attachmentId}/file` : `/budgets/cost-centers/${id}/attachments/${attachmentId}/file`;
     try {
       if (download) { await WisetrackAPI.openFile(`${baseUrl}?download=true`); return; }
       const file = await WisetrackAPI.fetchFile(`${baseUrl}?download=true`);
       const extension = file.fileName.split('.').pop().toLowerCase();
-      if (extension === 'pdf') {
+      if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension)) {
+        const objectUrl = URL.createObjectURL(file.blob);
+        openModal(`Preview · ${esc(file.fileName)}`, `<div style="display:flex;justify-content:center;align-items:center;min-height:65vh;background:#181818;border-radius:10px;padding:12px"><img src="${objectUrl}" alt="${esc(file.fileName)}" style="max-width:100%;max-height:78vh;object-fit:contain"></div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn" onclick="WTPages.openAttachmentFile('drawing', ${Number(id)}, ${Number(attachmentId)}, true)"><i class="fa-solid fa-download"></i> Download</button></div>`, '', 'attachment-preview-modal');
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 10 * 60 * 1000);
+      } else if (extension === 'pdf') {
         const objectUrl = URL.createObjectURL(file.blob);
         openModal(`Preview · ${esc(file.fileName)}`, `<iframe class="attachment-preview-frame" src="${objectUrl}" title="${esc(file.fileName)}"></iframe>`, '', 'attachment-preview-modal');
         setTimeout(() => URL.revokeObjectURL(objectUrl), 10 * 60 * 1000);
@@ -3110,8 +3116,21 @@ WTPages.switchProjView = function(view) {
   }
 
   async function viewDrawingFile(id) {
-    try { await WisetrackAPI.viewFile(`/drawings/${id}/file`); }
-    catch (error) { showToast(error.message || 'Could not open drawing.', 'danger'); }
+    try {
+      const pid = await selectedProjectId();
+      const records = await WisetrackAPI.getDrawings(pid);
+      const drawing = (records || []).find(row => Number(row.id || row.Id) === Number(id));
+      if (!drawing) throw new Error('Drawing entry not found.');
+      const files = drawing.files || drawing.Files || [{ id: 0, fileName: drawing.fileName || drawing.FileName }];
+      const cards = files.map(file => {
+        const fileId = Number(file.id || file.Id || 0);
+        const fileName = file.fileName || file.FileName || 'Attachment';
+        const ext = fileName.split('.').pop().toUpperCase();
+        const icon = /^(JPG|JPEG|PNG|WEBP|GIF)$/.test(ext) ? 'fa-image' : ext === 'PDF' ? 'fa-file-pdf' : /^(XLS|XLSX)$/.test(ext) ? 'fa-file-excel' : /^(DOC|DOCX)$/.test(ext) ? 'fa-file-word' : 'fa-file';
+        return `<article style="border:1px solid var(--border-color);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0"><div style="display:flex;align-items:center;gap:10px;min-width:0"><i class="fa-solid ${icon}" style="font-size:25px;color:var(--primary)"></i><div style="min-width:0"><strong style="display:block;overflow-wrap:anywhere">${esc(fileName)}</strong><small>${esc(ext || 'FILE')}</small></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm primary" onclick="WTPages.openAttachmentFile('drawing',${Number(id)},${fileId},false)"><i class="fa-solid fa-eye"></i> View full</button><button class="btn sm" onclick="WTPages.openAttachmentFile('drawing',${Number(id)},${fileId},true)"><i class="fa-solid fa-download"></i> Download</button></div></article>`;
+      }).join('');
+      openModal(`Files · ${esc(drawing.name || drawing.Name || 'Drawing')}`, `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-height:65vh;overflow:auto">${cards || '<p>No files attached.</p>'}</div>`);
+    } catch (error) { showToast(error.message || 'Could not load drawing files.', 'danger'); }
   }
 
   async function downloadDrawingFile(id) {
@@ -3119,7 +3138,7 @@ WTPages.switchProjView = function(view) {
     catch (error) { showToast(error.message || 'Could not download drawing.', 'danger'); }
   }
   async function viewDrawingAttachment(id, fileId) {
-    try { await WisetrackAPI.viewFile(fileId ? `/drawings/${id}/files/${fileId}` : `/drawings/${id}/file`); }
+    try { await openAttachmentFile('drawing', id, fileId, false); }
     catch (error) { showToast(error.message || 'Could not open drawing file.', 'danger'); }
   }
   async function saveVarianceExplanation() {
