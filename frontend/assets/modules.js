@@ -969,11 +969,11 @@
           </div>
         </div>
 
-        <section class="card" id="exceptionAssistant" style="margin:18px 0;border:1px solid #fca5a5;background:linear-gradient(135deg,#fff7ed,#fff);">
+        <section class="card" id="exceptionAssistant" style="display:none;margin:18px 0;border:1px solid #fca5a5;background:linear-gradient(135deg,#fff7ed,#fff);">
           <div class="card-header">
             <div>
-              <h3 class="card-title"><i class="fa-solid fa-triangle-exclamation" style="color:#dc2626;"></i> Exception Assistant</h3>
-              <div class="card-subtitle">Overdue, at-risk, critical aur 7 din se update na hue tasks par admin focus</div>
+              <h3 class="card-title"><i class="fa-solid fa-triangle-exclamation" style="color:#dc2626;"></i> Automatic Action Alerts</h3>
+              <div class="card-subtitle">System-generated for overdue tasks, no progress updates in 7 days, and critical issues. Resolve them from the related task or issue.</div>
             </div>
             <span class="badge red" id="exceptionCount">Loading</span>
           </div>
@@ -1155,8 +1155,10 @@
       const totalSpentNum = d.totalCommitted || (totalBudgetNum * 0.719);
 
       const exceptionRows = Array.isArray(d.exceptions) ? d.exceptions : [];
+      const exceptionAssistant = $('#exceptionAssistant');
       const exceptionList = $('#exceptionList');
       const exceptionCount = $('#exceptionCount');
+      if (exceptionAssistant) exceptionAssistant.style.display = exceptionRows.length ? '' : 'none';
       if (exceptionCount) exceptionCount.textContent = `${exceptionRows.length} action${exceptionRows.length === 1 ? '' : 's'}`;
       if (exceptionList) {
         const labels = { Overdue: 'Overdue', AtRisk: 'At risk', Inactive: 'No progress · 7 days', Critical: 'Critical' };
@@ -2137,11 +2139,10 @@ WTPages.switchProjView = function(view) {
           </div>
         </div>`);
       }
-      extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
-        <strong>Exceptions</strong>
-        <div id="wsExc" style="margin-top:8px;font-size:12.5px;">${(exceptions || []).length
-          ? `<ul>${exceptions.map(x => `<li>${esc(x.title || x.Title || x.message || x.Message || 'Exception')}</li>`).join('')}</ul>`
-          : 'No open exceptions for this package.'}</div>
+      if ((exceptions || []).length) extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
+        <strong>Automatic Task Alerts</strong>
+        <small class="card-subtitle" style="display:block;margin-top:4px">Generated when a task is overdue or has no progress update for 7 days. Update or complete the task to clear its alert.</small>
+        <div style="margin-top:8px;font-size:12.5px;"><ul>${exceptions.map(x => `<li>${esc(x.title || x.Title || x.message || x.Message || 'Task alert')} — ${esc(x.message || x.Message || x.type || x.Type || '')}</li>`).join('')}</ul></div>
       </div>`);
       extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
         <strong>Variance Explanations </strong>
@@ -2209,7 +2210,8 @@ WTPages.switchProjView = function(view) {
         ${card('Budget Position', budgetPanel)}
         ${card('BOQ Status', boqPanel)}
         ${card('Recent Activity', listOrEmpty(activities.map(a => `<li>${esc(a.label)} <small style="color:var(--text-muted)">${date(a.at)}</small></li>`), 'No recent project activity is available.'))}
-        ${card('Risks', listOrEmpty([...riskItems.map(x => `<li><span class="badge ${/overdue|critical/i.test(x.type || x.Type || '') ? 'red' : 'amber'}">${esc(x.type || x.Type || 'Risk')}</span> ${esc(x.title || x.Title || x.message || x.Message || 'Risk item')}</li>`), ...openIssues.map(i => `<li><span class="badge ${i.isEscalated || i.IsEscalated ? 'red' : 'amber'}">${i.isEscalated || i.IsEscalated ? 'Escalated' : 'Open issue'}</span> ${esc(i.title || i.Title || 'Issue')}</li>`) ], 'No active risks or open issues.'))}
+        ${riskItems.length ? card('Automatic Task Alerts', `<small class="card-subtitle">Generated for overdue tasks or no progress update in 7 days. Update or complete the task to clear an alert.</small>${listOrEmpty(riskItems.map(x => `<li><span class="badge ${/overdue/i.test(x.type || x.Type || '') ? 'red' : 'amber'}">${esc(x.type || x.Type || 'Task alert')}</span> ${esc(x.title || x.Title || x.message || x.Message || 'Task alert')}</li>`), '')}`) : ''}
+        ${card('Risks & Issues', listOrEmpty(openIssues.map(i => `<li><span class="badge ${i.isEscalated || i.IsEscalated ? 'red' : 'amber'}">${i.isEscalated || i.IsEscalated ? 'Escalated' : 'Open issue'}</span> ${esc(i.title || i.Title || 'Issue')}</li>`), 'No open issues.'))}
         ${card('Outstanding Actions', listOrEmpty(pendingTasks.slice(0,12).map(t => `<li>${esc(t.title || t.Title || 'Task')} · ${esc(t.status || t.Status || 'Not started')} · due ${date(t.dueDate || t.DueDate)}</li>`), 'No outstanding tasks.'))}
       </div>`;
   }
@@ -4159,7 +4161,7 @@ WTPages.switchProjView = function(view) {
         : kind === 'planning'
         ? ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Owner', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
         : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
-      + `<div class="card" id="excBox" style="margin-top:16px;"><h3 class="card-title">⚠️ Site Exception & Impediment Radar</h3><div id="excList">Loading...</div></div>`;
+      + `<div class="card" id="excBox" style="display:none;margin-top:16px;"><h3 class="card-title">⚠️ Automatic Task Alerts</h3><small class="card-subtitle">Generated for overdue tasks or tasks without a progress update for 7 days. Update or complete the task to clear an alert.</small><div id="excList">Loading...</div></div>`;
 
     if (kind === 'daily') {
       WTPages.toggleDailyResortMenu = function() {
@@ -4385,6 +4387,7 @@ WTPages.switchProjView = function(view) {
 
       const exBatches = await Promise.all(scopeIds.map(id => WisetrackAPI.getExceptions(id).catch(() => [])));
       const ex = exBatches.flat();
+      $('#excBox').style.display = ex.length ? '' : 'none';
       $('#excList').innerHTML = ex.length
         ? `<ul>${ex.map(x => `<li><strong>${esc(x.title || x.Title || 'Exception')}</strong> — ${esc(x.message || x.Message || x.type || x.Type || 'Needs attention')}</li>`).join('')}</ul>`
         : '<p style="color:var(--text-muted);font-size:12.5px;">🟢 Zero active blockers or exceptions flagged for this package.</p>';
@@ -5581,7 +5584,7 @@ WTPages.switchProjView = function(view) {
         ${can('Tasks') ? `<h3>Progress</h3><p><b>Current completion:</b> ${averageProgress}% ? <b>Tasks updated/created this month:</b> ${updatedThisMonth.length} ? <b>Completed tasks:</b> ${ts.filter(done).length}/${ts.length}</p>` : ''}
         ${can('Milestones') ? `<h3>Milestones</h3>${list(ms.map(m => `<li><b>${esc(m.name || m.Name)}</b> ? ${esc(m.status || m.Status || 'Not started')} ? ${Number(m.completionPercent ?? m.CompletionPercent ?? 0)}% ? due ${fmtDate(m.dueDate || m.DueDate)}</li>`), 'No milestones recorded.')}` : ''}
         ${can('Budgets') || can('Costs') ? `<h3>Financials</h3>${finance}` : ''}
-        ${can('Tasks') || can('Issues') ? `<h3>Risks</h3>${list([...(can('Tasks') ? riskRows.map(r => `<li>${esc(r.type || r.Type || 'Risk')} ? ${esc(r.title || r.Title || r.message || r.Message || 'Risk')}</li>`) : []), ...(can('Issues') ? openIssues.map(i => `<li>${i.isEscalated || i.IsEscalated ? '<b>Escalated ? </b>' : ''}${esc(i.title || i.Title || 'Open issue')} ? ${esc(i.status || i.Status || 'Open')}</li>`) : [])], 'No active risks or open issues.')}` : ''}
+        ${can('Tasks') || can('Issues') ? `<h3>Task Alerts &amp; Issues</h3><p>Task alerts are generated automatically for overdue tasks or tasks without progress updates for 7 days.</p>${list([...(can('Tasks') ? riskRows.map(r => `<li>${esc(r.type || r.Type || 'Task alert')} ? ${esc(r.title || r.Title || r.message || r.Message || 'Task alert')}</li>`) : []), ...(can('Issues') ? openIssues.map(i => `<li>${i.isEscalated || i.IsEscalated ? '<b>Escalated ? </b>' : ''}${esc(i.title || i.Title || 'Open issue')} ? ${esc(i.status || i.Status || 'Open')}</li>`) : [])], 'No active task alerts or open issues.')}` : ''}
         <h3>Decisions</h3><p style="white-space:pre-wrap">${esc(decisions || 'No decisions recorded for this month.')}</p>
         ${can('Tasks') ? `<h3>Next Actions</h3>${list(pending.slice(0,20).map(t => `<li><b>${esc(t.title || t.Title || 'Task')}</b> ? ${esc(t.status || t.Status || 'Not started')} ? due ${fmtDate(t.dueDate || t.DueDate)}</li>`), 'No outstanding actions.')}` : ''}
         <hr><small>Generated ${new Date().toLocaleString()} · Reporting period ${period}</small>
@@ -6401,13 +6404,13 @@ WTPages.switchProjView = function(view) {
   // PM-25: use the permission-filtered portfolio report as the dashboard source.
   async function pageDashboard() {
     const el = root();
-    el.innerHTML = pageHead('Portfolio Dashboard', 'Authorized projects · status, milestone, schedule risk, budget position, and unresolved exceptions',
+    el.innerHTML = pageHead('Portfolio Dashboard', 'Authorized projects · status, milestone, schedule risk, budget position, and active alerts',
       `<a class="btn" href="reports.html">Reports</a> ${typeof wtIsAdmin === 'function' && wtIsAdmin() ? `<button class="btn primary" onclick="openCreateProjectModal()">+ Create Project</button>` : ''}`)
       + `<div class="kpis">
           <div class="kpi"><span class="kpi-label">Authorized Projects</span><span class="kpi-value" id="pm25ProjectCount">…</span></div>
           <div class="kpi success"><span class="kpi-label">On Track</span><span class="kpi-value" id="pm25OnTrack">…</span></div>
           <div class="kpi warning"><span class="kpi-label">Schedule Risk</span><span class="kpi-value" id="pm25Risk">…</span></div>
-          <div class="kpi danger"><span class="kpi-label">Unresolved Exceptions</span><span class="kpi-value" id="pm25Exceptions">…</span></div>
+          <div class="kpi danger"><span class="kpi-label">Active Alerts</span><span class="kpi-value" id="pm25Exceptions">…</span></div>
         </div>
         <section class="card" style="margin-top:18px">
           <div class="card-header"><div><h3 class="card-title">Portfolio totals &amp; reports</h3><div class="card-subtitle">Summary across all projects you are authorized to view.</div></div><a class="btn sm" href="reports.html">Open Reports</a></div>
@@ -6529,7 +6532,7 @@ WTPages.switchProjView = function(view) {
           (countField ? ' (' + Number(project[countField] ?? project[countField[0].toUpperCase() + countField.slice(1)] ?? project.openIssues ?? project.OpenIssues ?? 0) + ')' : '') + '</div>').join('') : 'No projects need attention.') +
         (projectRows.length > 4 ? '<small>+' + (projectRows.length - 4) + ' more projects</small>' : '') + '</div></article>';
       $('#pm25AttentionCards').innerHTML = attentionCard('Schedule risk', riskProjects, riskCount, riskCount ? 'red' : 'green', null) +
-        attentionCard('Unresolved exceptions', exceptionProjects, exceptions, exceptions ? 'red' : 'green', 'unresolvedExceptions') +
+        attentionCard('Active task alerts & issues', exceptionProjects, exceptions, exceptions ? 'red' : 'green', 'unresolvedExceptions') +
         (showBudget ? attentionCard('Budget alerts', budgetRiskProjects, budgetRiskProjects.length, budgetRiskProjects.length ? 'amber' : 'green', null) : '');
     } catch (err) {
       $('#pm25Portfolio').innerHTML = `<p style="padding:16px;color:var(--danger,#b91c1c)">Portfolio could not be loaded: ${esc(err.message || 'Request failed')}</p>`;
