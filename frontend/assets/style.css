@@ -2004,7 +2004,7 @@ button.btn[disabled] {
 }
 
 .modalbox.boq-master-modal {
-  width: min(960px, 97vw);
+  width: min(1600px, 92vw);
   max-height: 94vh;
 }
 

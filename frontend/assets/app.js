@@ -62,8 +62,14 @@ function showToast(message, type = 'success') {
 
 // Modal Management
 function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
-  document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show', 'boq-fullscreen'));
+  window.__modalStack = window.__modalStack || [];
   let modal = document.getElementById('modal');
+  if (modal && modal.classList.contains('show')) {
+    window.__modalStack.push(modal);
+    modal.id = `modal-stack-${Date.now()}-${window.__modalStack.length}`;
+    modal.classList.remove('show');
+    modal = null;
+  }
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'modal';
@@ -82,10 +88,10 @@ function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
   }
   const box = modal.querySelector('.modalbox');
   if (box) box.className = 'modalbox' + (boxClass ? ' ' + boxClass : '');
-  document.getElementById('modalTitle').textContent = title;
-  document.getElementById('modalBody').innerHTML = contentHtml;
+  modal.querySelector('#modalTitle').textContent = title;
+  modal.querySelector('#modalBody').innerHTML = contentHtml;
   
-  const foot = document.getElementById('modalFoot');
+  const foot = modal.querySelector('#modalFoot');
   if (footerHtml) {
     foot.innerHTML = footerHtml;
     foot.style.display = 'flex';
@@ -97,7 +103,14 @@ function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
 
 function closeModal() {
   const modal = document.getElementById('modal');
-  if (modal) modal.classList.remove('show', 'boq-fullscreen');
+  if (!modal) return;
+  modal.classList.remove('show', 'boq-fullscreen');
+  const previous = window.__modalStack?.pop();
+  if (previous) {
+    modal.remove();
+    previous.id = 'modal';
+    previous.classList.add('show');
+  }
 }
 
 // Get Data from LocalStorage (static WISETRACK_DATA is optional — live API pages may omit data.js)
