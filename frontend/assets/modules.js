@@ -2,6 +2,8 @@
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
   let drawingQueuedFiles = [];
+  let budgetFormQueuedFiles = [];
+  let budgetRevisionQueuedFiles = [];
   const WT_TIME_ZONE = 'Indian/Maldives';
   function wtMaldivesParts(value = new Date()) {
     const parts = new Intl.DateTimeFormat('en-GB', { timeZone: WT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
@@ -2496,6 +2498,7 @@ WTPages.switchProjView = function(view) {
     if (id && !budget) { showToast('Budget not found', 'danger'); return; }
     const project = await WisetrackAPI.getProject(pid);
     const currency = String(project.currency || project.Currency || budget?.currency || 'MVR').toUpperCase();
+    budgetFormQueuedFiles = [];
     openModal(budget ? 'Edit Budget' : 'Create Budget', `
       <form onsubmit="WTPages.saveBudget(event)">
         <input type="hidden" id="bProj" value="${pid}">
@@ -2505,10 +2508,35 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>Approved Amount *</label><input id="bAmt" type="number" step="0.01" value="${budget?.approvedAmount ?? ''}" required></div>
           <div class="field"><label>Currency</label><input id="bCur" value="${esc(currency)}" readonly><small class="card-subtitle">Budget currency follows the project currency.</small></div>
           ${budget ? '<div class="field full"><label>Reason for baseline change (required if amount/currency changes)</label><input id="bReason" maxlength="2000"></div>' : ''}
-          <div class="field full"><label>Attachment ${budget ? '(optional; adds to file history)' : '*'} (Excel, PDF, CSV, Word, or TXT; up to 25 MB each)</label>${budget ? `<small class="card-subtitle">${(budget.attachments || budget.Attachments || []).length} saved file(s). Existing files stay in history. Add files here only when needed.</small>` : '<small class="card-subtitle">Attach at least one file when creating a budget.</small>'}<input id="bAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" multiple ${budget ? '' : 'required'}></div>
+          <div class="field full"><label>Attachment ${budget ? '(optional; adds to file history)' : '*'} (multiple files, up to 25 MB each)</label>${budget ? `<small class="card-subtitle">${(budget.attachments || budget.Attachments || []).length} saved file(s). Existing files stay in history. Add files here only when needed.</small>` : '<small class="card-subtitle">Attach at least one file when creating a budget.</small>'}<input id="bAttachment" type="file" accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" multiple onchange="WTPages.previewBudgetFiles(this)" ${budget ? '' : 'required'}><small class="card-subtitle">Select files one by one if needed. Allowed: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX, CSV, TXT. Up to 10 files.</small><div id="budgetAttachmentPreview" style="display:grid;gap:8px;margin-top:8px"></div></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
+  }
+
+  function previewBudgetFiles(input) {
+    const preview = $('#budgetAttachmentPreview');
+    if (!preview || !input) return;
+    const pickedFiles = Array.from(input.files || []);
+    const seen = new Set(budgetFormQueuedFiles.map(file => `${file.name}\u0000${file.size}\u0000${file.lastModified}`));
+    pickedFiles.forEach(file => {
+      const key = `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+      if (!seen.has(key)) { budgetFormQueuedFiles.push(file); seen.add(key); }
+    });
+    const transfer = new DataTransfer();
+    budgetFormQueuedFiles.forEach(file => transfer.items.add(file));
+    input.files = transfer.files;
+    preview.innerHTML = budgetFormQueuedFiles.map((file, index) => `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px"><i class="fa-regular fa-file" style="font-size:20px;width:32px;text-align:center"></i><span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeBudgetFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`).join('');
+  }
+
+  function removeBudgetFile(index) {
+    const input = $('#bAttachment');
+    if (!input) return;
+    budgetFormQueuedFiles = budgetFormQueuedFiles.filter((_, currentIndex) => currentIndex !== index);
+    const transfer = new DataTransfer();
+    budgetFormQueuedFiles.forEach(file => transfer.items.add(file));
+    input.files = transfer.files;
+    previewBudgetFiles(input);
   }
 
   async function saveBudget(e) {
@@ -2544,6 +2572,7 @@ WTPages.switchProjView = function(view) {
       const budgets = await WisetrackAPI.getBudgets(pid);
       const budget = (budgets || []).find(b => b.id === id);
       if (!budget) throw new Error('Budget not found');
+      budgetRevisionQueuedFiles = [];
       openModal('Revise Approved Budget', `<form onsubmit="WTPages.saveBudgetRevision(event)">
         <input type="hidden" id="revisionBudgetId" value="${id}">
         <p class="card-subtitle">Current approved amount: ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</p>
@@ -2559,14 +2588,24 @@ WTPages.switchProjView = function(view) {
   function previewBudgetRevisionFiles(input) {
     const preview = $('#revisionAttachmentPreview');
     if (!preview || !input) return;
-    preview.innerHTML = Array.from(input.files || []).map((file, index) => `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px"><i class="fa-regular fa-file" style="font-size:20px;width:32px;text-align:center"></i><span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeBudgetRevisionFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`).join('');
+    const pickedFiles = Array.from(input.files || []);
+    const seen = new Set(budgetRevisionQueuedFiles.map(file => `${file.name}\u0000${file.size}\u0000${file.lastModified}`));
+    pickedFiles.forEach(file => {
+      const key = `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+      if (!seen.has(key)) { budgetRevisionQueuedFiles.push(file); seen.add(key); }
+    });
+    const transfer = new DataTransfer();
+    budgetRevisionQueuedFiles.forEach(file => transfer.items.add(file));
+    input.files = transfer.files;
+    preview.innerHTML = budgetRevisionQueuedFiles.map((file, index) => `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px"><i class="fa-regular fa-file" style="font-size:20px;width:32px;text-align:center"></i><span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeBudgetRevisionFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`).join('');
   }
 
   function removeBudgetRevisionFile(index) {
     const input = $('#revisionAttachments');
     if (!input) return;
+    budgetRevisionQueuedFiles = budgetRevisionQueuedFiles.filter((_, currentIndex) => currentIndex !== index);
     const transfer = new DataTransfer();
-    Array.from(input.files || []).forEach((file, currentIndex) => { if (currentIndex !== index) transfer.items.add(file); });
+    budgetRevisionQueuedFiles.forEach(file => transfer.items.add(file));
     input.files = transfer.files;
     previewBudgetRevisionFiles(input);
   }
@@ -6575,7 +6614,7 @@ WTPages.switchProjView = function(view) {
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
-    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
+    openBudgetModal, saveBudget, previewBudgetFiles, removeBudgetFile, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
