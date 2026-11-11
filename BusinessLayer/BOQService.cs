@@ -13,6 +13,7 @@ public interface IBOQService
 {
     Task<List<Boq>> GetByProjectAsync(long userId, long projectId);
     Task<Boq?> GetAsync(long id);
+    Task<bool> DeleteAsync(long id, long userId);
     Task<Boq?> UpdateAsync(long id, UpdateBoqRequest request, long userId);
     Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId);
     Task<Boq> CreateFromMasterAsync(long projectId, List<BoqFromMasterLineRequest> lines, long? userId, long? boqId = null, string? revisionNotes = null, long? sourceVersionId = null);
@@ -48,6 +49,19 @@ public class BOQService : IBOQService
         return await _repository.GetByProjectAsync(projectId);
     }
     public Task<Boq?> GetAsync(long id) => _repository.GetAsync(id);
+
+    public async Task<bool> DeleteAsync(long id, long userId)
+    {
+        if (!await _permissions.IsAdminAsync(userId))
+            throw new UnauthorizedAccessException("Only Admin can delete a baseline BOQ.");
+        var boq = await _repository.GetAsync(id);
+        if (boq == null) return false;
+        if (!boq.Versions.Any(v => v.IsCurrentBaseline))
+            throw new InvalidOperationException("Only a BOQ with a current baseline can be deleted here.");
+        await _repository.DeleteAsync(boq);
+        await _audit.LogAsync(userId, "Delete", "BOQ", id, "Baseline BOQ and all versions deleted by Admin");
+        return true;
+    }
 
     private async Task<int> NextProjectBoqVersionAsync(long projectId) =>
         (await _db.Boqs.Where(b => b.ProjectId == projectId).MaxAsync(b => (int?)b.ProjectVersionNo) ?? 0) + 1;

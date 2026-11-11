@@ -122,15 +122,15 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
   <div class="card" style="padding:14px 20px; margin-bottom:16px;">
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
       <div class="btn-group">
-        <button class="btn sm primary" id="btnTree" onclick="toggleProjectView('tree', this)">🌲 Tree Hierarchy View</button>
-        <button class="btn sm" id="btnTable" onclick="toggleProjectView('table', this)">▤ Table List View</button>
+        <button class="btn sm primary" id="btnTable" onclick="toggleProjectView('table', this)">▤ Table List View</button>
+        <button class="btn sm" id="btnTree" onclick="toggleProjectView('tree', this)">🌲 Tree Hierarchy View</button>
         <button class="btn sm" id="btnCards" onclick="toggleProjectView('cards', this)">▦ Card Grid View</button>
       </div>
     </div>
   </div>
 
   <!-- VIEW 1: Interactive Tree View -->
-  <div id="treeViewContainer" class="tree-container">
+  <div id="treeViewContainer" class="tree-container" style="display:none">
     <!-- Resort Root Node -->
     <div class="tree-node">
       <div class="tree-header level-0">
@@ -159,7 +159,7 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
   </div>
 
   <!-- VIEW 2: Table List View -->
-  <div id="tableViewContainer" class="card" style="display:none; margin-top:20px; padding:0;">
+  <div id="tableViewContainer" class="card" style="margin-top:20px; padding:0;">
     <div class="table-wrap">
       <table class="table">
         <thead>

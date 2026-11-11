@@ -2003,6 +2003,11 @@ button.btn[disabled] {
   animation: modalSlideUp 0.22s var(--ease-smooth);
 }
 
+.modalbox.boq-master-modal {
+  width: min(960px, 97vw);
+  max-height: 94vh;
+}
+
 .modal.boq-fullscreen { padding: 0; }
 .modal.boq-fullscreen .modalbox {
   width: 100vw;

@@ -9,6 +9,7 @@ public interface IBOQRepository
     Task<List<Boq>> GetByProjectAsync(long projectId);
     Task<Boq?> GetAsync(long id);
     Task<Boq> AddAsync(Boq boq);
+    Task DeleteAsync(Boq boq);
     Task UpdateAsync(Boq boq);
     Task<BoqVersion> AddVersionAsync(BoqVersion version);
     Task AddItemsAsync(IEnumerable<BoqItem> items);
@@ -36,6 +37,14 @@ public class BOQRepository : IBOQRepository
         _db.Boqs.Add(boq);
         await _db.SaveChangesAsync();
         return boq;
+    }
+
+    public async Task DeleteAsync(Boq boq)
+    {
+        _db.BoqItems.RemoveRange(boq.Versions.SelectMany(v => v.Items));
+        _db.BoqVersions.RemoveRange(boq.Versions);
+        _db.Boqs.Remove(boq);
+        await _db.SaveChangesAsync();
     }
 
     public async Task UpdateAsync(Boq boq)

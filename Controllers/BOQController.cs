@@ -42,6 +42,18 @@ public class BOQController : ControllerBase
         return Ok(boq);
     }
 
+    [HttpDelete("{id:long}")]
+    public async Task<IActionResult> Delete(long id)
+    {
+        try
+        {
+            var deleted = await _boqService.DeleteAsync(id, UserId);
+            return deleted ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
     [HttpGet("{id:long}/status-history")]
     public async Task<IActionResult> GetStatusHistory(long id)
     {

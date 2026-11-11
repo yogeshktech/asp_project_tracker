@@ -1548,8 +1548,8 @@
         <div class="card" style="padding:14px 20px; margin-bottom:16px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div class="btn-group">
-              <button class="btn sm primary" id="btnViewTree" onclick="WTPages.switchProjView('tree')">🌲 Tree Hierarchy View</button>
-              <button class="btn sm" id="btnViewTable" onclick="WTPages.switchProjView('table')">▤ Table List View</button>
+              <button class="btn sm primary" id="btnViewTable" onclick="WTPages.switchProjView('table')">▤ Table List View</button>
+              <button class="btn sm" id="btnViewTree" onclick="WTPages.switchProjView('tree')">🌲 Tree Hierarchy View</button>
               <button class="btn sm" id="btnViewCards" onclick="WTPages.switchProjView('cards')">▦ Card Grid View</button>
             </div>
               <span id="projectSelectionCount" style="font-size:12px;color:var(--text-muted)">0 selected</span>
@@ -1564,12 +1564,12 @@
         
 
         <!-- VIEW 1: Interactive Tree View -->
-        <div id="wbsTreeView" class="tree-container">
+        <div id="wbsTreeView" class="tree-container" style="display:none">
           <div style="padding:24px; text-align:center; color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Loading N-Level WBS Hierarchy...</div>
         </div>
 
         <!-- VIEW 2: Table List View -->
-        <div id="wbsTableView" class="card" style="display:none; padding:0;">
+        <div id="wbsTableView" class="card" style="padding:0;">
           <div class="table-wrap">
             <table class="table" id="wbsMasterTable">
               <thead>
@@ -1584,7 +1584,6 @@
                   <th>BUDGET</th>
                   <th>PROGRESS</th>
                   <th>STATUS</th>
-                  <th>ACTIVE</th>
                   <th>ACTIONS</th>
                 </tr>
               </thead>
@@ -1751,8 +1750,7 @@ WTPages.switchProjView = function(view) {
                 <b>${prog}%</b>
               </div>
             </td>
-            <td><span class="badge ${p.healthBadge || 'green'}">${esc(p.health || p.status || 'On Track')}</span></td>
-            <td>${canProject(p.id, 'update') ? `<button class="btn sm ${String(p.status || '').toLowerCase() === 'inactive' ? '' : 'primary'}" role="switch" aria-checked="${String(p.status || '').toLowerCase() !== 'inactive'}" title="Toggle project active state" onclick="WTPages.toggleProjectActive('${p.id}')">${String(p.status || '').toLowerCase() === 'inactive' ? 'Inactive' : 'Active'}</button>` : `<span class="badge ${String(p.status || '').toLowerCase() === 'inactive' ? 'gray' : 'green'}">${String(p.status || '').toLowerCase() === 'inactive' ? 'Inactive' : 'Active'}</span>`}</td>
+            <td>${canProject(p.id, 'update') ? `<button class="btn sm ${String(p.status || '').toLowerCase() === 'inactive' ? '' : 'primary'}" role="switch" aria-checked="${String(p.status || '').toLowerCase() !== 'inactive'}" title="Toggle project active state" onclick="WTPages.toggleProjectActive('${p.id}', this)">${esc(p.status || 'Draft')}</button>` : `<span class="badge ${String(p.status || '').toLowerCase() === 'inactive' ? 'gray' : 'green'}">${esc(p.status || 'Draft')}</span>`}</td>
             <td>
               <div class="btn-group">
                 ${canProject(p.id, 'edit') ? `<button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>` : ''}
@@ -1763,7 +1761,7 @@ WTPages.switchProjView = function(view) {
             </td>
           </tr>
         `;
-      }).join('') || emptyRow(12, 'No projects found');
+      }).join('') || emptyRow(11, 'No projects found');
 
       // 3. Render Cards View
       $('#wbsCardsView').innerHTML = filteredProjects.map(p => {
@@ -1872,12 +1870,13 @@ WTPages.switchProjView = function(view) {
       updateProjectSelectionUI();
     };
 
-    WTPages.toggleProjectActive = async (id) => {
+    WTPages.toggleProjectActive = async (id, toggleButton) => {
       const project = currentProjects.find(p => String(p.id) === String(id));
       if (!project || !canProject(id, 'update')) return;
       const nextStatus = String(project.status || '').toLowerCase() === 'inactive' ? 'Active' : 'Inactive';
+      if (toggleButton) toggleButton.disabled = true;
       try {
-        await WisetrackAPI.updateProject(id, {
+        const saved = await WisetrackAPI.updateProject(id, {
           resortId: project.resortId,
           parentProjectId: project.parentProjectId ?? project.parentId ?? null,
           ownerId: project.ownerId ?? null,
@@ -1895,9 +1894,17 @@ WTPages.switchProjView = function(view) {
           endDate: project.endDate || null,
           profileNotes: project.profileNotes ?? null
         });
+        project.status = saved?.status || saved?.Status || nextStatus;
+        if (toggleButton) {
+          const isActive = String(project.status).toLowerCase() !== 'inactive';
+          toggleButton.textContent = project.status || (isActive ? 'Active' : 'Inactive');
+          toggleButton.setAttribute('aria-checked', String(isActive));
+          toggleButton.classList.toggle('primary', isActive);
+          toggleButton.disabled = false;
+        }
         showToast(`Project ${nextStatus.toLowerCase()}.`);
-        await renderWBSProjects();
       } catch (err) {
+        if (toggleButton) toggleButton.disabled = false;
         showToast(err.message || 'Could not update project status.', 'danger');
       }
     };
@@ -1970,7 +1977,6 @@ WTPages.switchProjView = function(view) {
             <h3 class="card-title">Add Team Member</h3>
             <div class="form-grid" style="margin-top:12px">
               <div class="field"><label>User</label><select id="teamUserId"></select></div>
-              <div class="field"><label>Team Role</label><input id="teamRole" placeholder="Site Engineer"></div>
             </div>
             <button class="btn primary" style="margin-top:12px" onclick="WTPages.addTeam()"><i class="fa-solid fa-user-plus"></i> Assign</button>
             <div id="teamList" style="margin-top:16px"></div>
@@ -2114,7 +2120,6 @@ WTPages.switchProjView = function(view) {
         ? `<div style="display:flex;flex-direction:column;gap:6px;">${teamRows.map(m => `
             <div style="font-size:13px;padding:8px;border:1px solid var(--border-color);border-radius:6px;">
               <strong>${esc(m.fullName || m.userName || m.name || ('User #' + (m.userId || m.id)))}</strong>
-              <small style="display:block;color:var(--text-muted)">${esc(m.teamRole || m.role || 'Team')}</small>
             </div>`).join('')}</div>`
         : '<small class="card-subtitle">No team assigned yet. Use the form to assign a member.</small>';
       const extra = [];
@@ -2137,16 +2142,11 @@ WTPages.switchProjView = function(view) {
           : 'No open exceptions for this package.'}</div>
       </div>`);
       extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
-        <strong>Variance Explanations (PM-24)</strong>
+        <strong>Variance Explanations </strong>
         <style>#wsVarList > p{display:none}</style>
         <div id="wsVarList" class="table-wrap" style="margin-top:8px;font-size:12.5px;"><table class="table"><thead><tr><th>Variance Type</th><th>Explanation</th><th>Updated By</th><th>Date and Time</th></tr></thead><tbody>${(explanations || []).map(v => `<tr><td>${esc(v.varianceType || v.VarianceType || '—')}</td><td>${esc(v.explanation || v.Explanation || '—')}</td><td>${esc(v.updatedBy || v.UpdatedBy || 'Unknown')}</td><td>${(v.createdAt || v.CreatedAt) ? esc(new Date(v.createdAt || v.CreatedAt).toLocaleString()) : '—'}</td></tr>`).join('')}</tbody></table>${(explanations || []).length
           ? explanations.map(v => `<p><b>${esc(v.varianceType || v.VarianceType)}</b> — ${esc(v.explanation || v.Explanation)}</p>`).join('')
           : 'No explanations recorded.'}</div>
-        <div class="form-grid" style="margin-top:10px;">
-          <div class="field"><label>Type</label><select id="wsVarType"><option>Cost</option><option>Schedule</option></select></div>
-          <div class="field full"><label>Explanation</label><textarea id="wsVarText" rows="2" placeholder="Why this variance happened"></textarea></div>
-        </div>
-        <button class="btn sm primary" style="margin-top:8px" onclick="WTPages.saveWorkspaceVariance(${numericPid})">Save explanation</button>
       </div>`);
       $('#wsExtra').innerHTML = extra.join('');
       addVarianceActionColumn('wsVarList', explanations, numericPid);
@@ -2194,7 +2194,7 @@ WTPages.switchProjView = function(view) {
     const computedBudgetStatus = remainingForecast < 0 ? 'Over Budget' : remainingForecast > 0 ? 'Under Budget' : 'On Budget';
     const budgetPanel = variance ? `<div class="grid g4" style="font-size:13px">
       <div>Approved budget<br><strong>${money(approvedFunding)}</strong></div><div>Purchase commitment<br><strong>${money(purchaseTotal)}</strong></div>
-      <div>Actual cost<br><strong>${money(actualTotal)}</strong></div><div>Forecast position<br><span class="badge ${remainingForecast < 0 ? 'red' : remainingForecast === 0 ? 'amber' : 'green'}">${esc(computedBudgetStatus)}</span><br>${money(remainingForecast)}</div>
+      <div>Actual cost<br><strong>${money(actualTotal)}</strong></div><div>Forecast position<br><span class="badge ${remainingForecast < 0 ? 'red' : 'green'}">${esc(computedBudgetStatus)}</span><br>${money(remainingForecast)}</div>
       </div>` : `<span style="color:var(--text-muted)">${can('Budgets') && can('Costs') ? 'Budget data is unavailable.' : 'Budget and cost data are hidden for your permissions.'}</span>`;
     const centers = rows(variance?.costCenters);
     const costCenterLabel = c => costCenterDisplayName(c.costCenterName || c.name || `#${c.costCenterId}`);
@@ -2205,7 +2205,6 @@ WTPages.switchProjView = function(view) {
         ${card('Project Dates', `<div class="grid g2"><div>Start date<br><strong>${date(project.startDate || project.StartDate)}</strong></div><div>Planned completion<br><strong>${date(project.endDate || project.EndDate)}</strong></div></div>`)}
         ${card('Milestone Progress', `<div style="display:flex;justify-content:space-between"><span>${ms.filter(completed).length} of ${ms.length} complete</span><strong>${milestonePct}%</strong></div><div class="progress ${milestonePct >= 80 ? 'green' : milestonePct >= 50 ? 'blue' : 'amber'}"><i style="width:${milestonePct}%"></i></div>${listOrEmpty(ms.slice().sort((a,b) => new Date(a.dueDate || a.DueDate || 0) - new Date(b.dueDate || b.DueDate || 0)).slice(0,5).map(m => `<li>${esc(m.name || m.Name)} · ${esc(m.status || m.Status || 'Not started')} · due ${date(m.dueDate || m.DueDate)}</li>`), 'No milestones available or permission is restricted.')}`)}
         ${card('Budget Position', budgetPanel)}
-        ${card('Cost Center Position', costCenterPanel)}
         ${card('BOQ Status', boqPanel)}
         ${card('Recent Activity', listOrEmpty(activities.map(a => `<li>${esc(a.label)} <small style="color:var(--text-muted)">${date(a.at)}</small></li>`), 'No recent project activity is available.'))}
         ${card('Risks', listOrEmpty([...riskItems.map(x => `<li><span class="badge ${/overdue|critical/i.test(x.type || x.Type || '') ? 'red' : 'amber'}">${esc(x.type || x.Type || 'Risk')}</span> ${esc(x.title || x.Title || x.message || x.Message || 'Risk item')}</li>`), ...openIssues.map(i => `<li><span class="badge ${i.isEscalated || i.IsEscalated ? 'red' : 'amber'}">${i.isEscalated || i.IsEscalated ? 'Escalated' : 'Open issue'}</span> ${esc(i.title || i.Title || 'Issue')}</li>`) ], 'No active risks or open issues.'))}
@@ -2230,7 +2229,7 @@ WTPages.switchProjView = function(view) {
   async function addTeam() {
     const pid = await selectedProjectId();
     try {
-      await WisetrackAPI.assignTeamMember(pid, { userId: Number($('#teamUserId').value), teamRole: $('#teamRole').value.trim() });
+      await WisetrackAPI.assignTeamMember(pid, { userId: Number($('#teamUserId').value), teamRole: 'Member' });
       showToast('Team member assigned');
       await pageProjectDetail();
     } catch (e) { showToast(e.message, 'danger'); }
@@ -3384,6 +3383,7 @@ WTPages.switchProjView = function(view) {
     const canCreateBoq = !wtCan || wtCan('BOQ', 'edit', Number(pid));
     const canUpdateBoq = !wtCan || wtCan('BOQ', 'update', Number(pid));
     const canDeleteBoq = !wtCan || wtCan('BOQ', 'delete', Number(pid));
+    const isAdmin = typeof wtIsAdmin === 'function' && wtIsAdmin();
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
       ` ${canCreateBoq ? `<button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>
         <button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>` : ''}`)
@@ -3404,13 +3404,18 @@ WTPages.switchProjView = function(view) {
           || Number(a.version.versionNo || a.version.VersionNo) - Number(b.version.versionNo || b.version.VersionNo));
       const canCreateFirstBoq = list.length === 0;
       ['boqFromMasterButton', 'boqImportButton'].forEach(id => { const button = document.getElementById(id); if (button) button.disabled = !canCreateFirstBoq; });
-      $('#boqBody').innerHTML = list.length ? list.map(b => `
-        <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(b.status || b.Status || '—')}</td>
+      $('#boqBody').innerHTML = list.length ? list.map(b => {
+        const boqVersions = b.versions || b.Versions || [];
+        const hasBaseline = boqVersions.some(v => v.isCurrentBaseline || v.IsCurrentBaseline);
+        const displayStatus = hasBaseline ? 'Baseline' : (b.status || b.Status || '—');
+        return `
+        <tr><td>${b.id}</td><td>${esc(b.title || b.name || 'BOQ')}</td><td>${esc(displayStatus)}</td>
         <td>${(() => { const vs = b.versions || b.Versions || []; const first = vs.slice().sort((a, c) => Number(a.versionNo || a.VersionNo || 0) - Number(c.versionNo || c.VersionNo || 0))[0]; const base = vs.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); return `First ${boqVersionLabel(first, vs)} / Baseline ${boqVersionLabel(base, vs)}`; })()}</td>
         <td>${esc((b.createdAt || b.CreatedAt || '').toString().slice(0, 10) || '-')}</td>
         <td><button class="btn sm" onclick="WTPages.viewBoq(${b.id})">View</button>
-        ${canUpdateBoq ? (() => { const isBaseline = String(b.status || b.Status || '').trim().toLowerCase() === 'baseline' || (b.versions || b.Versions || []).some(v => v.isCurrentBaseline || v.IsCurrentBaseline); return isBaseline ? '<button class="btn sm primary" disabled title="Status updates are disabled for baseline BOQs">Status Update</button>' : `<button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button>`; })() : ''}</td></tr>`
-      ).join('') : emptyRow(6, 'No BOQ - import or create from master');
+        ${canUpdateBoq ? (() => { const isBaseline = hasBaseline || String(b.status || b.Status || '').trim().toLowerCase() === 'baseline'; return isBaseline ? '<button class="btn sm primary" disabled title="Status updates are disabled for baseline BOQs">Status Update</button>' : `<button class="btn sm primary" onclick="WTPages.editBoq(${b.id})">Status Update</button>`; })() : ''}
+        ${isAdmin && hasBaseline ? `<button class="btn sm danger" title="Delete baseline BOQ" onclick="WTPages.deleteBoq(${b.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
+      }).join('') : emptyRow(6, 'No BOQ - import or create from master');
       $('#boqVersionsBody').innerHTML = versionRows.length ? versionRows.map(({ boq: b, version: v }) => {
         const versionId = v.id || v.Id;
         const versions = b.versions || b.Versions || [];
@@ -3478,6 +3483,16 @@ WTPages.switchProjView = function(view) {
     } catch (error) { showToast(error.message || 'Could not delete BOQ version.', 'danger'); }
   }
 
+  async function deleteBoq(boqId) {
+    if (typeof wtIsAdmin !== 'function' || !wtIsAdmin()) { showToast('Only Admin can delete a baseline BOQ.', 'danger'); return; }
+    if (!confirm('Delete this baseline BOQ and all its versions and items? This cannot be undone.')) return;
+    try {
+      await WisetrackAPI.deleteBoq(boqId);
+      showToast('Baseline BOQ deleted.');
+      await pageBoq();
+    } catch (error) { showToast(error.message || 'Could not delete baseline BOQ.', 'danger'); }
+  }
+
   async function saveBoqEdit(event, id) {
     event.preventDefault();
     try {
@@ -3498,7 +3513,7 @@ WTPages.switchProjView = function(view) {
         <input type="hidden" id="boqMasterTarget" value="${targetBoqId || ''}">
         <input type="hidden" id="boqMasterSourceVersion" value="${sourceVersionId || ''}">
         <div class="field"><label>Search reusable items</label><input id="boqMasterSearch" oninput="WTPages.filterBoqMasterItems()" placeholder="Code, item, brand, unit"></div>
-        <div id="boqMasterItems" style="max-height:48vh;overflow:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px">
+        <div id="boqMasterItems" style="max-height:54vh;overflow:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px">
           ${items.map(i => `<div class="boq-master-option" data-search="${esc([i.itemCode, i.name, i.description, i.brand?.name, i.unit?.name].filter(Boolean).join(' ').toLowerCase())}" style="padding:10px;border-bottom:1px solid var(--border-light)">
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
               <input type="checkbox" class="boq-master-checkbox" value="${i.id}" onchange="WTPages.toggleBoqMasterLine(this)">
@@ -3521,7 +3536,7 @@ WTPages.switchProjView = function(view) {
         </div>
         <p class="card-subtitle">Item, unit, purchase price, description, image, and brand come from Item Master and are read-only. Set quantity, additional consumption, its price, remark, and attachment.</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Add selected items</button></div>
-      </form>`);
+      </form>`, '', 'boq-master-modal');
   }
 
   function filterBoqMasterItems() {
@@ -6537,7 +6552,7 @@ WTPages.switchProjView = function(view) {
     openCostImportModal, previewCostImport, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
-    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
+    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,
