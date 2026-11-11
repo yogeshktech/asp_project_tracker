@@ -1584,6 +1584,7 @@
                   <th>BUDGET</th>
                   <th>PROGRESS</th>
                   <th>STATUS</th>
+                  <th>ACTIVE</th>
                   <th>ACTIONS</th>
                 </tr>
               </thead>
@@ -1682,16 +1683,8 @@ WTPages.switchProjView = function(view) {
           const levelClass = depth === 1 ? 'level-1' : (depth === 2 ? 'level-2' : (depth === 3 ? 'level-3' : 'level-4'));
           const icon = depth === 1 ? '🏗️' : (depth === 2 ? '↳ 🏢' : (depth === 3 ? '↳ ↳ 🔨' : '↳ ↳ ↳ ⚡'));
 
-          let addBtnTxt = '';
-          if (depth === 1) {
-            addBtnTxt = '+ Sub-Project (L2)';
-          } else if (depth === 2) {
-            addBtnTxt = '+ Work Package (L3)';
-          } else if (depth === 3) {
-            addBtnTxt = '+ Sub-Task (L4)';
-          } else {
-            addBtnTxt = '+ Child Task';
-          }
+          const childLevel = depth + 1;
+          const addBtnTxt = `+ Sub Project L${childLevel}`;
 
           return `
             <div class="tree-node">
@@ -1708,7 +1701,7 @@ WTPages.switchProjView = function(view) {
                   <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>
                   <span>${prog}%</span>
                   <span class="badge ${node.healthBadge || (prog>=80?'green':prog>=50?'blue':'amber')}">${esc(node.health || node.status || 'Active')}</span>
-                  ${canProject(node.id, 'edit') ? `<button class="btn sm primary" title="Add Child Sub-Package" onclick="event.stopPropagation(); openCreateProjectModal('${node.id}');"><i class="fa-solid fa-plus"></i> ${addBtnTxt}</button>` : ''}
+                  ${childLevel <= 5 && canProject(node.id, 'edit') ? `<button class="btn sm primary" title="Add ${addBtnTxt}" onclick="event.stopPropagation(); openCreateProjectModal('${node.id}');"><i class="fa-solid fa-plus"></i> ${addBtnTxt}</button>` : ''}
                   ${canProject(node.id, 'update') ? `<button class="btn sm" title="Edit Package" onclick="event.stopPropagation(); openEditProjectModal('${node.id}');"><i class="fa-solid fa-pen"></i></button>` : ''}
                   ${canProject(node.id, 'delete') ? `<button class="btn sm danger" title="Delete Package" onclick="event.stopPropagation(); confirmDeleteProject('${node.id}');"><i class="fa-solid fa-trash"></i></button>` : ''}
                   <a href="project-detail.html" class="btn sm" title="Open project details" onclick="event.stopPropagation(); localStorage.setItem('WISETRACK_SELECTED_PROJECT','${node.id}');">Details</a>
@@ -1738,7 +1731,7 @@ WTPages.switchProjView = function(view) {
             <td><input type="checkbox" aria-label="Select ${esc(p.name || p.title)}" ${selectedProjectIds.has(String(p.id)) ? 'checked' : ''} onchange="WTPages.toggleProjectSelection('${p.id}', this.checked)"></td>
             <td>
               <span class="tree-level-pill lvl-${Math.min(4, lvl)}">
-                ${lvl == 1 ? '🔵 Level 1 · Root' : (lvl == 2 ? '🟣 Level 2 · Sub' : (lvl == 3 ? '🟢 Level 3 · Package' : `🟠 Level ${lvl} · Task`))}
+                ${lvl == 1 ? 'Level 1 · Project' : `Sub Project L${lvl}`}
               </span>
             </td>
             <td>
@@ -1759,6 +1752,7 @@ WTPages.switchProjView = function(view) {
               </div>
             </td>
             <td><span class="badge ${p.healthBadge || 'green'}">${esc(p.health || p.status || 'On Track')}</span></td>
+            <td>${canProject(p.id, 'update') ? `<button class="btn sm ${String(p.status || '').toLowerCase() === 'inactive' ? '' : 'primary'}" role="switch" aria-checked="${String(p.status || '').toLowerCase() !== 'inactive'}" title="Toggle project active state" onclick="WTPages.toggleProjectActive('${p.id}')">${String(p.status || '').toLowerCase() === 'inactive' ? 'Inactive' : 'Active'}</button>` : `<span class="badge ${String(p.status || '').toLowerCase() === 'inactive' ? 'gray' : 'green'}">${String(p.status || '').toLowerCase() === 'inactive' ? 'Inactive' : 'Active'}</span>`}</td>
             <td>
               <div class="btn-group">
                 ${canProject(p.id, 'edit') ? `<button class="btn sm primary" title="Add Child Sub-Package" onclick="openCreateProjectModal('${p.id}')"><i class="fa-solid fa-plus"></i></button>` : ''}
@@ -1769,7 +1763,7 @@ WTPages.switchProjView = function(view) {
             </td>
           </tr>
         `;
-      }).join('') || emptyRow(11, 'No projects found');
+      }).join('') || emptyRow(12, 'No projects found');
 
       // 3. Render Cards View
       $('#wbsCardsView').innerHTML = filteredProjects.map(p => {
@@ -1876,6 +1870,36 @@ WTPages.switchProjView = function(view) {
       if (checked) selectedProjectIds.add(String(id));
       else selectedProjectIds.delete(String(id));
       updateProjectSelectionUI();
+    };
+
+    WTPages.toggleProjectActive = async (id) => {
+      const project = currentProjects.find(p => String(p.id) === String(id));
+      if (!project || !canProject(id, 'update')) return;
+      const nextStatus = String(project.status || '').toLowerCase() === 'inactive' ? 'Active' : 'Inactive';
+      try {
+        await WisetrackAPI.updateProject(id, {
+          resortId: project.resortId,
+          parentProjectId: project.parentProjectId ?? project.parentId ?? null,
+          ownerId: project.ownerId ?? null,
+          projectTypeId: project.projectTypeId ?? null,
+          propertyId: project.propertyId ?? null,
+          clientName: project.clientName ?? null,
+          sponsor: project.sponsor ?? null,
+          currency: project.currency || 'MVR',
+          allowExternalView: !!project.allowExternalView,
+          name: project.name || project.title || '',
+          code: project.code ?? null,
+          description: project.description ?? project.desc ?? null,
+          status: nextStatus,
+          startDate: project.startDate || null,
+          endDate: project.endDate || null,
+          profileNotes: project.profileNotes ?? null
+        });
+        showToast(`Project ${nextStatus.toLowerCase()}.`);
+        await renderWBSProjects();
+      } catch (err) {
+        showToast(err.message || 'Could not update project status.', 'danger');
+      }
     };
 
     WTPages.deleteSelectedProjects = async () => {
@@ -3892,8 +3916,9 @@ WTPages.switchProjView = function(view) {
           ${version.isCurrentBaseline || version.IsCurrentBaseline ? '<span class="badge green">Current Baseline</span>' : ''}
           <span>${esc(version.remarks || version.Remarks || '')}</span>
         </div>
-        <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Item name</th><th>Code</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Description</th></tr></thead>
+        <div class="table-wrap boq-version-table-wrap"><table class="table"><thead><tr><th>#</th><th>Item name</th><th>Code</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Description</th></tr></thead>
           <tbody>${rows || '<tr><td colspan="12">No items in this version.</td></tr>'}</tbody></table></div>`);
+      document.getElementById('modal')?.classList.add('boq-fullscreen');
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 50);
     } catch (e) { showToast(e.message, 'danger'); }
   }

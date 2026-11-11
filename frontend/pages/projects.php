@@ -48,19 +48,19 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
     if ($depth === 1) {
         $levelPill = '<span class="tree-level-pill lvl-1">🔵 Level 1 · Root Parent</span>';
         $relationTxt = 'Root Major Project';
-        $addBtnTxt = '+ Sub-Project (L2)';
+        $addBtnTxt = '+ Sub Project L2';
     } elseif ($depth === 2) {
         $levelPill = '<span class="tree-level-pill lvl-2">🟣 Level 2 · Sub-Project</span>';
         $relationTxt = '↳ Child of Level 1: <strong>' . htmlspecialchars($parentName) . '</strong>';
-        $addBtnTxt = '+ Work Package (L3)';
+        $addBtnTxt = '+ Sub Project L3';
     } elseif ($depth === 3) {
         $levelPill = '<span class="tree-level-pill lvl-3">🟢 Level 3 · Child Package</span>';
         $relationTxt = '↳ ↳ Child of Level 2: <strong>' . htmlspecialchars($parentName) . '</strong>';
-        $addBtnTxt = '+ Sub-Task (L4)';
+        $addBtnTxt = '+ Sub Project L4';
     } else {
         $levelPill = '<span class="tree-level-pill lvl-4">🟠 Level ' . $depth . ' · N-th Term Task</span>';
         $relationTxt = '↳ ↳ ↳ Child of Level ' . ($depth - 1) . ': <strong>' . htmlspecialchars($parentName) . '</strong>';
-        $addBtnTxt = '+ Child Task';
+        $addBtnTxt = '+ Sub Project L5';
     }
     
     $html = '
@@ -348,19 +348,19 @@ function syncClientSideProjects() {
     if (depth === 1) {
       levelPill = '<span class="tree-level-pill lvl-1">🔵 Level 1 · Root Parent</span>';
       relationTxt = 'Root Major Project';
-      addBtnTxt = '+ Sub-Project (L2)';
+      addBtnTxt = '+ Sub Project L2';
     } else if (depth === 2) {
       levelPill = '<span class="tree-level-pill lvl-2">🟣 Level 2 · Sub-Project</span>';
       relationTxt = `↳ Child of Level 1: <strong>${escapeHtml(parentName)}</strong>`;
-      addBtnTxt = '+ Work Package (L3)';
+      addBtnTxt = '+ Sub Project L3';
     } else if (depth === 3) {
       levelPill = '<span class="tree-level-pill lvl-3">🟢 Level 3 · Child Package</span>';
       relationTxt = `↳ ↳ Child of Level 2: <strong>${escapeHtml(parentName)}</strong>`;
-      addBtnTxt = '+ Sub-Task (L4)';
+      addBtnTxt = '+ Sub Project L4';
     } else {
       levelPill = `<span class="tree-level-pill lvl-4">🟠 Level ${depth} · N-th Term Task</span>`;
       relationTxt = `↳ ↳ ↳ Child of Level ${depth - 1}: <strong>${escapeHtml(parentName)}</strong>`;
-      addBtnTxt = '+ Child Task';
+      addBtnTxt = '+ Sub Project L5';
     }
 
     return `
