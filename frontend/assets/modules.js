@@ -2549,19 +2549,47 @@ WTPages.switchProjView = function(view) {
         <p class="card-subtitle">Current approved amount: ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</p>
         <div class="field"><label>Revised Budget *</label><input id="revisionAmount" type="number" min="0.01" step="0.01" value="${Number(budget.approvedAmount || 0)}" required></div>
         <div class="field"><label>Revision Reason *</label><textarea id="revisionReason" rows="3" maxlength="2000" required></textarea></div>
+        <div class="field"><label>Attachments (optional)</label><input id="revisionAttachments" type="file" multiple accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" onchange="WTPages.previewBudgetRevisionFiles(this)"><small class="card-subtitle">Select multiple files: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX, CSV, or TXT. Up to 10 files, 25 MB each.</small><div id="revisionAttachmentPreview" style="display:grid;gap:8px;margin-top:8px"></div></div>
         <p class="card-subtitle">Approver will be recorded as the signed-in user authorized to revise this budget.</p>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Approve Revision</button></div></form>`);
+        <div id="revisionUploadStatus" role="status" aria-live="polite" style="display:none;margin-top:10px;color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin"></i> Uploading attachments and saving revision...</div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button id="revisionSaveButton" class="btn primary" type="submit">Approve Revision</button></div></form>`);
     } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  function previewBudgetRevisionFiles(input) {
+    const preview = $('#revisionAttachmentPreview');
+    if (!preview || !input) return;
+    preview.innerHTML = Array.from(input.files || []).map((file, index) => `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px"><i class="fa-regular fa-file" style="font-size:20px;width:32px;text-align:center"></i><span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeBudgetRevisionFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`).join('');
+  }
+
+  function removeBudgetRevisionFile(index) {
+    const input = $('#revisionAttachments');
+    if (!input) return;
+    const transfer = new DataTransfer();
+    Array.from(input.files || []).forEach((file, currentIndex) => { if (currentIndex !== index) transfer.items.add(file); });
+    input.files = transfer.files;
+    previewBudgetRevisionFiles(input);
   }
 
   async function saveBudgetRevision(e) {
     e.preventDefault();
+    const saveButton = $('#revisionSaveButton');
+    const uploadStatus = $('#revisionUploadStatus');
+    if (saveButton?.disabled) return;
+    if (saveButton) { saveButton.disabled = true; saveButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...'; }
+    if (uploadStatus) uploadStatus.style.display = 'block';
     try {
-      await WisetrackAPI.reviseBudget(Number($('#revisionBudgetId').value), {
-        totalAmount: Number($('#revisionAmount').value), remarks: $('#revisionReason').value.trim()
-      });
+      const payload = new FormData();
+      payload.append('totalAmount', $('#revisionAmount').value);
+      payload.append('remarks', $('#revisionReason').value.trim());
+      for (const file of $('#revisionAttachments').files) payload.append('attachments', file);
+      await WisetrackAPI.reviseBudget(Number($('#revisionBudgetId').value), payload);
       closeModal(); showToast('Approved budget revision saved'); await pageBudget();
-    } catch (err) { showToast(err.message, 'danger'); }
+    } catch (err) {
+      if (saveButton) { saveButton.disabled = false; saveButton.textContent = 'Approve Revision'; }
+      if (uploadStatus) uploadStatus.style.display = 'none';
+      showToast(err.message, 'danger');
+    }
   }
 
   async function openBudgetHistory(id) {
@@ -6547,7 +6575,7 @@ WTPages.switchProjView = function(view) {
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
-    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
+    openBudgetModal, saveBudget, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,

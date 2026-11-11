@@ -280,7 +280,7 @@ const WisetrackAPI = {
   updateBudget(id, data) { return this._fetch(`/budgets/${id}`, { method: 'PUT', body: data }); },
   deleteBudgetAttachment(id, attachmentId) { return this.del(`/budgets/${id}/attachments/${attachmentId}`); },
   deleteBudget(id) { return this.del(`/budgets/${id}`); },
-  reviseBudget(id, data) { return this.post(`/budgets/${id}/revise`, data); },
+  reviseBudget(id, data) { return this._fetch(`/budgets/${id}/revise`, { method: 'POST', body: data }); },
   getCostCenters(projectId) { return this.get(`/budgets/cost-centers${projectId ? '?projectId=' + projectId : ''}`); },
   createCostCenter(data) { return this._fetch('/budgets/cost-centers', { method: 'POST', body: data }); },
   updateCostCenter(id, data) { return this._fetch(`/budgets/cost-centers/${id}`, { method: 'PUT', body: data }); },

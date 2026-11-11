@@ -227,6 +227,7 @@ public class BudgetVersionRequest
 {
     public decimal TotalAmount { get; set; }
     public string? Remarks { get; set; }
+    public List<IFormFile> Attachments { get; set; } = new();
 }
 
 public class CreateItemRequest

@@ -109,8 +109,37 @@ public class BudgetsController : ControllerBase
     }
 
     [HttpPost("{id:long}/revise")]
-    public async Task<IActionResult> Revise(long id, [FromBody] BudgetVersionRequest request) =>
-        Ok(await _budgetService.ReviseAsync(id, request.TotalAmount, request.Remarks, UserId));
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(100_000_000)]
+    public async Task<IActionResult> Revise(long id, [FromForm] BudgetVersionRequest request)
+    {
+        var files = request.Attachments.Count > 0 ? await StoreAttachmentsAsync(request.Attachments, "budget") : new List<(string Path, string Name)>();
+        try
+        {
+            var version = await _budgetService.ReviseAsync(id, request.TotalAmount, request.Remarks, UserId);
+            _db.BudgetRecordAttachments.AddRange(files.Select(file => new BudgetRecordAttachment
+            {
+                BudgetId = id, FilePath = file.Path, FileName = file.Name, UploadedBy = UserId, UploadedAt = DateTime.UtcNow
+            }));
+            await _db.SaveChangesAsync();
+            return Ok(version);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await DeleteStoredFilesAsync(files.Select(file => file.Path));
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            await DeleteStoredFilesAsync(files.Select(file => file.Path));
+            return Forbid();
+        }
+        catch
+        {
+            await DeleteStoredFilesAsync(files.Select(file => file.Path));
+            throw;
+        }
+    }
 
     [HttpGet("cost-centers")]
     public async Task<IActionResult> CostCenters([FromQuery] long? projectId) =>
@@ -190,10 +219,10 @@ public class BudgetsController : ControllerBase
     private async Task<List<(string Path, string Name)>> StoreAttachmentsAsync(IReadOnlyCollection<IFormFile> files, string scope)
     {
         if (files.Count > 10) throw new InvalidOperationException("Upload up to 10 files at a time.");
-        var allowed = new[] { ".xlsx", ".xls", ".pdf", ".csv", ".doc", ".docx", ".txt" };
+        var allowed = new[] { ".jpg", ".jpeg", ".webp", ".xlsx", ".xls", ".pdf", ".csv", ".doc", ".docx", ".txt" };
         var prepared = files.Select(file => (File: file, Extension: Path.GetExtension(file.FileName).ToLowerInvariant())).ToList();
         if (prepared.Any(item => item.File.Length == 0)) throw new InvalidOperationException("Empty attachments cannot be uploaded.");
-        if (prepared.Any(item => !allowed.Contains(item.Extension))) throw new InvalidOperationException("Allowed attachment formats: Excel, PDF, CSV, Word, and TXT.");
+        if (prepared.Any(item => !allowed.Contains(item.Extension))) throw new InvalidOperationException("Allowed attachment formats: JPG, JPEG, WEBP, Excel, PDF, CSV, Word, and TXT.");
         if (prepared.Any(item => item.File.Length > 25_000_000)) throw new InvalidOperationException("Each attachment must be 25 MB or smaller.");
         var storedFiles = new List<(string Path, string Name)>();
         try
