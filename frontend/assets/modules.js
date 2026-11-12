@@ -2876,6 +2876,17 @@ WTPages.switchProjView = function(view) {
   // ---------- COSTS ----------
   let pendingCostImportRows = [];
   let costImportBoqItemNames = new Map();
+  let costImportRawRows = [];
+  let costImportHeaders = [];
+  let costImportMappings = {};
+  let costImportLockedMappings = new Set();
+  const COST_IMPORT_FIELDS = [
+    { key: 'amount', label: 'Amount', required: true, aliases: ['amount', 'costamount', 'total'] },
+    { key: 'date', label: 'Date', aliases: ['costdate', 'purchasedate', 'date'] },
+    { key: 'boqItem', label: 'Item Name / BOQ Item', aliases: ['boqitemname', 'itemname', 'boqitem', 'item'] },
+    { key: 'vendor', label: 'Vendor', aliases: ['vendor', 'supplier'] },
+    { key: 'remark', label: 'Remark', aliases: ['remark', 'remarks', 'description', 'reference'] }
+  ];
 
   async function openCostImportModal() {
     const projectId = await selectedProjectId();
@@ -2896,9 +2907,10 @@ WTPages.switchProjView = function(view) {
         <div class="form-grid">
           <div class="field"><label>Entry type *</label><select id="ciType"><option>Purchase</option><option>Actual</option></select></div>
           <div class="field"><label>CSV file *</label><input id="ciFile" type="file" accept=".csv,.tsv,.txt" required onchange="WTPages.previewCostImport(this)"></div>
-          <div class="field full"><small>Required column: Amount. Optional: Date (YYYY-MM-DD), BOQ Item Name, Vendor, Remark. Leave BOQ Item Name blank for project-level costs.</small></div>
+          <div class="field full"><small>Map your file columns below. Amount is required. Item Name is free text; it links to a BOQ line when the name matches, otherwise it is saved as the cost description. Dates may use YYYY-MM-DD or DD-MM-YYYY.</small></div>
         </div>
         <button class="btn sm" type="button" onclick="wtDownloadText('wisetrack-cost-import-template.csv','Amount,Date,BOQ Item Name,Vendor,Remark\\n','text/csv;charset=utf-8')">Download CSV template</button>
+        <div id="ciMapping" style="margin-top:12px"></div>
         <div id="ciPreview" style="margin-top:12px;color:var(--text-muted)">Choose a file to preview rows.</div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Import rows</button></div>
       </form>`);
@@ -2906,36 +2918,82 @@ WTPages.switchProjView = function(view) {
 
   async function previewCostImport(input) {
     pendingCostImportRows = [];
+    costImportRawRows = [];
+    costImportHeaders = [];
+    costImportMappings = {};
+    costImportLockedMappings = new Set();
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const parsed = wtParseFlexibleTable(await file.text());
-      pendingCostImportRows = parsed.map((r, index) => {
-        const amountText = wtPick(r, ['Amount', 'Cost Amount', 'Total']);
-        const dateText = wtPick(r, ['CostDate', 'PurchaseDate', 'Date']);
-        const boqName = String(wtPick(r, ['BOQ Item Name', 'Item Name', 'BOQ Item', 'Item']) || '').trim();
+      costImportRawRows = wtParseFlexibleTable(await file.text());
+      costImportHeaders = costImportRawRows.length ? Object.keys(costImportRawRows[0]) : [];
+      if (!costImportRawRows.length || !costImportHeaders.length) throw new Error('The selected file has no data rows or headers.');
+      COST_IMPORT_FIELDS.forEach(field => {
+        const match = costImportHeaders.find(header => field.aliases.includes(wtNormHeader(header)) && !Object.values(costImportMappings).includes(header));
+        if (match) { costImportMappings[field.key] = match; costImportLockedMappings.add(field.key); }
+      });
+      renderCostImportMapping();
+      rebuildCostImportRows();
+    } catch (err) {
+      $('#ciMapping').innerHTML = '';
+      $('#ciPreview').innerHTML = `<span style="color:#dc2626">${esc(err.message)}</span>`;
+    }
+  }
+
+  function renderCostImportMapping() {
+    const target = $('#ciMapping');
+    if (!target) return;
+    target.innerHTML = `<div style="font-weight:700;margin-bottom:6px">Match file columns</div><div style="display:grid;grid-template-columns:minmax(130px,1fr) minmax(180px,1.4fr);gap:8px 12px;align-items:center">${COST_IMPORT_FIELDS.map(field => {
+      const selected = costImportMappings[field.key] || '';
+      const locked = costImportLockedMappings.has(field.key);
+      return `<label for="ciMap_${field.key}">${esc(field.label)}${field.required ? ' *' : ''}</label><select id="ciMap_${field.key}" ${locked ? 'disabled' : ''} onchange="WTPages.changeCostImportMapping('${field.key}',this.value)"><option value="">Not mapped</option>${costImportHeaders.map(header => `<option value="${esc(header)}" ${selected === header ? 'selected' : ''}>${esc(header)}</option>`).join('')}</select>`;
+    }).join('')}</div><small style="display:block;margin-top:6px;color:var(--text-muted)">Automatically matched columns are locked. Choose a source column for any field that is not mapped.</small>`;
+  }
+
+  function changeCostImportMapping(fieldKey, sourceHeader) {
+    const field = COST_IMPORT_FIELDS.find(item => item.key === fieldKey);
+    if (!field || costImportLockedMappings.has(fieldKey)) return;
+    if (sourceHeader && Object.entries(costImportMappings).some(([key, value]) => key !== fieldKey && value === sourceHeader)) {
+      showToast('That file column is already mapped to another field.', 'danger');
+      renderCostImportMapping();
+      return;
+    }
+    if (sourceHeader) { costImportMappings[fieldKey] = sourceHeader; costImportLockedMappings.add(fieldKey); }
+    else delete costImportMappings[fieldKey];
+    renderCostImportMapping();
+    rebuildCostImportRows();
+  }
+
+  function rebuildCostImportRows() {
+    if (!costImportRawRows.length) return;
+    const getValue = (row, field) => costImportMappings[field] ? (row[costImportMappings[field]] ?? '') : '';
+    pendingCostImportRows = costImportRawRows.map((r, index) => {
+        const amountText = getValue(r, 'amount');
+        const dateText = String(getValue(r, 'date') || '').trim();
+        const boqName = String(getValue(r, 'boqItem') || '').trim();
         const amount = Number(String(amountText).replace(/[,MVR $ ]/g, ''));
         const boqItemId = boqName ? (costImportBoqItemNames.get(boqName.toLowerCase()) ?? null) : null;
-        const parsedDate = dateText ? new Date(`${dateText}T00:00:00Z`) : null;
-        const validDate = !dateText || (/^\d{4}-\d{2}-\d{2}$/.test(dateText)
-          && !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === dateText);
+        const isoDate = /^\d{2}-\d{2}-\d{4}$/.test(dateText)
+          ? `${dateText.slice(6, 10)}-${dateText.slice(3, 5)}-${dateText.slice(0, 2)}` : dateText;
+        const parsedDate = isoDate ? new Date(`${isoDate}T00:00:00Z`) : null;
+        const validDate = !dateText || (/^\d{4}-\d{2}-\d{2}$/.test(isoDate)
+          && !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === isoDate);
         const errors = [];
+        if (!costImportMappings.amount) errors.push('Map the required Amount column');
         if (!Number.isFinite(amount) || amount <= 0) errors.push('Amount must be greater than zero');
-        if (boqName && boqItemId == null) errors.push(`BOQ item name not found: ${boqName}`);
-        if (!validDate) errors.push('CostDate must use YYYY-MM-DD');
+        if (!validDate) errors.push('Date must use YYYY-MM-DD or DD-MM-YYYY');
+        const remark = String(getValue(r, 'remark') || '').trim();
+        const description = [boqItemId == null ? boqName : '', remark].filter(Boolean).join(' — ') || null;
         return {
-          rowNo: index + 2, amount, costDate: dateText || null, boqItemId,
-          vendor: wtPick(r, ['Vendor', 'Supplier']) || null,
-          description: wtPick(r, ['Remark', 'Remarks', 'Description', 'Reference']) || null,
+          rowNo: index + 2, amount, costDate: validDate && dateText ? isoDate : null, boqItemId,
+          vendor: getValue(r, 'vendor') || null,
+          description,
           errors
         };
       });
       const invalid = pendingCostImportRows.filter(r => r.errors.length).length;
       $('#ciPreview').innerHTML = `<b>${pendingCostImportRows.length} rows found</b> · ${invalid} need correction` +
         (pendingCostImportRows.length ? `<div style="max-height:160px;overflow:auto;margin-top:8px">${pendingCostImportRows.slice(0, 20).map(r => `<div>Row ${r.rowNo}: ${r.errors.length ? `<span style="color:#dc2626">${esc(r.errors.join('; '))}</span>` : 'Ready'}</div>`).join('')}</div>` : '');
-    } catch (err) {
-      $('#ciPreview').innerHTML = `<span style="color:#dc2626">${esc(err.message)}</span>`;
-    }
   }
 
   async function saveCostImport(e) {
@@ -6718,7 +6776,7 @@ WTPages.switchProjView = function(view) {
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
     openBudgetModal, saveBudget, previewBudgetFiles, removeBudgetFile, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
-    openCostImportModal, previewCostImport, saveCostImport,
+    openCostImportModal, previewCostImport, changeCostImportMapping, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, previewBoqImportFile, changeBoqImportMapping, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
