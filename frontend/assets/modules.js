@@ -2095,7 +2095,6 @@ WTPages.switchProjView = function(view) {
 
       <div class="grid g2" style="background:var(--bg-app); border:1px solid var(--border-color); border-radius:8px; padding:12px; margin-bottom:14px; font-size:12.5px;">
         ${canSeeBudgets ? `<div><b>Allocated Budget:</b> ${detailValue(p.projectBudgetDisplay || (p.projectBudgetAmount != null || profileBudget?.approvedAmount != null ? projectBudgetLabel(p) : null))}</div>` : ''}
-        ${canSeeBudgets && canSeeCosts ? `<div><b>Committed Spent:</b> ${detailValue(p.spent)}</div>` : ''}
         <div><b>Project Owner:</b> ${detailValue(p.ownerName || p.owner)}</div>
         <div><b>Client:</b> ${detailValue(p.clientName)}</div>
         <div><b>Sponsor:</b> ${detailValue(p.sponsor)}</div>
@@ -2137,12 +2136,12 @@ WTPages.switchProjView = function(view) {
       if (variance) {
         const approvedFunding = Number(p.projectBudgetAmount ?? p.ProjectBudgetAmount ?? profileBudget?.approvedAmount ?? variance.approvedBudget ?? variance.budget ?? 0);
         extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
-          <strong>Budget RAG</strong>
+          <strong>Budget</strong>
           <div class="grid g4" style="margin-top:8px;font-size:12.5px;">
             <div>Approved<br><b>${esc(p.projectBudgetCurrency || p.currency || variance.currency || 'MVR')} ${approvedFunding.toLocaleString('en-US')}</b></div>
             <div>Purchase<br><b>${esc(variance.currency || 'MVR')} ${Number(variance.purchaseTotal || 0).toLocaleString('en-US')}</b></div>
             <div>Actual<br><b>${esc(variance.currency || 'MVR')} ${Number(variance.actualTotal || 0).toLocaleString('en-US')}</b></div>
-            <div>RAG<br><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus || 'Green')}</span></div>
+            <div>Budget Status<br><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus || 'Green')}</span></div>
           </div>
         </div>`);
       }
@@ -3877,16 +3876,18 @@ WTPages.switchProjView = function(view) {
         return `<option value="${value}" ${index === selectedIndex ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${esc(header || `Column ${index + 1}`)}</option>`;
       })].join('');
       const autoMapped = boqImportAutoMapped.has(field.key);
-      const locked = autoMapped || boqImportUserLocked.has(field.key);
-      const state = autoMapped ? '<span class="badge green">Auto-mapped · locked</span>' : locked ? '<span class="badge green">Mapped · locked</span>' : '<span class="badge amber">Choose column</span>';
-      return `<tr><td style="font-weight:700">${esc(field.label)}${field.required ? ' *' : ''}</td><td><select data-boq-map="${field.key}" onchange="WTPages.changeBoqImportMapping(this)" ${locked ? 'disabled' : ''}>${options}</select></td><td>${state}</td></tr>`;
+      const state = selected
+        ? `<span class="badge green">${autoMapped ? 'Auto-mapped' : 'Mapped'}</span>`
+        : '<span class="badge amber">Choose column</span>';
+      return `<tr><td style="font-weight:700">${esc(field.label)}${field.required ? ' *' : ''}</td><td><select data-boq-map="${field.key}" onchange="WTPages.changeBoqImportMapping(this)">${options}</select></td><td>${state}</td></tr>`;
     }).join('');
-    target.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><strong>Map file columns</strong><span class="card-subtitle">${boqImportTotalRows} data row(s) detected</span></div><p class="card-subtitle" style="margin:0 0 10px">Recognized matches are locked. A field becomes locked after you choose its source column. One column can map to only one field.</p><div class="table-wrap"><table class="table"><thead><tr><th>BOQ field</th><th>Imported file header</th><th>Match</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    target.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><strong>Map file columns</strong><span class="card-subtitle">${boqImportTotalRows} data row(s) detected</span></div><p class="card-subtitle" style="margin:0 0 10px">Recognized columns are mapped automatically. You can change any mapping; one file column can map to only one BOQ field.</p><div class="table-wrap"><table class="table"><thead><tr><th>BOQ field</th><th>Imported file header</th><th>Match</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function changeBoqImportMapping(select) {
     boqImportMappings[select.dataset.boqMap] = select.value;
-    if (select.value) boqImportUserLocked.add(select.dataset.boqMap);
+    boqImportAutoMapped.delete(select.dataset.boqMap);
+    boqImportUserLocked.delete(select.dataset.boqMap);
     renderBoqImportMapping();
   }
 
