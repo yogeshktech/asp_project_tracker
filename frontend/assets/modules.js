@@ -177,11 +177,12 @@
 
   function renderProjectContextTabs(page, projectId) {
     const el = document.getElementById('apiPageRoot');
-    if (!el || !projectId || !PROJECT_CONTEXT_PAGES.has(page)) return;
+    if (!el || !PROJECT_CONTEXT_PAGES.has(page)) return;
     el.querySelector('.project-context-tabs')?.remove();
     const nav = `<nav class="project-context-tabs" aria-label="Project sections">${PROJECT_CONTEXT_TABS.map(([label, href]) => {
       const active = page === href;
-      return `<a class="project-context-tab${active ? ' active' : ''}"${active ? ' aria-current="page"' : ''} href="${href}?projectId=${encodeURIComponent(projectId)}">${label}</a>`;
+      const projectQuery = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+      return `<a class="project-context-tab${active ? ' active' : ''}"${active ? ' aria-current="page"' : ''} href="${href}${projectQuery}">${label}</a>`;
     }).join('')}</nav>`;
     const head = el.querySelector('.head');
     if (head) head.insertAdjacentHTML('afterend', nav);
