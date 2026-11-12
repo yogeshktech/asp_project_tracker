@@ -6091,8 +6091,6 @@ WTPages.switchProjView = function(view) {
   async function generateHandoverReport() {
     const selectedId = await selectedProjectId();
     if (typeof wtCan === 'function' && !wtCan('Closure', 'view', Number(selectedId))) { showToast('You do not have permission to view project closure.', 'danger'); return; }
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups to generate the handover report.', 'danger'); return; }
     const pid = await selectedProjectId();
     try {
       const project = await WisetrackAPI.getProject(Number(pid));
@@ -6108,7 +6106,7 @@ WTPages.switchProjView = function(view) {
       const doneTasks = taskRows.filter(t => /complete|closed/i.test(t.status || '') || Number(t.completionPercent || 0) >= 100).length;
       const htmlList = (items, empty) => items.length ? `<ul>${items.join('')}</ul>` : `<p>${empty}</p>`;
       const escDate = value => esc(value ? new Date(value).toLocaleDateString() : '—');
-      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Project Completion & Handover Report</title><style>body{font:14px Arial,sans-serif;color:#111827;margin:32px;line-height:1.5}h1{color:#123d67;border-bottom:3px solid #123d67;padding-bottom:10px}h2{font-size:17px;color:#123d67;margin:22px 0 6px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #cbd5e1;padding:7px;text-align:left}th{background:#eff6ff}.signature{display:flex;gap:50px;margin-top:48px}.signature div{width:45%;border-top:1px solid #111;padding-top:6px}@media print{body{margin:15mm}}</style></head><body>
+      const reportHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Project Completion & Handover Report</title><style>body{font:14px Arial,sans-serif;color:#111827;margin:32px;line-height:1.5}h1{color:#123d67;border-bottom:3px solid #123d67;padding-bottom:10px}h2{font-size:17px;color:#123d67;margin:22px 0 6px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #cbd5e1;padding:7px;text-align:left}th{background:#eff6ff}.signature{display:flex;gap:50px;margin-top:48px}.signature div{width:45%;border-top:1px solid #111;padding-top:6px}@media print{body{margin:15mm}}</style></head><body>
         <h1>Project Completion / Handover Report</h1><p><b>Project:</b> ${esc(project.name || project.Name)} · <b>Code:</b> ${esc(project.code || project.Code || '—')}</p>
         <p><b>Status:</b> ${esc(project.status || project.Status)} · <b>Project dates:</b> ${escDate(project.startDate || project.StartDate)} – ${escDate(project.endDate || project.EndDate)}</p>
         <h2>Project Summary & Scope</h2><p>${esc(project.description || project.Description || 'No scope description recorded.')}</p><p>${esc(project.profileNotes || project.ProfileNotes || '')}</p>
@@ -6118,10 +6116,20 @@ WTPages.switchProjView = function(view) {
         <h2>Leftover Inventory Reconciliation</h2>${inventoryRows.length ? `<table><thead><tr><th>Item</th><th>Quantity</th><th>Disposition / Remarks</th></tr></thead><tbody>${inventoryRows.map(i => `<tr><td>${esc(i.description || i.Description || i.item?.name || i.Item?.Name || '—')}</td><td>${Number(i.quantity ?? i.Quantity ?? 0)}</td><td>${esc(i.remarks || i.Remarks || '—')}</td></tr>`).join('')}</tbody></table>` : '<p>Inventory reconciliation has not been recorded.</p>'}
         <h2>Handover Notes / Outstanding Actions</h2><p>Record punch-list status, warranties, manuals, keys, training and any accepted outstanding action before signature.</p><p style="min-height:70px;border-bottom:1px solid #cbd5e1"></p>
         <div class="signature"><div>Project Manager signature / date</div><div>Client / receiving representative signature / date</div></div><p style="margin-top:30px;color:#64748b">Generated ${new Date().toLocaleString()}. Review, complete notes, sign, and upload the signed copy before project closure.</p>
-        <script>window.onload=()=>window.print()<\/script></body></html>`);
-      w.document.close();
+        </body></html>`;
+      const reportBlob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
+      const reportUrl = URL.createObjectURL(reportBlob);
+      const downloadLink = document.createElement('a');
+      const safeProjectName = String(project.name || project.Name || 'project').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '');
+      downloadLink.href = reportUrl;
+      downloadLink.download = `${safeProjectName || 'project'}-handover-report.html`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      setTimeout(() => URL.revokeObjectURL(reportUrl), 1000);
+      showToast('Handover report downloaded.', 'success');
     } catch (err) {
-      w.document.write(`<p>Could not generate handover report: ${esc(err.message || 'Request failed')}</p>`); w.document.close();
+      showToast(`Could not generate handover report: ${err.message || 'Request failed'}`, 'danger');
     }
   }
 
