@@ -2180,29 +2180,41 @@ button.btn[disabled] {
 .project-context-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
   overflow: visible;
   margin: 0 0 18px;
-  padding: 0 0 8px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 8px;
+  border: 1px solid var(--primary-border);
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--primary-light) 100%);
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.06);
 }
 
 .project-context-tab {
   flex: 0 0 auto;
-  padding: 9px 13px;
-  border-radius: 7px 7px 0 0;
-  color: var(--text-muted);
+  padding: 9px 15px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-main);
   font-size: 12px;
   font-weight: 700;
   text-decoration: none;
-  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 
-.project-context-tab:hover,
-.project-context-tab.active {
+.project-context-tab:hover {
   color: var(--primary);
-  background: var(--primary-light);
-  border-bottom-color: var(--primary);
+  background: var(--bg-card);
+  border-color: var(--primary-border);
+  transform: translateY(-1px);
+}
+
+.project-context-tab.active {
+  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--primary) 26%, transparent);
 }
 
 .alert {

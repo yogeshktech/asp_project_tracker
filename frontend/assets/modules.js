@@ -2986,14 +2986,12 @@ WTPages.switchProjView = function(view) {
       const money = amount => `${currency} ${Number(amount || 0).toLocaleString('en-US')}`;
       const budget = Number(variance.budget ?? variance.approvedBudget ?? 0);
       const forecast = Number(variance.forecastTotal ?? (Number(variance.purchaseTotal || 0) + Number(variance.actualSpend ?? variance.actualTotal ?? 0)));
-      const ragStatus = forecast > budget ? 'Red' : budget > 0 && forecast >= budget * 0.8 ? 'Amber' : 'Green';
       $('#varianceBox').innerHTML = `
         <div class="grid g4">
           <div><div class="kpi-label">Budget</div><strong>${money(variance.budget ?? variance.approvedBudget)}</strong></div>
           <div><div class="kpi-label">Actual Spend</div><strong>${money(variance.actualSpend ?? variance.actualTotal)}</strong></div>
           <div><div class="kpi-label">Variance (Budget - Actual)</div><strong>${money(variance.varianceAmount)}</strong></div>
           <div><div class="kpi-label">Budget Status</div><span class="badge ${variance.budgetStatus === 'Over Budget' ? 'red' : variance.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(variance.budgetStatus || 'On Budget')}</span></div>
-          <div><div class="kpi-label">RAG</div><span class="badge ${ragStatus === 'Red' ? 'red' : ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(ragStatus)}</span></div>
         </div>
         <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
           <strong>Variance Explanations</strong>
