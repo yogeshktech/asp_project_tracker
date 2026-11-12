@@ -2905,7 +2905,7 @@ WTPages.switchProjView = function(view) {
     openModal('Import Purchase / Actual Cost CSV', `
       <form onsubmit="WTPages.saveCostImport(event)">
         <div class="form-grid">
-          <div class="field"><label>Entry type *</label><select id="ciType"><option>Purchase</option><option>Actual</option></select></div>
+          <div class="field"><label>Entry type</label><select id="ciType" disabled><option value="Actual" selected>Actual</option></select></div>
           <div class="field"><label>CSV file *</label><input id="ciFile" type="file" accept=".csv,.tsv,.txt" required onchange="WTPages.previewCostImport(this)"></div>
           <div class="field full"><small>Map your file columns below. Amount is required. Item Name is free text; it links to a BOQ line when the name matches, otherwise it is saved as the cost description. Dates may use YYYY-MM-DD or DD-MM-YYYY.</small></div>
         </div>
@@ -3004,7 +3004,7 @@ WTPages.switchProjView = function(view) {
     const projectId = await selectedProjectId();
     try {
       const result = await WisetrackAPI.importCosts({
-        projectId: Number(projectId), type: $('#ciType').value,
+        projectId: Number(projectId), type: 'Actual',
         rows: pendingCostImportRows.map(({ rowNo, errors, ...row }) => row)
       });
       pendingCostImportRows = [];
