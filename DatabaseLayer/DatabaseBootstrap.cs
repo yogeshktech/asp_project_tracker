@@ -41,6 +41,7 @@ public static class DatabaseBootstrap
     {
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS boq_item_ids_json TEXT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS includes_other BOOLEAN NOT NULL DEFAULT FALSE""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS vendor TEXT NULL""");
     }
 
     public static async Task EnsureProjectBudgetAllocationSchemaAsync(AppDbContext db)

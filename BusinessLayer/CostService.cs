@@ -70,6 +70,7 @@ public class CostService : ICostService
             BoqItemIdsJson = boqItemIds.Count == 0 ? null : JsonSerializer.Serialize(boqItemIds),
             IncludesOther = request.IncludesOther,
             CostCenterId = request.CostCenterId,
+            Vendor = request.Vendor,
             Description = request.Description,
             Amount = request.Amount,
             CostDate = canChangeDate && request.CostDate.HasValue
@@ -117,6 +118,7 @@ public class CostService : ICostService
         cost.BoqItemIdsJson = boqItemIds.Count == 0 ? null : JsonSerializer.Serialize(boqItemIds);
         cost.IncludesOther = request.IncludesOther;
         cost.CostCenterId = request.CostCenterId;
+        cost.Vendor = request.Vendor;
         cost.Description = request.Description; cost.Amount = request.Amount;
         if (canChangeDate && request.CostDate.HasValue) cost.CostDate = request.CostDate.Value;
         await _repository.UpdateActualAsync(cost);
@@ -154,7 +156,7 @@ public class CostService : ICostService
                     await AddActualAsync(new CreateActualCostRequest
                     {
                         ProjectId = request.ProjectId, BoqItemId = row.BoqItemId, CostCenterId = row.CostCenterId,
-                        Amount = row.Amount, CostDate = row.CostDate, Description = row.Description
+                        Amount = row.Amount, CostDate = row.CostDate, Vendor = row.Vendor, Description = row.Description
                     }, userId);
                 result.Imported++;
             }

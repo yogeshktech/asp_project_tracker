@@ -435,6 +435,7 @@ CREATE TABLE actual_costs (
     project_id     BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     boq_item_id    BIGINT REFERENCES boq_items(id),
     cost_center_id BIGINT REFERENCES cost_centers(id),
+    vendor         TEXT,
     description    TEXT,
     amount         NUMERIC(18,2) NOT NULL,
     cost_date      DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -443,6 +444,7 @@ CREATE TABLE actual_costs (
 );
 ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS boq_item_ids_json TEXT NULL;
 ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS includes_other BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS vendor TEXT NULL;
 
 -- =============================================================================
 -- 09. Issue / Incident Tracker

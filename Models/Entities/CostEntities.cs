@@ -27,6 +27,7 @@ public class ActualCost
     public string? BoqItemIdsJson { get; set; }
     public bool IncludesOther { get; set; }
     public long? CostCenterId { get; set; }
+    public string? Vendor { get; set; }
     public string? Description { get; set; }
     public decimal Amount { get; set; }
     public DateOnly CostDate { get; set; }

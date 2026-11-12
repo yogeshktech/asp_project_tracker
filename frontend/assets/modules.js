@@ -3447,6 +3447,7 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>Date</label><input id="aDate" type="date" value="${existing?.costDate?.slice(0, 10) || todayLocal}" ${canChangeActualDate ? '' : 'disabled'}>${canChangeActualDate ? '' : '<small>Only an Admin can change this date.</small>'}</div>
           <div class="field full"><label>BOQ Line *</label><select id="aBoq" multiple size="5" required style="min-height:130px">${lineOptions}<option value="other">Other</option></select><small>Use Ctrl (Windows) or Command (Mac) to select multiple BOQ lines.</small></div>
           <div class="field full"><label id="aRemLabel">Remarks</label><input id="aRem" value="${esc(existing?.description || '')}"></div>
+          <div class="field"><label>Vendor</label><input id="aVendor" value="${esc(existing?.vendor || '')}"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
@@ -3489,6 +3490,7 @@ WTPages.switchProjView = function(view) {
         amount: Number($('#aAmt').value),
         costDate: $('#aDate').value || null,
         costCenterId: null,
+        vendor: $('#aVendor').value.trim() || null,
         description: $('#aRem').value.trim()
       };
       if (!selectedValues.length) { showToast('Select one or more BOQ lines or Other.', 'danger'); return; }
