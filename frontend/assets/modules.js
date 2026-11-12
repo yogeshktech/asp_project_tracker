@@ -4,6 +4,12 @@
   let drawingQueuedFiles = [];
   let budgetFormQueuedFiles = [];
   let budgetRevisionQueuedFiles = [];
+  let boqImportHeaders = [];
+  let boqImportMappings = {};
+  let boqImportAutoMapped = new Set();
+  let boqImportUserLocked = new Set();
+  let boqImportPreviewRequest = 0;
+  let boqImportTotalRows = 0;
   const WT_TIME_ZONE = 'Indian/Maldives';
   function wtMaldivesParts(value = new Date()) {
     const parts = new Intl.DateTimeFormat('en-GB', { timeZone: WT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
@@ -3711,6 +3717,11 @@ WTPages.switchProjView = function(view) {
   async function boqImport(targetBoqId = null, sourceVersionId = null) {
     const target = targetBoqId ? await WisetrackAPI.getBoq(targetBoqId) : null;
     const pid = Number(target?.projectId || target?.ProjectId) || await selectedProjectId();
+    boqImportHeaders = [];
+    boqImportMappings = {};
+    boqImportAutoMapped = new Set();
+    boqImportUserLocked = new Set();
+    boqImportTotalRows = 0;
     openModal(targetBoqId ? 'Import into a new BOQ revision' : 'Import BOQ (flexible vendor file)', `
       <form onsubmit="WTPages.saveBoqImport(event)">
         <input type="hidden" id="boqProj" value="${pid}">
@@ -3718,15 +3729,16 @@ WTPages.switchProjView = function(view) {
         <input type="hidden" id="boqSourceVersionId" value="${sourceVersionId || ''}">
         <div class="field"><label>Title *</label><input id="boqTitle" value="${esc(target?.title || target?.Title || 'Imported BOQ')}" required></div>
         <div class="field"><label>Excel / CSV / TSV from 3rd party (flexible column names)</label>
-          <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv">
+          <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv" onchange="WTPages.previewBoqImportFile(this)">
           <button type="button" class="btn sm" style="margin-top:8px" onclick="WTPages.downloadBoqImportTemplate()"><i class="fa-solid fa-download"></i> Download standard CSV template</button>
           <small class="card-subtitle" style="display:block;margin-top:4px">Replace the sample row. Required: Item Name, Unit, Quantity, Unit Price. Additional consumption, brand, and remarks are optional.</small>
         </div>
-        <div class="field"><label>Worksheet name (optional for Excel)</label><input id="boqWorksheet" placeholder="For example: Civil. Leave blank to auto-detect the BOQ sheet."></div>
+        <div class="field"><label>Worksheet name (optional for Excel)</label><input id="boqWorksheet" placeholder="For example: Civil. Leave blank to auto-detect the BOQ sheet." onchange="WTPages.previewBoqImportFile(document.getElementById('boqFile'))"></div>
+        <div id="boqImportMapping" style="display:none;margin:12px 0;padding:14px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-card-hover)"></div>
         <div class="field"><label>Or paste rows</label>
           <textarea id="boqJson" rows="8" placeholder="Description,Unit,Quantity,Unit Price&#10;Cable tray,Nos,10,1500"></textarea>
         </div>
-        <p style="font-size:12px;color:var(--text-muted)">Recognizes description/qty/rate aliases. Validation errors can be downloaded before commit.</p>
+        <p style="font-size:12px;color:var(--text-muted)">File columns are previewed and mapped before validation. Validation errors can still be downloaded before import.</p>
         <div class="modalfoot" style="padding:0;margin-top:12px">
           <button type="button" class="btn" onclick="WTPages.saveBoqImport(event, false)">Validate only</button>
           <button class="btn primary" type="submit">Validate &amp; Import</button>
@@ -3734,11 +3746,98 @@ WTPages.switchProjView = function(view) {
       </form>`);
   }
 
+  const BOQ_IMPORT_FIELDS = [
+    { key: 'Description', label: 'Item Name / Description', required: true, aliases: ['itemname', 'description', 'desc', 'particulars', 'itemdescription', 'item', 'name', 'workdescription', 'materialdescription', 'scopeofwork'] },
+    { key: 'Unit', label: 'Unit', required: true, aliases: ['unit', 'uom', 'uomunit', 'unitofmeasure', 'measurementunit'] },
+    { key: 'Quantity', label: 'Quantity', required: true, aliases: ['quantity', 'qty', 'qnty', 'nos', 'qtynos', 'quantitynos', 'requiredqty', 'boqquantity'] },
+    { key: 'UnitPrice', label: 'Unit Price', required: true, aliases: ['unitprice', 'price', 'rate', 'unitrate', 'purchaseprice', 'basicrate', 'estimatedrate', 'costperunit'] },
+    { key: 'ItemCode', label: 'Item Code', aliases: ['itemcode', 'code', 'sku', 'itemno', 'itemnumber', 'materialcode', 'productcode', 'itemid'] },
+    { key: 'DisplayLineNo', label: 'Line Number', aliases: ['slno', 'serialno', 'serialnumber', 'sno'] },
+    { key: 'TotalAmount', label: 'Line Total', aliases: ['total', 'amount', 'totalamount', 'lineamount', 'linetotal', 'extendedamount', 'totalprice'] },
+    { key: 'AdditionalConsumption', label: 'Additional Consumption', aliases: ['additionalconsumption', 'additionalqty', 'additionalquantity', 'additionalconsumptionqty'] },
+    { key: 'AdditionalConsumptionUnitPrice', label: 'Additional Consumption Price', aliases: ['priceforadditionalconsumption', 'additionalconsumptionprice', 'additionalunitprice'] },
+    { key: 'Brand', label: 'Brand / Make', aliases: ['brand', 'make', 'manufacturer'] },
+    { key: 'Remarks', label: 'Remarks', aliases: ['remark', 'remarks', 'notes', 'specification', 'specifications'] }
+  ];
+
+  function normalizeBoqHeader(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+  async function previewBoqImportFile(input) {
+    const file = input?.files?.[0];
+    const target = $('#boqImportMapping');
+    if (!target) return;
+    const requestId = ++boqImportPreviewRequest;
+    if (!file) { target.style.display = 'none'; boqImportHeaders = []; boqImportMappings = {}; boqImportAutoMapped.clear(); boqImportUserLocked.clear(); boqImportTotalRows = 0; return; }
+    boqImportHeaders = [];
+    boqImportMappings = {};
+    boqImportAutoMapped.clear();
+    boqImportUserLocked.clear();
+    boqImportTotalRows = 0;
+    target.style.display = 'block';
+    target.innerHTML = '<div class="card-subtitle"><i class="fa-solid fa-spinner fa-spin"></i> Reading file headers...</div>';
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      if ($('#boqWorksheet')?.value.trim()) form.append('worksheet', $('#boqWorksheet').value.trim());
+      const preview = await WisetrackAPI.previewBoqImportFile(form);
+      if (requestId !== boqImportPreviewRequest) return;
+      boqImportHeaders = preview.headers || preview.Headers || [];
+      boqImportTotalRows = Number(preview.totalRows ?? preview.TotalRows ?? 0);
+      boqImportMappings = {};
+      boqImportAutoMapped = new Set();
+      boqImportUserLocked = new Set();
+      const used = new Set();
+      for (const field of BOQ_IMPORT_FIELDS) {
+        const aliases = new Set(field.aliases);
+        const sourceIndex = boqImportHeaders.findIndex((header, index) => !used.has(index) && aliases.has(normalizeBoqHeader(header)));
+        if (sourceIndex >= 0) {
+          boqImportMappings[field.key] = `#${sourceIndex}`;
+          boqImportAutoMapped.add(field.key);
+          used.add(sourceIndex);
+        }
+      }
+      renderBoqImportMapping();
+    } catch (error) {
+      if (requestId !== boqImportPreviewRequest) return;
+      target.innerHTML = `<div style="color:var(--danger,#b91c1c)">${esc(error.message || 'Could not read import file headers.')}</div>`;
+    }
+  }
+
+  function renderBoqImportMapping() {
+    const target = $('#boqImportMapping');
+    if (!target) return;
+    const rows = BOQ_IMPORT_FIELDS.map(field => {
+      const selected = boqImportMappings[field.key] || '';
+      const selectedIndex = selected.startsWith('#') ? Number(selected.slice(1)) : -1;
+      const usedByOthers = new Set(Object.entries(boqImportMappings).filter(([key, value]) => key !== field.key && value).map(([, value]) => value));
+      const options = [`<option value="">${field.required ? 'Select a column (required)' : 'Not mapped'}</option>`, ...boqImportHeaders.map((header, index) => {
+        const value = `#${index}`;
+        const disabled = usedByOthers.has(value) && value !== selected;
+        return `<option value="${value}" ${index === selectedIndex ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${esc(header || `Column ${index + 1}`)}</option>`;
+      })].join('');
+      const autoMapped = boqImportAutoMapped.has(field.key);
+      const locked = autoMapped || boqImportUserLocked.has(field.key);
+      const state = autoMapped ? '<span class="badge green">Auto-mapped · locked</span>' : locked ? '<span class="badge green">Mapped · locked</span>' : '<span class="badge amber">Choose column</span>';
+      return `<tr><td style="font-weight:700">${esc(field.label)}${field.required ? ' *' : ''}</td><td><select data-boq-map="${field.key}" onchange="WTPages.changeBoqImportMapping(this)" ${locked ? 'disabled' : ''}>${options}</select></td><td>${state}</td></tr>`;
+    }).join('');
+    target.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><strong>Map file columns</strong><span class="card-subtitle">${boqImportTotalRows} data row(s) detected</span></div><p class="card-subtitle" style="margin:0 0 10px">Recognized matches are locked. A field becomes locked after you choose its source column. One column can map to only one field.</p><div class="table-wrap"><table class="table"><thead><tr><th>BOQ field</th><th>Imported file header</th><th>Match</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function changeBoqImportMapping(select) {
+    boqImportMappings[select.dataset.boqMap] = select.value;
+    if (select.value) boqImportUserLocked.add(select.dataset.boqMap);
+    renderBoqImportMapping();
+  }
+
   async function saveBoqImport(e, commitFlag) {
     e.preventDefault();
     try {
       const file = $('#boqFile')?.files?.[0];
       const commit = commitFlag !== false;
+      if (file) {
+        const missing = BOQ_IMPORT_FIELDS.filter(field => field.required && !boqImportMappings[field.key]);
+        if (missing.length) { showToast(`Map required fields: ${missing.map(field => field.label).join(', ')}.`, 'danger'); return; }
+      }
       let result;
       if (file) {
         const form = new FormData();
@@ -3749,6 +3848,7 @@ WTPages.switchProjView = function(view) {
         if ($('#boqWorksheet')?.value.trim()) form.append('worksheet', $('#boqWorksheet').value.trim());
         form.append('commit', String(commit));
         form.append('file', file);
+        form.append('columnMapping', JSON.stringify(boqImportMappings));
         result = await WisetrackAPI.importBoqFile(form);
       } else {
         let text = ($('#boqJson').value || '').trim();
@@ -6620,7 +6720,7 @@ WTPages.switchProjView = function(view) {
     openCostImportModal, previewCostImport, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
-    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
+    boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, previewBoqImportFile, changeBoqImportMapping, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,

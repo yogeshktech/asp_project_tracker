@@ -322,6 +322,7 @@ const WisetrackAPI = {
   removeBoqRevisionItem(id, versionId, itemId) { return this.del(`/boq/${id}/versions/${versionId}/items/${itemId}`); },
   importBoq(data) { return this.post('/boq/import', data); },
   importBoqFile(data) { return this._fetch('/boq/import-file', { method: 'POST', body: data }); },
+  previewBoqImportFile(data) { return this._fetch('/boq/import-file/preview', { method: 'POST', body: data }); },
   createBoqFromMaster(projectId, lines, boqId = null, revisionNotes = null, sourceVersionId = null) { return this.post('/boq/from-master', { projectId, boqId, revisionNotes, sourceVersionId, lines }); },
   uploadBoqAttachment(projectId, file) {
     const form = new FormData(); form.append('projectId', projectId); form.append('file', file);

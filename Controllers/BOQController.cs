@@ -183,7 +183,10 @@ public class BOQController : ControllerBase
             return BadRequest(new { message = "A non-empty CSV or XLSX file is required." });
         try
         {
-            var lines = await BOQSpreadsheetReader.ReadAsync(request.File, request.Worksheet);
+            var mapping = string.IsNullOrWhiteSpace(request.ColumnMapping)
+                ? null
+                : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(request.ColumnMapping);
+            var lines = await BOQSpreadsheetReader.ReadAsync(request.File, request.Worksheet, mapping);
             var result = await _boqService.ImportAsync(new BOQImportDto
             {
                 ProjectId = request.ProjectId,
@@ -203,6 +206,21 @@ public class BOQController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+        catch (System.Text.Json.JsonException)
+        {
+            return BadRequest(new { message = "The column mapping is invalid. Preview the file and map the columns again." });
+        }
+    }
+
+    [HttpPost("import-file/preview")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> PreviewImportFile([FromForm] BOQFileImportRequest request)
+    {
+        if (request.File == null || request.File.Length == 0)
+            return BadRequest(new { message = "Choose a non-empty CSV or XLSX file." });
+        try { return Ok(await BOQSpreadsheetReader.PreviewAsync(request.File, request.Worksheet)); }
+        catch (InvalidDataException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
     [HttpPost("from-master")]
@@ -250,6 +268,7 @@ public sealed class BOQFileImportRequest
     public string? Title { get; set; }
     public bool Commit { get; set; }
     public string? Worksheet { get; set; }
+    public string? ColumnMapping { get; set; }
     public IFormFile File { get; set; } = null!;
 }
 
@@ -270,7 +289,17 @@ internal static class BOQSpreadsheetReader
     private static readonly string[] BrandHeaders = ["brand", "make", "manufacturer"];
     private static readonly string[] RemarkHeaders = ["remark", "remarks", "notes", "specification", "specifications"];
 
-    public static async Task<List<BOQImportLineDto>> ReadAsync(IFormFile file, string? worksheetName = null)
+    public static async Task<object> PreviewAsync(IFormFile file, string? worksheetName = null)
+    {
+        var rows = await ReadRowsAsync(file, worksheetName);
+        if (rows.Count < 2) throw new InvalidDataException("The spreadsheet must contain a header row and at least one data row.");
+        var headerRow = FindHeaderRow(rows);
+        var headers = rows[headerRow].Select(value => value.Trim()).ToList();
+        var dataRows = rows.Skip(headerRow + 1).Where(row => row.Any(value => !string.IsNullOrWhiteSpace(value))).ToList();
+        return new { headers, totalRows = dataRows.Count, sampleRows = dataRows.Take(5).ToList() };
+    }
+
+    private static async Task<List<List<string>>> ReadRowsAsync(IFormFile file, string? worksheetName)
     {
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         List<List<string>> rows;
@@ -283,7 +312,12 @@ internal static class BOQSpreadsheetReader
         else if (ext == ".xlsx") rows = ReadXlsx(file, worksheetName);
         else throw new InvalidDataException("Supported formats are .csv, .tsv, .txt, and .xlsx.");
 
-        if (rows.Count < 2) throw new InvalidDataException("The spreadsheet must contain a header row and at least one data row.");
+        return rows;
+    }
+
+    private static int FindHeaderRow(List<List<string>> rows)
+    {
+        if (rows.Count < 2) return 0;
         // Vendor workbooks often put a title, project details, or blank rows above the table.
         // Find the first row that looks like a BOQ header instead of requiring row one.
         var headerRow = -1;
@@ -295,17 +329,33 @@ internal static class BOQSpreadsheetReader
                 (a.Length >= 4 && h.StartsWith(a, StringComparison.OrdinalIgnoreCase))));
             if ((Has(DescriptionHeaders) || Has(CodeHeaders)) && Has(QtyHeaders) && Has(PriceHeaders)) { headerRow = i; break; }
         }
-        if (headerRow < 0) headerRow = 0;
+        return headerRow < 0 ? 0 : headerRow;
+    }
+
+    public static async Task<List<BOQImportLineDto>> ReadAsync(IFormFile file, string? worksheetName = null, Dictionary<string, string>? columnMapping = null)
+    {
+        var rows = await ReadRowsAsync(file, worksheetName);
+        if (rows.Count < 2) throw new InvalidDataException("The spreadsheet must contain a header row and at least one data row.");
+        var headerRow = FindHeaderRow(rows);
         var headers = rows[headerRow].Select(Normalize).ToList();
         int Find(string[] aliases) => headers.FindIndex(h => aliases.Any(a =>
             string.Equals(h, a, StringComparison.OrdinalIgnoreCase) ||
             (a.Length >= 4 && h.StartsWith(a, StringComparison.OrdinalIgnoreCase))));
-        var code = Find(CodeHeaders); var description = Find(DescriptionHeaders);
-        var serial = Find(["slno", "serialno", "serialnumber", "sno"]);
-        var qty = Find(QtyHeaders); var price = Find(PriceHeaders); var unit = Find(UnitHeaders);
-        var total = Find(TotalHeaders); var brand = Find(BrandHeaders); var remarks = Find(RemarkHeaders);
-        var additionalQty = Find(["additionalconsumption", "additionalqty", "additionalquantity", "additionalconsumptionqty"]);
-        var additionalPrice = Find(["priceforadditionalconsumption", "additionalconsumptionprice", "additionalunitprice"]);
+        int FindMapped(string key, string[] aliases)
+        {
+            if (columnMapping == null) return Find(aliases);
+            if (!columnMapping.TryGetValue(key, out var source) || string.IsNullOrWhiteSpace(source)) return -1;
+            if (source.StartsWith('#') && int.TryParse(source.AsSpan(1), out var columnIndex))
+                return columnIndex >= 0 && columnIndex < headers.Count ? columnIndex : -1;
+            var normalizedSource = Normalize(source);
+            return headers.FindIndex(header => string.Equals(header, normalizedSource, StringComparison.OrdinalIgnoreCase));
+        }
+        var code = FindMapped("ItemCode", CodeHeaders); var description = FindMapped("Description", DescriptionHeaders);
+        var serial = FindMapped("DisplayLineNo", ["slno", "serialno", "serialnumber", "sno"]);
+        var qty = FindMapped("Quantity", QtyHeaders); var price = FindMapped("UnitPrice", PriceHeaders); var unit = FindMapped("Unit", UnitHeaders);
+        var total = FindMapped("TotalAmount", TotalHeaders); var brand = FindMapped("Brand", BrandHeaders); var remarks = FindMapped("Remarks", RemarkHeaders);
+        var additionalQty = FindMapped("AdditionalConsumption", ["additionalconsumption", "additionalqty", "additionalquantity", "additionalconsumptionqty"]);
+        var additionalPrice = FindMapped("AdditionalConsumptionUnitPrice", ["priceforadditionalconsumption", "additionalconsumptionprice", "additionalunitprice"]);
         if (description < 0 && code < 0) throw new InvalidDataException("Could not identify an item code or description column.");
         if (qty < 0) throw new InvalidDataException("Could not identify a quantity column (for example Qty or Quantity).");
         if (price < 0) throw new InvalidDataException("Could not identify a price column (for example Rate or Unit Price).");
