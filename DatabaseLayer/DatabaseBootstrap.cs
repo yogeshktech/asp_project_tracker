@@ -47,7 +47,9 @@ public static class DatabaseBootstrap
     public static async Task EnsureTaskCompletionEvidenceSchemaAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS description TEXT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS start_date DATE NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE milestones ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
     }
 
@@ -182,7 +184,9 @@ public static class DatabaseBootstrap
         await EnsureMilestonePlanningColumnsAsync(db, logger);
         await EnsureScheduledNotificationSchemaAsync(db, logger);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS description TEXT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS start_date DATE NULL""");
         await EnsureDrawingUploadSchemaAsync(db);
         await EnsureActualCostBoqItemsSchemaAsync(db);
         await DbSeeder.SeedAsync(db);
