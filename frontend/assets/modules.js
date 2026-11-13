@@ -4319,7 +4319,7 @@ WTPages.switchProjView = function(view) {
       + tableWrap(kind === 'milestones'
         ? ['ID', 'Milestone & Project', 'Schedule', 'Status', 'Progress', 'Actions']
         : kind === 'planning'
-        ? ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Owner', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
+        ? ['ID', 'Task', 'Description', 'Remark', 'Sub-Task', 'Child Task', 'Other', 'Owner', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
         : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="display:none;margin-top:16px;"><h3 class="card-title">⚠️ Automatic Task Alerts</h3><small class="card-subtitle">Generated for overdue tasks or tasks without a progress update for 7 days. Update or complete the task to clear an alert.</small><div id="excList">Loading...</div></div>`;
 
@@ -4337,7 +4337,7 @@ WTPages.switchProjView = function(view) {
       };
     }
     
-    const nestCols = kind === 'planning' ? 13 : 8;
+    const nestCols = kind === 'planning' ? 15 : 8;
     if (kind === 'planning') {
       el.querySelector('#tasksBody')?.closest('.table-wrap')?.classList.add('planning-table-wrap');
       el.querySelector('#tasksBody')?.closest('table')?.classList.add('planning-table');
@@ -4491,6 +4491,7 @@ WTPages.switchProjView = function(view) {
                 <span id="taskFiles-${Number(t.id)}"></span>
                 ${kind === 'planning' ? '' : wtDepLineHtml(t)}
               </td>
+              ${kind === 'planning' ? `<td class="planning-text-cell">${esc(t.description || t.Description || '—')}</td><td class="planning-text-cell">${esc(t.remarks || t.Remarks || '—')}</td>` : ''}
               ${nestCells(0, dash)}
               ${planningInfoCells(t)}
               <td><span class="badge ${wtRowBlocked(t) ? 'amber' : statusBadge(t.status, pct)}">${wtRowBlocked(t) ? 'Waiting' : esc(formatStatus(t.status))}</span></td>
@@ -4512,6 +4513,7 @@ WTPages.switchProjView = function(view) {
               <tr class="subtask-row nest-depth-${depth}" id="subtask-row-${Number(s.id)}">
                 <td><code>${code}</code></td>
                 <td class="nest-col depth-task">${dash}</td>
+                ${kind === 'planning' ? `<td class="planning-text-cell">${esc(s.description || s.Description || '—')}</td><td class="planning-text-cell">${esc(s.remarks || s.Remarks || '—')}</td>` : ''}
                 ${nestCells(depth, nestTitle(s) + (kind === 'planning' ? '' : wtDepLineHtml(s)))}
                 ${planningInfoCells({ ...s, _projectId: t._projectId }, true)}
                 <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
