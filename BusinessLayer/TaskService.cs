@@ -507,13 +507,18 @@ public class TaskService : ITaskService
         task.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateTaskAsync(task);
 
-        if (!string.IsNullOrWhiteSpace(request.AttachmentPath))
+        var attachmentPaths = (request.AttachmentPaths ?? new List<string>())
+            .Append(request.AttachmentPath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var attachmentPath in attachmentPaths)
         {
             await _repository.AddAttachmentAsync(new TaskAttachment
             {
                 TaskId = task.Id,
-                FileName = Path.GetFileName(request.AttachmentPath),
-                FilePath = request.AttachmentPath,
+                FileName = Path.GetFileName(attachmentPath),
+                FilePath = attachmentPath,
                 UploadedBy = userId,
                 UploadedAt = DateTime.UtcNow
             });

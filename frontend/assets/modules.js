@@ -2,6 +2,9 @@
 (function () {
   const $ = (sel, el = document) => el.querySelector(sel);
   let drawingQueuedFiles = [];
+  let milestoneEvidenceQueuedFiles = [];
+  let taskUpdateQueuedFiles = [];
+  let taskUpdateUploadedPaths = [];
   let budgetFormQueuedFiles = [];
   let budgetRevisionQueuedFiles = [];
   let boqImportHeaders = [];
@@ -4599,6 +4602,7 @@ WTPages.switchProjView = function(view) {
   }
 
   async function openMilestoneModal(milestoneId = null) {
+    milestoneEvidenceQueuedFiles = [];
     const pid = await selectedProjectId();
     const requiredRight = milestoneId ? 'update' : 'edit';
     if (typeof wtCan === 'function' && !wtCan('Tasks', requiredRight, Number(pid))) {
@@ -4624,21 +4628,59 @@ WTPages.switchProjView = function(view) {
         <input type="hidden" id="mId" value="${milestone?.id || ''}">
         <div class="form-grid">
           <div class="field full"><label>Name *</label><input id="mName" required value="${esc(milestone?.name || '')}"></div>
-          <div class="field full"><label>Description</label><textarea id="mDesc" placeholder="Optional notes / backward-plan step">${esc(milestone?.description || '')}</textarea></div>
+          <div class="field full"><label>Description</label><textarea id="mDesc" placeholder="Optional notes">${esc(milestone?.description || '')}</textarea></div>
           <div class="field"><label>Start Date</label><input id="mStart" type="date" value="${esc(milestone?.startDate || '')}"></div>
           <div class="field"><label>Target Date</label><input id="mDate" type="date" value="${esc(milestone?.dueDate || '')}"></div>
           <div class="field"><label>Responsible Owner</label><select id="mOwner">${ownerOptions}</select></div>
           <div class="field"><label>Depends on milestone</label><select id="mDependency">${dependencyOptions}</select></div>
           <div class="field"><label>Status</label><select id="mStatus">${['NotStarted','InProgress','Delayed','Completed'].map(s => `<option value="${s}" ${s === status ? 'selected' : ''}>${s.replace(/([a-z])([A-Z])/g, '$1 $2')}</option>`).join('')}</select></div>
           <div class="field full"><label>Completion Evidence (document, link, or reference)</label><textarea id="mEvidence" placeholder="Add a file name, URL, sign-off reference, or evidence note">${esc(milestone?.completionEvidence || milestone?.CompletionEvidence || '')}</textarea></div>
-          <div class="field full"><label>Attach completion evidence</label><input id="mEvidenceFile" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"></div>
+          <div class="field full"><label>Attach completion evidence</label><input id="mEvidenceFile" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" onchange="WTPages.previewMilestoneEvidenceFiles(this)">
+            <small>Select one or more files. Use the remove button beside a file to remove it before saving.</small>
+            <div id="mEvidenceFilePreview" style="display:grid;gap:8px;margin-top:10px"></div>
+          </div>
         </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
+        <div id="milestoneEvidenceUploadStatus" role="status" aria-live="polite" style="display:none;margin-top:12px;color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin"></i> Saving milestone and uploading evidence...</div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button id="milestoneSaveButton" class="btn primary" type="submit">Save</button></div>
       </form>`);
+  }
+
+  function previewMilestoneEvidenceFiles(input) {
+    const preview = $('#mEvidenceFilePreview');
+    if (!preview || !input) return;
+    const pickedFiles = Array.from(input.files || []);
+    const seen = new Set(milestoneEvidenceQueuedFiles.map(file => `${file.name}\u0000${file.size}\u0000${file.lastModified}`));
+    pickedFiles.forEach(file => {
+      const key = `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+      if (!seen.has(key)) { milestoneEvidenceQueuedFiles.push(file); seen.add(key); }
+    });
+    syncMilestoneEvidenceInput(input);
+  }
+
+  function syncMilestoneEvidenceInput(input = $('#mEvidenceFile')) {
+    if (!input) return;
+    const transfer = new DataTransfer();
+    milestoneEvidenceQueuedFiles.forEach(file => transfer.items.add(file));
+    input.files = transfer.files;
+    const preview = $('#mEvidenceFilePreview');
+    if (!preview) return;
+    preview.innerHTML = milestoneEvidenceQueuedFiles.map((file, index) =>
+      `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px"><i class="fa-regular fa-file" style="font-size:22px;width:36px;text-align:center"></i><span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeMilestoneEvidenceFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`
+    ).join('');
+  }
+
+  function removeMilestoneEvidenceFile(index) {
+    milestoneEvidenceQueuedFiles = milestoneEvidenceQueuedFiles.filter((_, currentIndex) => currentIndex !== index);
+    syncMilestoneEvidenceInput();
   }
 
   async function saveMilestone(e) {
     e.preventDefault();
+    const saveButton = $('#milestoneSaveButton');
+    const uploadStatus = $('#milestoneEvidenceUploadStatus');
+    if (saveButton?.disabled) return;
+    if (saveButton) { saveButton.disabled = true; saveButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...'; }
+    if (uploadStatus) uploadStatus.style.display = 'block';
     try {
       const data = {
         projectId: Number($('#mProj').value),
@@ -4654,10 +4696,18 @@ WTPages.switchProjView = function(view) {
       const id = Number($('#mId')?.value) || 0;
       const saved = id ? await WisetrackAPI.updateMilestone(id, data) : await WisetrackAPI.createMilestone(data);
       const savedId = Number(saved.id || saved.Id || id);
-      const evidenceFile = $('#mEvidenceFile')?.files?.[0];
-      if (evidenceFile && savedId) await WisetrackAPI.uploadFile(evidenceFile, 'Milestones', savedId);
+      if (!id && savedId) $('#mId').value = String(savedId);
+      while (milestoneEvidenceQueuedFiles.length && savedId) {
+        await WisetrackAPI.uploadFile(milestoneEvidenceQueuedFiles[0], 'Milestones', savedId);
+        milestoneEvidenceQueuedFiles.shift();
+        syncMilestoneEvidenceInput();
+      }
       closeModal(); showToast(id ? 'Milestone updated' : 'Milestone created'); await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
+    finally {
+      if (saveButton?.isConnected) { saveButton.disabled = false; saveButton.textContent = 'Save'; }
+      if (uploadStatus?.isConnected) uploadStatus.style.display = 'none';
+    }
   }
 
   async function deleteMilestone(id, name) {
@@ -5005,6 +5055,8 @@ WTPages.switchProjView = function(view) {
 
   async function openTaskUpdateModal(taskId, subTaskId) {
     closeModal();
+    taskUpdateQueuedFiles = [];
+    taskUpdateUploadedPaths = [];
     const isSub = subTaskId != null && subTaskId !== '' && Number(subTaskId) > 0;
     let tasks = [];
     try {
@@ -5106,14 +5158,45 @@ WTPages.switchProjView = function(view) {
           </div>
           <div class="field full">
             <label>Attachment</label>
-            <input id="tuFile" type="file">
+            <input id="tuFile" type="file" multiple onchange="WTPages.previewTaskUpdateFiles(this)">
+            <small>Select one or more files. Use the remove button beside a file to remove it before saving.</small>
+            <div id="tuFilePreview" style="display:grid;gap:8px;margin-top:10px"></div>
           </div>
         </div>
+        <div id="taskUpdateUploadStatus" role="status" aria-live="polite" style="display:none;margin-top:12px;color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin"></i> Uploading attachments and saving update...</div>
         <div class="modalfoot" style="padding:0;margin-top:12px">
           <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-          <button class="btn primary" type="submit">Save</button>
+          <button id="taskUpdateSaveButton" class="btn primary" type="submit">Save</button>
         </div>
       </form>`);
+  }
+
+  function previewTaskUpdateFiles(input) {
+    if (!input) return;
+    const pickedFiles = Array.from(input.files || []);
+    const seen = new Set(taskUpdateQueuedFiles.map(file => `${file.name}\u0000${file.size}\u0000${file.lastModified}`));
+    pickedFiles.forEach(file => {
+      const key = `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+      if (!seen.has(key)) { taskUpdateQueuedFiles.push(file); seen.add(key); }
+    });
+    syncTaskUpdateFiles(input);
+  }
+
+  function syncTaskUpdateFiles(input = $('#tuFile')) {
+    if (!input) return;
+    const transfer = new DataTransfer();
+    taskUpdateQueuedFiles.forEach(file => transfer.items.add(file));
+    input.files = transfer.files;
+    const preview = $('#tuFilePreview');
+    if (!preview) return;
+    preview.innerHTML = taskUpdateQueuedFiles.map((file, index) =>
+      `<div style="display:flex;align-items:center;gap:10px;padding:7px;border:1px solid var(--border-color);border-radius:6px"><i class="fa-regular fa-file" style="font-size:22px;width:36px;text-align:center"></i><span style="flex:1">${esc(file.name)} <small style="color:var(--text-muted)">(${(file.size / 1024 / 1024).toFixed(2)} MB)</small></span><button class="btn sm danger" type="button" title="Remove selected file" aria-label="Remove selected file" onclick="WTPages.removeTaskUpdateFile(${index})"><i class="fa-solid fa-xmark"></i></button></div>`
+    ).join('');
+  }
+
+  function removeTaskUpdateFile(index) {
+    taskUpdateQueuedFiles = taskUpdateQueuedFiles.filter((_, currentIndex) => currentIndex !== index);
+    syncTaskUpdateFiles();
   }
 
   function onUpdateTaskChange(taskId) {
@@ -5132,10 +5215,17 @@ WTPages.switchProjView = function(view) {
 
   async function saveTaskUpdate(e) {
     e.preventDefault();
+    const saveButton = $('#taskUpdateSaveButton');
+    const uploadStatus = $('#taskUpdateUploadStatus');
+    if (saveButton?.disabled) return;
+    if (saveButton) { saveButton.disabled = true; saveButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...'; }
+    if (uploadStatus) uploadStatus.style.display = 'block';
     const taskId = Number($('#tuId').value);
     const subTaskId = Number($('#tuSubId')?.value) || null;
     if (!taskId) {
       showToast('Select a task to update.', 'danger');
+      if (saveButton) { saveButton.disabled = false; saveButton.textContent = 'Save'; }
+      if (uploadStatus) uploadStatus.style.display = 'none';
       return;
     }
     try {
@@ -5151,14 +5241,24 @@ WTPages.switchProjView = function(view) {
       payload.completionEvidence = $('#tuEvidence')?.value.trim() || null;
       const pctEl = $('#tuPct');
       if (pctEl && !pctEl.disabled) payload.completionPercent = Number(pctEl.value);
-      const file = $('#tuFile')?.files?.[0];
-      if (file) {
+      while (taskUpdateQueuedFiles.length) {
+        const file = taskUpdateQueuedFiles[0];
         const uploaded = await WisetrackAPI.uploadFile(file, 'Tasks', taskId);
-        payload.attachmentPath = uploaded.filePath || uploaded.FilePath;
+        const path = uploaded.filePath || uploaded.FilePath;
+        if (path) taskUpdateUploadedPaths.push(path);
+        taskUpdateQueuedFiles.shift();
+        syncTaskUpdateFiles();
       }
+      payload.attachmentPaths = taskUpdateUploadedPaths;
       await WisetrackAPI.addTaskUpdate(payload);
+      taskUpdateQueuedFiles = [];
+      taskUpdateUploadedPaths = [];
       closeModal(); showToast(subTaskId ? 'Sub-task updated' : 'Task updated'); await pageTasks('planning');
     } catch (err) { showToast(err.message, 'danger'); }
+    finally {
+      if (saveButton?.isConnected) { saveButton.disabled = false; saveButton.textContent = 'Save'; }
+      if (uploadStatus?.isConnected) uploadStatus.style.display = 'none';
+    }
   }
 
   async function openTaskHistory(taskId, subTaskId = null) {
@@ -6732,8 +6832,8 @@ WTPages.switchProjView = function(view) {
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, previewBoqImportFile, changeBoqImportMapping, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
-    openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
-    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,
+    openMilestoneModal, saveMilestone, deleteMilestone, previewMilestoneEvidenceFiles, removeMilestoneEvidenceFile, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
+    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, previewTaskUpdateFiles, removeTaskUpdateFile, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,
     openDependencyModal, saveDependency, focusDependency,
     openCreateSubTaskModal: (p, s, editId) => openCreateSubTaskModal(p, s, editId),
     saveSubTask: (e) => handleCreateSubTask(e),

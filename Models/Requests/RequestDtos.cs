@@ -384,6 +384,7 @@ public class CreateTaskUpdateRequest
     public string? Remarks { get; set; }
     public string? CompletionEvidence { get; set; }
     public string? AttachmentPath { get; set; }
+    public List<string> AttachmentPaths { get; set; } = new();
     public string? AttachmentName { get; set; }
 }
 
