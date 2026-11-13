@@ -4519,7 +4519,7 @@ WTPages.switchProjView = function(view) {
                 <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
                 ${progressCell(s, spct)}
                 ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(s)}` : ''}
-              <td class="table-actions">${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.parentSubTaskId || s.ParentSubTaskId || ''}, ${s.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${taskRowActionMenu(`
+              <td class="table-actions">${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.parentSubTaskId ?? s.ParentSubTaskId ?? 'null'}, ${s.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${taskRowActionMenu(`
                   ${wtUpdateBtnHtml(t.id, s.id, s, t._projectId || pid)}
                   <button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>
                   ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel.toLowerCase()} task" aria-label="Add ${addLabel.toLowerCase()} task" title="Add ${addLabel.toLowerCase()} task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}
@@ -6796,7 +6796,7 @@ WTPages.switchProjView = function(view) {
     planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,
     openDependencyModal, saveDependency, focusDependency,
-    openCreateSubTaskModal: (p, s) => openCreateSubTaskModal(p, s),
+    openCreateSubTaskModal: (p, s, editId) => openCreateSubTaskModal(p, s, editId),
     saveSubTask: (e) => handleCreateSubTask(e),
     refreshPlanning: () => pageTasks('planning'),
     openIssueModal, saveIssue, deleteIssue, commentIssue, escalateIssue,

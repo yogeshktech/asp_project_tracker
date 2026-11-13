@@ -57,7 +57,10 @@ public class SubTask
     public long? DependsOnTaskId { get; set; }
     public long? DependsOnSubTaskId { get; set; }
     public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? CompletionEvidence { get; set; }
     public long? AssignedTo { get; set; }
+    public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }
     public string Status { get; set; } = "NotStarted";
     public decimal CompletionPercent { get; set; }
