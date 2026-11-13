@@ -4295,9 +4295,7 @@ WTPages.switchProjView = function(view) {
 
     el.innerHTML = pageHead(title, `Showing ${selectedLabel} `,
       (kind === 'milestones'
-        ? ` ${canCreateMilestone ? `<button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>
-            <button class="btn" onclick="WTPages.planBackwardFromHandover()">Plan backward (PM-17)</button>` : ''}
-            ${canCreateMilestone ? `<button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>` : ''}`
+        ? ` ${canCreateMilestone ? `<button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button><button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>` : ''}`
         : kind === 'daily'
         ? ` <div class="daily-resort-filter" style="position:relative;display:inline-block;margin-right:6px;">
               <button class="btn" type="button" onclick="WTPages.toggleDailyResortMenu()"><i class="fa-solid fa-hotel"></i> Resorts (${dailyResortIds.length}) <i class="fa-solid fa-chevron-down"></i></button>
@@ -4804,64 +4802,6 @@ WTPages.switchProjView = function(view) {
         await WisetrackAPI.cloneTemplate({ templateId, projectId: pid, anchorDate: $('#msTplAnchor')?.value || null });
       }
       closeModal(); showToast(pasted.length ? 'Project milestones added' : 'Template milestones added'); await pageTasks('milestones');
-    } catch (err) { showToast(err.message, 'danger'); }
-  }
-
-  async function planBackwardFromHandover() {
-    const pid = await selectedProjectId();
-    if (!pid) { showToast('Select a project first', 'danger'); return; }
-    let completionDate = '';
-    try {
-      const p = await WisetrackAPI.getProject(pid);
-      completionDate = String(p.endDate || p.EndDate || '').slice(0, 10);
-    } catch (_) { /* date filled by user */ }
-    openModal('Plan backward from handover (PM-17)', `
-      <form onsubmit="WTPages.saveBackwardPlan(event)">
-        <input type="hidden" id="bwProj" value="${pid}">
-        <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Plan backward from the required project completion date. Edit the activities for this project; nothing is applied to other projects.</p>
-        <div class="form-grid">
-          <div class="field full"><label>Activities in schedule order (earliest first; one per line)</label><textarea id="bwSteps" rows="7">Procurement&#10;Payment&#10;Manufacture / Readiness&#10;Shipment&#10;Arrival&#10;Transfer&#10;Installation&#10;Commissioning&#10;Handover&#10;Project Completion</textarea><small style="color:var(--text-muted)">Optional duration per activity: add | days, e.g. Procurement | 21. Leave it out to use the default duration.</small></div>
-          <div class="field"><label>Required project completion date *</label><input id="bwCompletion" type="date" value="${esc(completionDate)}" required></div>
-          <div class="field"><label>Default activity duration (days)</label><input id="bwDays" type="number" min="1" value="14"></div>
-        </div>
-        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Create backward schedule</button></div>
-      </form>`);
-  }
-
-  async function saveBackwardPlan(e) {
-    e.preventDefault();
-    const pid = Number($('#bwProj').value);
-    const completionDate = $('#bwCompletion').value;
-    const stepDays = Math.max(1, Number($('#bwDays').value) || 14);
-    if (!pid || !completionDate) { showToast('Project completion date required', 'danger'); return; }
-    const steps = ($('#bwSteps')?.value || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(line => {
-      const match = line.match(/^(.*?)\s*\|\s*(\d+)\s*$/);
-      return match
-        ? { name: match[1].trim(), days: Number(match[2]) }
-        : { name: line, days: stepDays };
-    }).filter(s => s.name);
-    if (!steps.length) { showToast('Add at least one project milestone.', 'danger'); return; }
-    const completion = new Date(`${completionDate}T00:00:00`);
-    const toLocalDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    try {
-      let due = new Date(completion);
-      const schedule = [];
-      for (let i = steps.length - 1; i >= 0; i--) {
-        const start = new Date(due);
-        start.setDate(start.getDate() - steps[i].days);
-        schedule.push({
-          projectId: pid,
-          name: steps[i].name,
-          description: `Backward-scheduled from project completion (${completionDate}) (PM-17)`,
-          startDate: toLocalDate(start),
-          dueDate: toLocalDate(due)
-        });
-        due = start;
-      }
-      for (const milestone of schedule.reverse()) await WisetrackAPI.createMilestone(milestone);
-      closeModal();
-      showToast('Backward schedule created');
-      await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -6793,7 +6733,6 @@ WTPages.switchProjView = function(view) {
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, previewBoqImportFile, changeBoqImportMapping, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
-    planBackwardFromHandover, saveBackwardPlan,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,
     openDependencyModal, saveDependency, focusDependency,
     openCreateSubTaskModal: (p, s, editId) => openCreateSubTaskModal(p, s, editId),
