@@ -44,6 +44,12 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS vendor TEXT NULL""");
     }
 
+    public static async Task EnsureTaskCompletionEvidenceSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE milestones ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
+    }
+
     public static async Task EnsureProjectBudgetAllocationSchemaAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync(
