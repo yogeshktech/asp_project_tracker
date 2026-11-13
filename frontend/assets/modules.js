@@ -4496,10 +4496,9 @@ WTPages.switchProjView = function(view) {
               <td><span class="badge ${wtRowBlocked(t) ? 'amber' : statusBadge(t.status, pct)}">${wtRowBlocked(t) ? 'Waiting' : esc(formatStatus(t.status))}</span></td>
               ${progressCell(t, pct)}
               ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(t)}` : ''}
-              <td class="table-actions">${taskRowActionMenu(`
+              <td class="table-actions">${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${taskRowActionMenu(`
                 ${wtUpdateBtnHtml(t.id, null, t, t._projectId || pid)}
                 ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>` : ''}
-                ${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i></button>` : ''}
                 ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add sub-task" aria-label="Add sub-task" title="Add sub-task" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-layer-group"></i></button>` : ''}
                 ${kind === 'planning' ? wtDepBtnHtml('task', t.id, t) : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
@@ -4518,7 +4517,7 @@ WTPages.switchProjView = function(view) {
                 <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
                 ${progressCell(s, spct)}
                 ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(s)}` : ''}
-                <td class="table-actions">${taskRowActionMenu(`
+              <td class="table-actions">${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.parentSubTaskId || s.ParentSubTaskId || ''}, ${s.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${taskRowActionMenu(`
                   ${wtUpdateBtnHtml(t.id, s.id, s, t._projectId || pid)}
                   <button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>
                   ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel.toLowerCase()} task" aria-label="Add ${addLabel.toLowerCase()} task" title="Add ${addLabel.toLowerCase()} task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}

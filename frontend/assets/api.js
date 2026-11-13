@@ -347,6 +347,7 @@ const WisetrackAPI = {
   setTaskDependency(id, data) { return this.put(`/tasks/${id}/dependency`, data); },
   createSubTask(data) { return this.post('/tasks/subtasks', data); },
   deleteSubTask(id) { return this.del(`/tasks/subtasks/${id}`); },
+  updateSubTask(id, data) { return this.put(`/tasks/subtasks/${id}`, data); },
   setSubTaskDependency(id, data) { return this.put(`/tasks/subtasks/${id}/dependency`, data); },
   addTaskUpdate(data) { return this.post('/tasks/updates', data); },
   bulkImportUpdates(data) { return this.post('/tasks/bulk-import', data); },

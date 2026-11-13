@@ -17,6 +17,7 @@ public interface ITaskService
     Task<ProjectTask> CreateTaskAsync(CreateTaskRequest request, long? userId);
     Task<ProjectTask> UpdateTaskAsync(long taskId, CreateTaskRequest request, long userId);
     Task<SubTaskItemDto> CreateSubTaskAsync(CreateSubTaskRequest request, long? userId);
+    Task UpdateSubTaskAsync(long subTaskId, CreateSubTaskRequest request, long userId);
     Task DeleteTaskAsync(long taskId, long userId);
     Task DeleteSubTaskAsync(long subTaskId, long userId);
     Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId);
@@ -416,6 +417,22 @@ public class TaskService : ITaskService
         var dto = MapSubTask(sub, userId ?? 0, false, false, false, false, parent.AssignedTo);
         dto.DisplayCode = $"Task-{taskNo}-{NestLabel(depth)}-{subNo}";
         return dto;
+    }
+
+    public async Task UpdateSubTaskAsync(long subTaskId, CreateSubTaskRequest request, long userId)
+    {
+        var sub = await _repository.GetSubTaskAsync(subTaskId) ?? throw new InvalidOperationException("Sub-task not found.");
+        var parent = sub.Task ?? await _repository.GetTaskAsync(sub.TaskId) ?? throw new InvalidOperationException("Parent task not found.");
+        if (request.TaskId != parent.Id) throw new InvalidOperationException("Sub-task parent cannot be changed.");
+        await _permissions.EnsureModuleAsync(userId, parent.ProjectId, "Tasks", "update");
+        if (string.IsNullOrWhiteSpace(request.Title)) throw new InvalidOperationException("Task title is required.");
+        sub.Title = request.Title.Trim();
+        sub.AssignedTo = request.AssignedTo;
+        sub.DueDate = request.DueDate;
+        sub.Status = string.IsNullOrWhiteSpace(request.Status) ? sub.Status : request.Status.Replace(" ", "");
+        sub.Remarks = request.Remarks;
+        await _repository.UpdateSubTaskAsync(sub);
+        await _audit.LogAsync(userId, "Update", "SubTask", sub.Id);
     }
 
     public async Task DeleteTaskAsync(long taskId, long userId)

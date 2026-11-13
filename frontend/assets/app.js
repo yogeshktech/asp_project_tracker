@@ -1152,7 +1152,7 @@ async function wtLoadLiveTasksAndOwners() {
   return { pid, tasks, owners, projects };
 }
 
-async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
+async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '', editSubTaskId = '') {
   if (typeof WisetrackAPI === 'undefined' || !WisetrackAPI.isLoggedIn()) {
     showToast('Please login first.', 'danger');
     return;
@@ -1163,8 +1163,8 @@ async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
     showToast('Select a project first, then create a main task.', 'danger');
     return;
   }
-  if (typeof wtCan === 'function' && !wtCan('Tasks', 'edit', Number(pid))) {
-    showToast('You do not have permission to create tasks in this project.', 'danger');
+  if (typeof wtCan === 'function' && !(editSubTaskId ? wtCan('Tasks', 'update', Number(pid)) : wtCan('Tasks', 'edit', Number(pid)))) {
+    showToast(editSubTaskId ? 'You do not have permission to edit tasks in this project.' : 'You do not have permission to create tasks in this project.', 'danger');
     return;
   }
   if (!tasks.length) {
@@ -1179,6 +1179,8 @@ async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
   const selectedTaskId = parentTaskId ? String(parentTaskId) : '';
   const selectedSubId = parentSubTaskId ? String(parentSubTaskId) : '';
   const selectedValue = selectedSubId ? `${selectedTaskId}:${selectedSubId}` : selectedTaskId;
+  const editingParent = tasks.find(t => Number(t.id) === Number(parentTaskId));
+  const editing = editSubTaskId && editingParent && typeof wtFindSub === 'function' ? wtFindSub(editingParent, editSubTaskId) : null;
   const parentOpts = tasks.map(t => {
     const taskSelected = selectedValue && String(t.id) === String(selectedValue) ? 'selected' : '';
     const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(t) : [];
@@ -1192,7 +1194,7 @@ async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
     return `<option value="${t.id}" ${taskSelected}>${wtEscHtml(wtTaskCode(t))} · ${wtEscHtml(t.title || t.name)} (${wtEscHtml(nameOf(t._projectId || t.projectId))})</option>${childOpts}`;
   }).join('');
   const ownerOpts = owners.length
-    ? owners.map(u => `<option value="${u.id}">${wtEscHtml(u.fullName)} (${wtEscHtml(u.role)})</option>`).join('')
+    ? owners.map(u => `<option value="${u.id}" ${Number(u.id) === Number(editing?.assignedTo || editing?.AssignedTo) ? 'selected' : ''}>${wtEscHtml(u.fullName)} (${wtEscHtml(u.role)})</option>`).join('')
     : '<option value="">No users found</option>';
   const preselected = tasks.find(t => String(t.id) === selectedTaskId);
   const defaultDue = String(preselected?.dueDate || preselected?.DueDate || '').slice(0, 10);
@@ -1200,16 +1202,18 @@ async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
     ? 'Child / nested task under the selected sub-task'
     : 'Sub-task under the selected main task (or pick a sub-task to nest deeper)';
 
-  openModal('Create nested task (Task → Sub → Child)', `
+  openModal(editing ? 'Edit nested task' : 'Create nested task (Task → Sub → Child)', `
     <form onsubmit="handleCreateSubTask(event)">
+      <input type="hidden" id="subTaskEditId" value="${editing?.id || ''}">
+      <input type="hidden" id="subTaskTaskId" value="${parentTaskId || ''}">
       <div class="form-grid">
         <div class="field full">
           <label>Title *</label>
-          <input type="text" id="subTaskTitle" placeholder="e.g. Get GM approval" required>
+          <input type="text" id="subTaskTitle" placeholder="e.g. Get GM approval" value="${wtEscHtml(editing?.title || editing?.name || '')}" required>
         </div>
         <div class="field full">
           <label>Nest under *</label>
-          <select id="subTaskParent" required>
+          <select id="subTaskParent" required ${editing ? 'disabled' : ''}>
             ${selectedValue ? '' : '<option value="">Select task / sub-task / child</option>'}
             ${parentOpts}
           </select>
@@ -1221,7 +1225,7 @@ async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
         </div>
         <div class="field">
           <label>Target Completion Date</label>
-          <input type="date" id="subTaskDueDate" value="${wtEscHtml(defaultDue)}">
+          <input type="date" id="subTaskDueDate" value="${wtEscHtml(String(editing?.dueDate || editing?.DueDate || defaultDue).slice(0, 10))}">
         </div>
         <div class="field">
           <label>Initial Status</label>
@@ -1233,19 +1237,19 @@ async function openCreateSubTaskModal(parentTaskId = '', parentSubTaskId = '') {
         </div>
         <div class="field full">
           <label>Notes</label>
-          <textarea id="subTaskNotes" placeholder="Requirements, checks, handover notes..."></textarea>
+          <textarea id="subTaskNotes" placeholder="Requirements, checks, handover notes...">${wtEscHtml(editing?.remarks || editing?.Remarks || '')}</textarea>
         </div>
       </div>
       <div class="modalfoot" style="padding-left:0;padding-right:0;padding-bottom:0;margin-top:16px;">
         <button type="button" class="btn" onclick="closeModal()">Cancel</button>
-        <button type="submit" class="btn primary">＋ Create</button>
+        <button type="submit" class="btn primary">${editing ? 'Save changes' : '＋ Create'}</button>
       </div>
     </form>`);
 }
 
 async function handleCreateSubTask(e) {
   e.preventDefault();
-  const raw = (document.getElementById('subTaskParent')?.value || '').trim();
+  const raw = (document.getElementById('subTaskParent')?.value || '').trim() || (document.getElementById('subTaskTaskId')?.value || '');
   const parts = raw.split(':');
   const taskId = Number(parts[0]);
   const parentSubTaskId = parts[1] ? Number(parts[1]) : null;
@@ -1254,6 +1258,7 @@ async function handleCreateSubTask(e) {
   const dueDate = document.getElementById('subTaskDueDate')?.value || null;
   const status = (document.getElementById('subTaskInitStatus')?.value || 'NotStarted').replace(/\s+/g, '');
   const remarks = (document.getElementById('subTaskNotes')?.value || '').trim();
+  const editId = Number(document.getElementById('subTaskEditId')?.value) || 0;
   if (!taskId) {
     showToast('Select the parent task or sub-task.', 'danger');
     return;
@@ -1263,9 +1268,10 @@ async function handleCreateSubTask(e) {
     return;
   }
   try {
-    await WisetrackAPI.createSubTask({ taskId, parentSubTaskId, title, assignedTo, dueDate, status, remarks });
+    if (editId) await WisetrackAPI.updateSubTask(editId, { taskId, parentSubTaskId, title, assignedTo, dueDate, status, remarks });
+    else await WisetrackAPI.createSubTask({ taskId, parentSubTaskId, title, assignedTo, dueDate, status, remarks });
     closeModal();
-    showToast(`"${title}" created`);
+    showToast(editId ? `"${title}" updated` : `"${title}" created`);
     if (window.WTPages && typeof WTPages.refreshPlanning === 'function') {
       await WTPages.refreshPlanning();
     } else {

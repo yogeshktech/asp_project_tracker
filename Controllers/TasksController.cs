@@ -94,6 +94,14 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> CreateSubTask([FromBody] CreateSubTaskRequest request) =>
         Ok(await _taskService.CreateSubTaskAsync(request, UserId));
 
+    [HttpPut("subtasks/{id:long}")]
+    public async Task<IActionResult> UpdateSubTask(long id, [FromBody] CreateSubTaskRequest request)
+    {
+        try { await _taskService.UpdateSubTaskAsync(id, request, UserId); return NoContent(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
     [HttpDelete("subtasks/{id:long}")]
     public async Task<IActionResult> DeleteSubTask(long id)
     {

@@ -2283,7 +2283,10 @@ button.btn[disabled] {
   border: 0;
   border-radius: 12px;
   box-shadow: 0 8px 26px rgba(15, 23, 42, .07);
-  scrollbar-color: #cbd5e1 #f8fafc;
+  scrollbar-color: #9aa9bd #e8edf4;
+  scrollbar-width: auto;
+  padding-bottom: 2px;
+  scroll-behavior: smooth;
 }
 
 .planning-table {
@@ -2315,6 +2318,16 @@ button.btn[disabled] {
 .planning-table th:nth-child(11) { width: 85px; }
 .planning-table th:nth-child(12) { width: 190px; }
 .planning-table th:nth-child(13) { width: 140px; }
+.planning-table th:last-child,
+.planning-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: -5px 0 9px rgba(15, 23, 42, .08);
+}
+.planning-table th:last-child { z-index: 3; background: #f1f5fb; }
+.planning-table tbody tr.subtask-row td:last-child { background: #fbfdff; }
 
 .planning-table td {
   padding: 12px 14px;
