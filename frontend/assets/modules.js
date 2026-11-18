@@ -4314,9 +4314,7 @@ WTPages.switchProjView = function(view) {
             <button class="btn" onclick="WTPages.loadDailyTaskReport()">Load report</button>
             <button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
-      : ` ${canCreateTask ? `<button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub-Task</button>
-            <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}
-            ${canEditTask ? `<button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>` : ''}`))
+        : ` ${canCreateTask ? `<button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
       + (kind === 'daily' ? `<div class="card" style="margin-bottom:16px"><h3 class="card-title">Daily progress report</h3><div id="dailyReportContent">Loading report...</div></div>` : '')
       + tableWrap(kind === 'milestones'
@@ -5083,20 +5081,15 @@ WTPages.switchProjView = function(view) {
       taskId = selectedTask.id;
     }
 
-    const taskOpts = tasks.length
-      ? tasks.map((t, i) => `<option value="${t.id}" ${Number(t.id) === Number(taskId) ? 'selected' : ''}>${esc(typeof wtTaskCode === 'function' ? wtTaskCode(t, i) : (t.displayCode || t.title))} · ${esc(t.title || t.name)}</option>`).join('')
-      : '<option value="">No tasks found</option>';
-
-    const buildSubOpts = (tid) => {
-      const t = findTask(tid);
-      const walked = typeof wtWalkSubs === 'function' ? wtWalkSubs(t || {}) : [];
-      if (!walked.length) return '<option value="">No nested tasks (update main task)</option>';
-      return `<option value="">Main task only</option>` + walked.map(({ node: s, depth, index }) => {
-        const pad = depth <= 1 ? '↳ ' : depth === 2 ? '↳↳ ' : '↳↳↳ ';
-        const code = typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s, index, depth) : (s.displayCode || s.title);
-        return `<option value="${s.id}" ${Number(s.id) === Number(subTaskId) ? 'selected' : ''}>${pad}${esc(code)} · ${esc(s.title || s.name)}</option>`;
-      }).join('');
-    };
+    const selectedTaskLabel = selectedTask
+      ? `${typeof wtTaskCode === 'function' ? wtTaskCode(selectedTask) : (selectedTask.displayCode || `Task-${selectedTask.id}`)} · ${selectedTask.title || selectedTask.name || ''}`
+      : 'Task not selected';
+    const selectedSubInfo = selectedSub && typeof wtWalkSubs === 'function'
+      ? wtWalkSubs(selectedTask || {}).find(entry => Number(entry.node.id) === Number(selectedSub.id))
+      : null;
+    const selectedSubLabel = selectedSub
+      ? `${typeof wtSubTaskCode === 'function' ? wtSubTaskCode(selectedTask, selectedSub, selectedSubInfo?.index, selectedSubInfo?.depth) : (selectedSub.displayCode || selectedSub.title || selectedSub.name)}`
+      : (selectedTask ? 'Main task only' : '—');
 
     const pct = Number(isSub
       ? (selectedSub?.completionPercent ?? selectedSub?.CompletionPercent ?? 0)
@@ -5119,7 +5112,7 @@ WTPages.switchProjView = function(view) {
       : (selectedTask?.canEditPercent ?? selectedTask?.CanEditPercent ?? true);
     const today = wtMaldivesDateInput();
 
-    openModal(isSub ? 'Update Sub-Task' : 'Update Task', `
+    openModal('Update Progress', `
       <form onsubmit="WTPages.saveTaskUpdate(event)">
         <div class="form-grid">
           <div class="field">
@@ -5128,15 +5121,17 @@ WTPages.switchProjView = function(view) {
           </div>
           <div class="field">
             <label>Main Task *</label>
-            <select id="tuId" required onchange="WTPages.onUpdateTaskChange(this.value)">${taskOpts}</select>
+            <input type="hidden" id="tuId" value="${selectedTask?.id || ''}">
+            <input value="${esc(selectedTaskLabel)}" readonly aria-readonly="true">
           </div>
           <div class="field">
             <label>Sub-Task</label>
-            <select id="tuSubId">${buildSubOpts(taskId)}</select>
+            <input type="hidden" id="tuSubId" value="${selectedSub?.id || ''}">
+            <input value="${esc(selectedSubLabel)}" readonly aria-readonly="true">
           </div>
           <div class="field full">
             <label>Updating</label>
-            <input id="tuLabel" value="${esc(title)}" readonly>
+            <input id="tuLabel" value="${esc(title)}" readonly aria-readonly="true">
           </div>
           <div class="field">
             <label>% Complete ${canPct ? '*' : '(owner only)'}</label>
