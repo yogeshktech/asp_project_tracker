@@ -312,6 +312,7 @@ public class TaskHistoryItemDto
     public DateOnly UpdateDate { get; set; }
     public DateTime CreatedAt { get; set; }
     public long? UpdatedById { get; set; }
+    public string? UpdatedByEmail { get; set; }
     public decimal? CompletionPercent { get; set; }
     public string? Status { get; set; }
     public string? Remarks { get; set; }

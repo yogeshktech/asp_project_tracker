@@ -1,5 +1,6 @@
 using project_tracker_madhu.Common;
 using project_tracker_madhu.DatabaseLayer.Tasks;
+using project_tracker_madhu.DatabaseLayer.Users;
 using project_tracker_madhu.Models.Entities;
 using project_tracker_madhu.Models.Requests;
 using project_tracker_madhu.Models.Responses;
@@ -33,12 +34,14 @@ public class TaskService : ITaskService
     private readonly ITaskRepository _repository;
     private readonly IPermissionService _permissions;
     private readonly IAuditService _audit;
+    private readonly IUserRepository _users;
 
-    public TaskService(ITaskRepository repository, IPermissionService permissions, IAuditService audit)
+    public TaskService(ITaskRepository repository, IPermissionService permissions, IAuditService audit, IUserRepository users)
     {
         _repository = repository;
         _permissions = permissions;
         _audit = audit;
+        _users = users;
     }
 
     public async Task<List<Milestone>> GetMilestonesAsync(long projectId, long userId)
@@ -179,6 +182,9 @@ public class TaskService : ITaskService
         if (subTaskId.HasValue && !(task.SubTasks ?? Array.Empty<SubTask>()).Any(s => s.Id == subTaskId.Value))
             throw new InvalidOperationException("Sub-task does not belong to the selected task.");
         var updates = await _repository.GetTaskHistoryAsync(taskId, subTaskId);
+        var updaterIds = updates.Where(update => update.UpdatedBy.HasValue).Select(update => update.UpdatedBy!.Value).Distinct();
+        var updaterEmails = (await Task.WhenAll(updaterIds.Select(async id => (Id: id, User: await _users.GetByIdAsync(id)))))
+            .ToDictionary(result => result.Id, result => result.User?.Email);
         return updates.Select(update => new TaskHistoryItemDto
         {
             Id = update.Id,
@@ -188,6 +194,7 @@ public class TaskService : ITaskService
             UpdateDate = update.UpdateDate,
             CreatedAt = update.CreatedAt,
             UpdatedById = update.UpdatedBy,
+            UpdatedByEmail = update.UpdatedBy.HasValue && updaterEmails.TryGetValue(update.UpdatedBy.Value, out var email) ? email : null,
             CompletionPercent = update.CompletionPercent,
             Status = update.Status,
             Remarks = update.Remarks

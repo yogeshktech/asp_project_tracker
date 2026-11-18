@@ -261,7 +261,7 @@
     const canUpdate = typeof wtCan !== 'function' || wtCan('Tasks', 'update', Number(projectId || row?.projectId || row?.ProjectId));
     if (!canUpdate && rowOwnerId !== currentUserId) return '';
     const extra = subId ? `, ${subId}` : '';
-    return `<button class="btn sm icon-action" data-tooltip="Update progress" aria-label="Update progress" title="Update progress" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${taskId}${extra})"><i class="fa-solid fa-chart-line"></i></button>`;
+    return `<button class="btn sm icon-action" data-tooltip="Update remark / progress" aria-label="Update remark or progress" title="Update remark / progress" onclick="event.stopPropagation(); WTPages.openTaskUpdateModal(${taskId}${extra})"><i class="fa-solid fa-comment-dots"></i></button>`;
   }
 
   // ---------- ROLES & PERMISSIONS ----------
@@ -4314,7 +4314,7 @@ WTPages.switchProjView = function(view) {
             <button class="btn" onclick="WTPages.loadDailyTaskReport()">Load report</button>
             <button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
-        : ` ${canCreateTask ? `<button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub / Child</button>
+      : ` ${canCreateTask ? `<button class="btn" onclick="WTPages.openCreateSubTaskModal()"><i class="fa-solid fa-plus"></i> Sub-Task</button>
             <button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}
             ${canEditTask ? `<button class="btn" onclick="WTPages.openTaskUpdateModal()">+ Progress Update</button>` : ''}`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
@@ -4322,8 +4322,8 @@ WTPages.switchProjView = function(view) {
       + tableWrap(kind === 'milestones'
         ? ['ID', 'Milestone & Project', 'Schedule', 'Status', 'Progress', 'Actions']
         : kind === 'planning'
-        ? ['ID', 'Task', 'Description', 'Remark', 'Sub-Task', 'Child Task', 'Other', 'Owner', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
-        : ['ID', 'Task', 'Sub-Task', 'Child Task', 'Other', 'Status', 'Progress', 'Actions'], 'tasksBody')
+        ? ['ID', 'Task', 'Sub-Task L1', 'Sub-Task L2', 'Sub-Task L3+', 'Owner', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
+        : ['ID', 'Task', 'Sub-Task L1', 'Sub-Task L2', 'Sub-Task L3+', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="display:none;margin-top:16px;"><h3 class="card-title">⚠️ Automatic Task Alerts</h3><small class="card-subtitle">Generated for overdue tasks or tasks without a progress update for 7 days. Update or complete the task to clear an alert.</small><div id="excList">Loading...</div></div>`;
 
     if (kind === 'daily') {
@@ -4340,7 +4340,7 @@ WTPages.switchProjView = function(view) {
       };
     }
     
-    const nestCols = kind === 'planning' ? 15 : 8;
+    const nestCols = kind === 'planning' ? 13 : 8;
     if (kind === 'planning') {
       el.querySelector('#tasksBody')?.closest('.table-wrap')?.classList.add('planning-table-wrap');
       el.querySelector('#tasksBody')?.closest('table')?.classList.add('planning-table');
@@ -4442,7 +4442,7 @@ WTPages.switchProjView = function(view) {
         };
         
         const dash = '<span class="nest-empty">—</span>';
-        const nestTitle = (s) => `<strong>${esc(s.title || s.name)}</strong>`;
+        const nestTitle = (s, depth) => `<strong class="planning-level-name">L${depth}</strong><span>${esc(s.title || s.name)}</span>`;
         const planningInfoCells = (row, isSubTask = false) => {
           if (kind !== 'planning') return '';
           const assignee = row.assignedTo || row.AssignedTo;
@@ -4494,15 +4494,15 @@ WTPages.switchProjView = function(view) {
                 <span id="taskFiles-${Number(t.id)}"></span>
                 ${kind === 'planning' ? '' : wtDepLineHtml(t)}
               </td>
-              ${kind === 'planning' ? `<td class="planning-text-cell">${esc(t.description || t.Description || '—')}</td><td class="planning-text-cell">${esc(t.remarks || t.Remarks || '—')}</td>` : ''}
               ${nestCells(0, dash)}
               ${planningInfoCells(t)}
               <td><span class="badge ${wtRowBlocked(t) ? 'amber' : statusBadge(t.status, pct)}">${wtRowBlocked(t) ? 'Waiting' : esc(formatStatus(t.status))}</span></td>
               ${progressCell(t, pct)}
               ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(t)}` : ''}
               <td class="table-actions">${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openTaskModal(${t.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${taskRowActionMenu(`
+                ${kind === 'planning' ? `<button class="btn sm icon-action" data-tooltip="View task details" aria-label="View task details" title="View task details" onclick="WTPages.openTaskDetails(${t.id})"><i class="fa-solid fa-eye"></i> View details</button>` : ''}
                 ${wtUpdateBtnHtml(t.id, null, t, t._projectId || pid)}
-                ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>` : ''}
+                ${(kind === 'planning' || kind === 'daily') ? `<button class="btn sm icon-action" data-tooltip="View remarks and update history" aria-label="View remarks and update history" title="View remarks and update history" onclick="WTPages.openTaskHistory(${t.id})"><i class="fa-solid fa-eye"></i> View remarks</button>` : ''}
                 ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add sub-task" aria-label="Add sub-task" title="Add sub-task" onclick="WTPages.openCreateSubTaskModal(${t.id})"><i class="fa-solid fa-layer-group"></i></button>` : ''}
                 ${kind === 'planning' ? wtDepBtnHtml('task', t.id, t) : ''}
                 ${kind === 'planning' && (t.canDelete || t.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteTask(${t.id}, '${esc(t.title || t.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
@@ -4510,22 +4510,22 @@ WTPages.switchProjView = function(view) {
             </tr>`;
           const nestedRows = (kind === 'planning' || kind === 'daily') ? walked.map(({ node: s, depth, index }) => {
             const spct = progressOf(s);
-            const addLabel = depth <= 1 ? 'Child' : 'Other';
+            const addLabel = depth <= 1 ? 'sub-task' : 'nested sub-task';
             const code = esc(typeof wtSubTaskCode === 'function' ? wtSubTaskCode(t, s, index, depth) : (s.displayCode || 'Sub-' + s.id));
             return `
               <tr class="subtask-row nest-depth-${depth}" id="subtask-row-${Number(s.id)}">
                 <td><code>${code}</code></td>
                 <td class="nest-col depth-task">${dash}</td>
-                ${kind === 'planning' ? `<td class="planning-text-cell">${esc(s.description || s.Description || '—')}</td><td class="planning-text-cell">${esc(s.remarks || s.Remarks || '—')}</td>` : ''}
-                ${nestCells(depth, nestTitle(s) + (kind === 'planning' ? '' : wtDepLineHtml(s)))}
+                ${nestCells(depth, nestTitle(s, depth) + (kind === 'planning' ? '' : wtDepLineHtml(s)))}
                 ${planningInfoCells({ ...s, _projectId: t._projectId }, true)}
                 <td><span class="badge ${wtRowBlocked(s) ? 'amber' : statusBadge(s.status, spct)}">${wtRowBlocked(s) ? 'Waiting' : esc(formatStatus(s.status))}</span></td>
                 ${progressCell(s, spct)}
                 ${kind === 'planning' ? `<td>${openIssueCount}</td>${dependencyCell(s)}` : ''}
               <td class="table-actions">${kind === 'planning' && canEditTask ? `<button class="btn sm icon-action" data-tooltip="Edit task" aria-label="Edit task" title="Edit task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.parentSubTaskId ?? s.ParentSubTaskId ?? 'null'}, ${s.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${taskRowActionMenu(`
+                  <button class="btn sm icon-action" data-tooltip="View task details" aria-label="View task details" title="View task details" onclick="WTPages.openTaskDetails(${t.id}, ${s.id})"><i class="fa-solid fa-eye"></i> View details</button>
                   ${wtUpdateBtnHtml(t.id, s.id, s, t._projectId || pid)}
-                  <button class="btn sm icon-action" data-tooltip="View history" aria-label="View history" title="View history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                  ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel.toLowerCase()} task" aria-label="Add ${addLabel.toLowerCase()} task" title="Add ${addLabel.toLowerCase()} task" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}
+                  <button class="btn sm icon-action" data-tooltip="View remarks and update history" aria-label="View remarks and update history" title="View remarks and update history" onclick="WTPages.openTaskHistory(${t.id}, ${s.id})"><i class="fa-solid fa-eye"></i> View remarks</button>
+                  ${kind === 'planning' && canCreateTask ? `<button class="btn sm primary icon-action" data-tooltip="Add ${addLabel}" aria-label="Add ${addLabel}" title="Add ${addLabel}" onclick="WTPages.openCreateSubTaskModal(${t.id}, ${s.id})"><i class="fa-solid fa-plus"></i></button>` : ''}
                   ${kind === 'planning' ? wtDepBtnHtml('sub', s.id, s) : ''}
                   ${(s.canDelete || s.CanDelete) ? `<button class="btn sm danger icon-action" data-tooltip="Delete task" aria-label="Delete task" title="Delete task" onclick="WTPages.deleteSubTask(${s.id}, '${esc(s.title || s.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
                 `)}</td>
@@ -5047,7 +5047,7 @@ WTPages.switchProjView = function(view) {
   }
 
   async function deleteSubTask(id, title) {
-    if (!confirm(`Delete sub-task "${title || id}" and any nested child tasks?`)) return;
+    if (!confirm(`Delete sub-task "${title || id}" and any nested sub-tasks?`)) return;
     try {
       await WisetrackAPI.deleteSubTask(id);
       showToast('Sub-task deleted');
@@ -5276,14 +5276,53 @@ WTPages.switchProjView = function(view) {
         return user ? (user.fullName || user.name || user.email) : (id ? `User #${id}` : 'System');
       };
       const history = updates || [];
+      const historyValue = (row, camel, pascal) => row?.[camel] ?? row?.[pascal];
       openModal('Task Update History', `
         <p style="margin:0 0 12px;color:var(--text-muted)">${history.length} saved update${history.length === 1 ? '' : 's'}</p>
         ${(files || []).length ? `<div style="margin-bottom:14px"><strong>Uploaded evidence</strong><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${files.map(file => `<button class="btn sm" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join('')}</div></div>` : ''}
-        <div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Task / Sub-task</th><th>Status</th><th>Completion</th><th>Remark</th><th>Updated by</th></tr></thead><tbody>
-          ${history.length ? history.map(row => `<tr><td>${esc(row.updateDate || '')}<small style="display:block;color:var(--text-muted)">${esc(String(row.createdAt || '').slice(11, 16))}</small></td><td>${esc(row.itemTitle || '')}</td><td>${esc(row.status || '—')}</td><td>${row.completionPercent == null ? '—' : `${Number(row.completionPercent)}%`}</td><td style="white-space:pre-wrap">${esc(row.remarks || '—')}</td><td>${esc(userName(row.updatedById))}</td></tr>`).join('') : '<tr><td colspan="6">No previous updates recorded for this item.</td></tr>'}
+        <div class="table-wrap"><table class="table"><thead><tr><th>Date &amp; time</th><th>Task / Sub-task</th><th>Status</th><th>Progress</th><th>Remark</th><th>Created by</th><th>Creator email</th></tr></thead><tbody>
+          ${history.length ? history.map(row => {
+            const updatedById = historyValue(row, 'updatedById', 'UpdatedById');
+            const email = historyValue(row, 'updatedByEmail', 'UpdatedByEmail') || (users || []).find(user => Number(user.id) === Number(updatedById))?.email || '—';
+            const createdAt = historyValue(row, 'createdAt', 'CreatedAt');
+            const updateDate = historyValue(row, 'updateDate', 'UpdateDate');
+            const dateLabel = createdAt ? wtFormatDateTime(createdAt) : (updateDate || '—');
+            const percent = historyValue(row, 'completionPercent', 'CompletionPercent');
+            return `<tr><td>${esc(dateLabel)}</td><td>${esc(historyValue(row, 'itemTitle', 'ItemTitle') || '—')}</td><td>${esc(historyValue(row, 'status', 'Status') || '—')}</td><td>${percent == null ? '—' : `${Number(percent)}%`}</td><td style="white-space:pre-wrap">${esc(historyValue(row, 'remarks', 'Remarks') || '—')}</td><td>${esc(userName(updatedById))}</td><td>${esc(email)}</td></tr>`;
+          }).join('') : '<tr><td colspan="7">No previous updates recorded for this item.</td></tr>'}
         </tbody></table></div>`);
     } catch (err) {
       openModal('Task Update History', `<p style="color:#dc2626">${esc(err.message || 'Could not load update history.')}</p>`);
+    }
+  }
+
+  async function openTaskDetails(taskId, subTaskId = null) {
+    openModal('Task details', 'Loading task details…');
+    try {
+      const projectId = await selectedProjectId();
+      const rows = await WisetrackAPI.getTasks(projectId);
+      const task = (Array.isArray(rows) ? rows : []).find(row => Number(row.id ?? row.Id) === Number(taskId));
+      const item = subTaskId == null ? task : (typeof wtFindSub === 'function'
+        ? wtFindSub(task, subTaskId)
+        : (typeof wtWalkSubs === 'function' ? wtWalkSubs(task || {}).map(x => x.node).find(node => Number(node.id ?? node.Id) === Number(subTaskId)) : null));
+      if (!item) throw new Error('Task details could not be found.');
+      const field = (...keys) => keys.map(key => item[key]).find(value => value != null && value !== '') || '';
+      const title = field('title', 'Title', 'name', 'Name') || 'Task details';
+      const description = field('description', 'Description');
+      const remark = field('remarks', 'Remarks', 'remark', 'Remark');
+      const children = field('children', 'Children', 'subTasks', 'SubTasks');
+      const hiddenFields = new Set(['children', 'subtasks']);
+      const details = Object.entries(item).filter(([key, value]) => !key.startsWith('_') && !hiddenFields.has(key.toLowerCase())
+        && !['description', 'remarks', 'remark'].includes(key.toLowerCase()) && value != null && typeof value !== 'object');
+      const labelFor = key => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ').replace(/^./, char => char.toUpperCase());
+      const detailsHtml = details.map(([key, value]) => `<div class="task-detail-field"><span>${esc(labelFor(key))}</span><strong>${esc(String(value) || '—')}</strong></div>`).join('');
+      openModal(title, `<div class="task-details">
+        <section class="task-details-notes"><article><h4>Description</h4><p>${description ? esc(description) : 'No description added.'}</p></article><article><h4>Remark</h4><p>${remark ? esc(remark) : 'No remark added.'}</p></article></section>
+        <section class="task-details-grid">${detailsHtml || '<p class="task-details-empty">No additional task fields available.</p>'}</section>
+        ${Array.isArray(children) && children.length ? `<section class="task-details-children"><h4>Sub-tasks</h4><ul>${children.map(child => `<li>${esc(child.title || child.Title || child.name || child.Name || 'Untitled sub-task')}</li>`).join('')}</ul></section>` : ''}
+      </div>`, '', 'task-details-modal');
+    } catch (error) {
+      openModal('Task details', `<p style="color:#dc2626">${esc(error.message || 'Could not load task details.')}</p>`);
     }
   }
 
@@ -6835,7 +6874,7 @@ WTPages.switchProjView = function(view) {
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, previewBoqImportFile, changeBoqImportMapping, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, previewMilestoneEvidenceFiles, removeMilestoneEvidenceFile, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
-    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, previewTaskUpdateFiles, removeTaskUpdateFile, downloadTaskEvidence, openTaskHistory, loadDailyTaskReport,
+    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, previewTaskUpdateFiles, removeTaskUpdateFile, downloadTaskEvidence, openTaskHistory, openTaskDetails, loadDailyTaskReport,
     openDependencyModal, saveDependency, focusDependency,
     openCreateSubTaskModal: (p, s, editId) => openCreateSubTaskModal(p, s, editId),
     saveSubTask: (e) => handleCreateSubTask(e),
