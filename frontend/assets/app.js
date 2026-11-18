@@ -1024,7 +1024,10 @@ function wtSubTasksOf(task) {
 }
 
 function wtNestSubTasks(list) {
-  const arr = wtAsArray(list).map(s => ({ ...s, children: wtAsArray(s.children || s.Children) }));
+  const sortNumber = rows => wtAsArray(rows)
+    .map(s => ({ ...s, children: sortNumber(s.children || s.Children) }))
+    .sort((a, b) => Number(a.id ?? a.Id ?? 0) - Number(b.id ?? b.Id ?? 0));
+  const arr = sortNumber(list);
   if (!arr.length) return [];
   const nestedFromApi = arr.some(s => (s.children || []).length);
   if (nestedFromApi) {

@@ -8,7 +8,7 @@ const WT_NAV = [
   { href: 'projects.html', icon: 'fa-folder-tree', label: 'Projects' },
   { href: 'project-detail.html', icon: 'fa-helmet-safety', label: 'Project Workspace' },
   { group: 'Execution & Site' },
-  { href: 'planning.html', icon: 'fa-calendar-days', label: 'Tasks & Planning' },
+  { href: 'planning.html', icon: 'fa-calendar-days', label: 'Tasks' },
   { href: 'milestones.html', icon: 'fa-bullseye', label: 'Milestones' },
   { href: 'daily-report.html', icon: 'fa-clipboard-list', label: 'Daily Report' },
   { href: 'issues.html', icon: 'fa-triangle-exclamation', label: 'Issues' },
