@@ -25,7 +25,7 @@ public class Budget
     public long ProjectId { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal ApprovedAmount { get; set; }
-    public string Currency { get; set; } = "MVR";
+    public string Currency { get; set; } = "USD";
     public string? AttachmentPath { get; set; }
     public string? AttachmentName { get; set; }
     public decimal RagAmberPercent { get; set; } = 80;
@@ -61,7 +61,7 @@ public class BudgetVersion
     public int VersionNo { get; set; }
     public string? VersionLabel { get; set; }
     public decimal TotalAmount { get; set; }
-    public string Currency { get; set; } = "MVR";
+    public string Currency { get; set; } = "USD";
     public string? Remarks { get; set; }
     public long? CreatedBy { get; set; }
     public long? ApproverId { get; set; }

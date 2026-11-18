@@ -386,7 +386,7 @@ async function loadIssuesPage() {
         <td>${esc(i.priorityName || i.priority || '-')}</td>
         <td>${esc(i.status || '-')}</td>
         <td>${esc(i.reportedByName || '-')}</td>
-        <td>${esc(i.createdAt ? new Date(i.createdAt).toLocaleDateString() : '-')}</td>
+        <td>${esc(i.createdAt ? wtFormatDate(i.createdAt) : '-')}</td>
         <td><button class="btn sm" onclick="WisetrackAPI.escalateIssue(${i.id}).then(()=>showToast('Escalated')).catch(e=>showToast(e.message,'danger'))">Escalate</button></td>
       </tr>
     `).join('');
@@ -550,7 +550,7 @@ async function handleCreateProject(e) {
     level = (Number(parent?.level) || 1) + 1;
     if (parent?.currency) document.getElementById('projectCurrency').value = parent.currency;
   }
-  const currency = document.getElementById('projectCurrency')?.value || 'MVR';
+  const currency = document.getElementById('projectCurrency')?.value || 'USD';
 
   try {
     const saved = await WisetrackAPI.createProject({
@@ -736,7 +736,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
         </div>
         <div class="field"><label>Client</label><input id="projectClient" type="text"></div>
         <div class="field"><label>Sponsor</label><input id="projectSponsor" type="text"></div>
-        <div class="field"><label>Project Currency</label><select id="projectCurrency"><option value="MVR">MVR</option><option value="USD">USD</option><option value="EUR">EUR</option></select><small class="card-subtitle">Initial budget uses this currency; child projects inherit their parent currency.</small></div>
+        <div class="field"><label>Project Currency</label><select id="projectCurrency"><option value="MVR">MVR</option><option value="USD" selected>USD</option><option value="EUR">EUR</option></select><small class="card-subtitle">Initial budget uses this currency; child projects inherit their parent currency.</small></div>
         <div class="field"><label>Relevant Notes</label><textarea id="projectNotes"></textarea></div>
         <div class="field full"><label>Attachments</label><input type="file" id="projectAttachments" multiple></div>
         <p class="card-subtitle" style="grid-column:1/-1;margin:0">Schedule dates, team, budget, tasks, issues, BOQ, costs and other records remain linked to this project.</p>

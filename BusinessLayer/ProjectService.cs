@@ -275,7 +275,7 @@ public class ProjectService : IProjectService
 
     private static string NormalizeCurrency(string? currency)
     {
-        var code = string.IsNullOrWhiteSpace(currency) ? "MVR" : currency.Trim().ToUpperInvariant();
+        var code = string.IsNullOrWhiteSpace(currency) ? "USD" : currency.Trim().ToUpperInvariant();
         if (code is not ("MVR" or "USD" or "EUR"))
             throw new InvalidOperationException("Currency must be MVR, USD, or EUR.");
         return code;

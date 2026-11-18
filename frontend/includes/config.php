@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Indian/Maldives');
 // System Configuration & Constants
 define('APP_NAME', 'WISETRACK');
 define('APP_TAGLINE', 'Engineering Project Control System');

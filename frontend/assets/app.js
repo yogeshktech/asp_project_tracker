@@ -1,4 +1,22 @@
-// WISETRACK APPLICATION CONTROLLER & INTERACTIVITY
+// Application-wide display defaults: Indian date order and Maldives local time.
+const WT_TIME_ZONE = 'Indian/Maldives';
+function wtFormatDate(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('en-GB', { timeZone: WT_TIME_ZONE, day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+}
+function wtFormatDateTime(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('en-GB', { timeZone: WT_TIME_ZONE, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(date);
+}
+function wtFormatTime(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('en-GB', { timeZone: WT_TIME_ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }).format(date);
+}
+function wtTodayInputDate() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: WT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const part = type => parts.find(item => item.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}// WISETRACK APPLICATION CONTROLLER & INTERACTIVITY
 
 // Toast notifications use Toastr when its CDN assets are ready, with an offline fallback.
 function showToast(message, type = 'success') {
@@ -432,18 +450,6 @@ function openCreateProjectModal(preselectedParentId = null) {
         </div>
         <p class="card-subtitle" style="grid-column:1/-1;margin:0">Code auto-assigns on save (PRJ-001; sub-project PRJ-001-01).</p>
         <div class="field">
-          <label>Discipline / Category *</label>
-          <select id="projectDiscipline" required>
-            <option>Civil Structure</option>
-            <option>MEP & Electrical</option>
-            <option>HVAC & Air Conditioning</option>
-            <option>Plumbing & Fire Safety</option>
-            <option>Interior Fitout & FF&E</option>
-            <option>Landscaping & Outdoor</option>
-            <option>Building Automation & IT</option>
-          </select>
-        </div>
-        <div class="field">
           <label>Project Manager / Assignee *</label>
           <select id="projectOwner" required>
             <option>Rahul Sharma (Project Manager)</option>
@@ -486,7 +492,6 @@ async function handleCreateProject(e) {
   const parentId = document.getElementById('projectParentId').value || null;
   const name = document.getElementById('projectName').value.trim();
   const code = document.getElementById('projectCode')?.value.trim() || '';
-  const discipline = document.getElementById('projectDiscipline').value;
   const owner = document.getElementById('projectOwner').value;
   const budget = document.getElementById('projectBudget').value;
   const startDate = document.getElementById('projectStartDate').value || "2026-09-01";
@@ -551,7 +556,6 @@ async function handleCreateProject(e) {
     level,
     name,
     code,
-    discipline,
     owner,
     budget,
     spent: "MVR 0.00 Cr",
@@ -1311,7 +1315,7 @@ async function openReportExportModal(defaultType = 'portfolio') {
           </select>
         </div>
         <div class="field"><label>Project (required for Daily / BOQ)</label><select id="repProject" onchange="refreshInternalReportRecipients()"><option value="">Portfolio / all authorized projects</option>${window.wtReportProjects.map(p => `<option value="${p.id}">${wtEscHtml(p.name || p.title)}${p.code ? ` (${wtEscHtml(p.code)})` : ''}</option>`).join('')}</select></div>
-        <div class="field" id="reportDateField" style="display:none"><label>Report date</label><input id="repDate" type="date" value="${new Date().toLocaleDateString('en-CA')}"></div>
+        <div class="field" id="reportDateField" style="display:none"><label>Report date</label><input id="repDate" type="date" value="${wtTodayInputDate()}"></div>
         <div class="field full">
           <label>Scope of Site Updates</label>
           <div style="display:flex; gap:18px; align-items:center; background:#f8fafc; padding:10px; border-radius:6px; border:1px solid var(--border-color);">
@@ -1471,7 +1475,7 @@ async function handleReportPrint(kind, saveHistory = true) {
     const cols = wtSelectedReportColumns();
     const type = document.getElementById('repType')?.value || 'portfolio';
     const projectId = Number(document.getElementById('repProject')?.value) || null;
-    const date = document.getElementById('repDate')?.value || new Date().toLocaleDateString('en-CA');
+    const date = document.getElementById('repDate')?.value || wtTodayInputDate();
     const scope = document.querySelector('input[name="reportScope"]:checked')?.value || 'daily';
     const rows = await wtBuildSelectedReportRows(type, projectId, date, scope === 'cumulative');
     if (!cols.length) throw new Error('Select at least one report column.');
@@ -1503,7 +1507,7 @@ async function handleExportAndSendReport(e) {
   const type = document.getElementById('repType')?.value || 'portfolio';
   const scope = document.querySelector('input[name="reportScope"]:checked')?.value || 'daily';
   const projectId = Number(document.getElementById('repProject')?.value) || null;
-  const date = document.getElementById('repDate')?.value || new Date().toLocaleDateString('en-CA');
+  const date = document.getElementById('repDate')?.value || wtTodayInputDate();
   try {
     if (!ids.length) throw new Error('Select at least one internal recipient.');
     if (!cols.length) throw new Error('Select at least one report column.');
@@ -1954,26 +1958,12 @@ async function openEditProjectModal(projectId) {
           <input type="text" id="editProjectCode" value="${escapeHtmlAttr(p.code || '')}" required>
         </div>
         <div class="field">
-          <label>Discipline / Category *</label>
-          <select id="editProjectDiscipline" required>
-            <option ${(p.discipline || '').includes('Civil') ? 'selected' : ''}>Civil Structure</option>
-            <option ${(p.discipline || '').includes('Electrical') || (p.discipline || '') === 'MEP & Electrical' ? 'selected' : ''}>MEP & Electrical</option>
-            <option ${(p.discipline || '').includes('HVAC') ? 'selected' : ''}>HVAC & Air Conditioning</option>
-            <option ${(p.discipline || '').includes('Plumbing') ? 'selected' : ''}>Plumbing & Fire Safety</option>
-            <option ${(p.discipline || '').includes('Interior') ? 'selected' : ''}>Interior Fitout & FF&E</option>
-            <option ${(p.discipline || '').includes('Landscape') ? 'selected' : ''}>Landscaping & Outdoor</option>
-            <option ${(p.discipline || '').includes('Automation') ? 'selected' : ''}>Building Automation & IT</option>
-            <option ${(p.discipline || '').includes('Solar') ? 'selected' : ''}>Renewable Solar</option>
-            <option ${(p.discipline || '').includes('Heritage') ? 'selected' : ''}>Heritage MEP</option>
-          </select>
-        </div>
-        <div class="field">
           <label>Project Owner</label>
           <select id="editProjectOwnerId"><option value="">No owner</option>${(profileUsers || []).filter(u => u.isActive !== false).map(u => `<option value="${u.id}" ${Number(p.ownerId) === Number(u.id) ? 'selected' : ''}>${escapeHtmlAttr(u.fullName || u.email)}</option>`).join('')}</select>
         </div>
         <div class="field"><label>Client</label><input type="text" id="editProjectClient" value="${escapeHtmlAttr(p.clientName || '')}"></div>
         <div class="field"><label>Sponsor</label><input type="text" id="editProjectSponsor" value="${escapeHtmlAttr(p.sponsor || '')}"></div>
-        <div class="field"><label>Project Currency</label><select id="editProjectCurrency" ${p.parentProjectId ? 'disabled' : ''}><option value="MVR" ${(p.currency || 'MVR') === 'MVR' ? 'selected' : ''}>MVR</option><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${p.currency === 'EUR' ? 'selected' : ''}>EUR</option></select>${p.parentProjectId ? '<small class="card-subtitle">Inherited from parent project.</small>' : ''}</div>
+        <div class="field"><label>Project Currency</label><select id="editProjectCurrency" ${p.parentProjectId ? 'disabled' : ''}><option value="MVR" ${(p.currency || 'USD') === 'MVR' ? 'selected' : ''}>MVR</option><option value="USD" ${(p.currency || 'USD') === 'USD' ? 'selected' : ''}>USD</option><option value="EUR" ${p.currency === 'EUR' ? 'selected' : ''}>EUR</option></select>${p.parentProjectId ? '<small class="card-subtitle">Inherited from parent project.</small>' : ''}</div>
         <div class="field">
           <label>Project Health / Status *</label>
           <select id="editProjectHealth">

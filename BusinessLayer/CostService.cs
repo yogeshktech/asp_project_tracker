@@ -48,7 +48,7 @@ public class CostService : ICostService
             Vendor = request.Vendor,
             Description = request.Description,
             Amount = request.Amount,
-            PurchaseDate = request.PurchaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            PurchaseDate = request.PurchaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5)),
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow
         });
@@ -75,7 +75,7 @@ public class CostService : ICostService
             Amount = request.Amount,
             CostDate = canChangeDate && request.CostDate.HasValue
                 ? request.CostDate.Value
-                : DateOnly.FromDateTime(DateTime.UtcNow),
+                : DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5)),
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow
         });
@@ -92,7 +92,7 @@ public class CostService : ICostService
         await ValidateCostDimensionsAsync(cost.ProjectId, request.BoqItemId, request.CostCenterId);
         cost.BoqItemId = request.BoqItemId; cost.CostCenterId = request.CostCenterId;
         cost.Vendor = request.Vendor; cost.Description = request.Description; cost.Amount = request.Amount;
-        cost.PurchaseDate = request.PurchaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        cost.PurchaseDate = request.PurchaseDate ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5));
         await _repository.UpdatePurchaseAsync(cost);
         await _audit.LogAsync(userId, "Update", "PurchaseCost", id);
         return cost;

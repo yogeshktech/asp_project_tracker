@@ -120,7 +120,7 @@ public class ProjectResponseDto
     public string? PropertyName { get; set; }
     public string? ClientName { get; set; }
     public string? Sponsor { get; set; }
-    public string Currency { get; set; } = "MVR";
+    public string Currency { get; set; } = "USD";
     public bool AllowExternalView { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Code { get; set; }
@@ -144,7 +144,7 @@ public class ProjectBudgetAllocationHistoryDto
     public long ToProjectId { get; set; }
     public string ToProjectName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
-    public string Currency { get; set; } = "MVR";
+    public string Currency { get; set; } = "USD";
     public string? Remarks { get; set; }
     public long? CreatedBy { get; set; }
     public string? CreatedByName { get; set; }
@@ -155,7 +155,7 @@ public class ProjectBudgetAllocationSummaryDto
 {
     public long ProjectId { get; set; }
     public string ProjectName { get; set; } = string.Empty;
-    public string Currency { get; set; } = "MVR";
+    public string Currency { get; set; } = "USD";
     public decimal ProjectFunding { get; set; }
     public decimal TotalFunding { get; set; }
     public decimal AllocatedToChildren { get; set; }
@@ -174,7 +174,7 @@ public class ProjectBudgetChildDto
 public class CostVarianceDto
 {
     public long ProjectId { get; set; }
-    public string Currency { get; set; } = "MVR";
+    public string Currency { get; set; } = "USD";
     public decimal Budget { get; set; }
     public decimal CurrentCommitment { get; set; }
     public decimal ActualSpend { get; set; }
@@ -325,7 +325,7 @@ public class ComparableProjectDto
     public string? Client { get; set; }
     public string? Scope { get; set; }
     public bool IsReferenceProject { get; set; }
-    public string Currency { get; set; } = "MVR";
+    public string Currency { get; set; } = "USD";
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public decimal ApprovedBudget { get; set; }

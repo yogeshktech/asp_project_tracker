@@ -1,4 +1,4 @@
-﻿-- =============================================================================
+-- =============================================================================
 -- Wisetrack PostgreSQL schema
 -- Database: wisetrack
 -- Run in DBeaver:
@@ -150,7 +150,7 @@ CREATE TABLE projects (
     property_id         BIGINT REFERENCES properties(id),
     client_name         VARCHAR(200),
     sponsor             VARCHAR(200),
-    currency            VARCHAR(10) NOT NULL DEFAULT 'MVR',
+    currency            VARCHAR(10) NOT NULL DEFAULT 'USD',
     allow_external_view BOOLEAN NOT NULL DEFAULT FALSE,
     name                VARCHAR(250) NOT NULL,
     code                VARCHAR(50),
@@ -222,7 +222,7 @@ CREATE TABLE budgets (
     project_id         BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name               VARCHAR(200) NOT NULL,
     approved_amount    NUMERIC(18,2) NOT NULL DEFAULT 0,
-    currency           VARCHAR(10) NOT NULL DEFAULT 'MVR',
+    currency           VARCHAR(10) NOT NULL DEFAULT 'USD',
     rag_amber_percent  NUMERIC(5,2) NOT NULL DEFAULT 10,
     rag_red_percent    NUMERIC(5,2) NOT NULL DEFAULT 20,
     status             VARCHAR(50) NOT NULL DEFAULT 'Draft',
@@ -235,7 +235,7 @@ CREATE TABLE budget_versions (
     budget_id     BIGINT NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
     version_no    INT NOT NULL,
     total_amount  NUMERIC(18,2) NOT NULL DEFAULT 0,
-    currency      TEXT NOT NULL DEFAULT 'MVR',
+    currency      TEXT NOT NULL DEFAULT 'USD',
     remarks       TEXT,
     created_by    BIGINT REFERENCES users(id),
     approver_id   BIGINT REFERENCES users(id) ON DELETE SET NULL,

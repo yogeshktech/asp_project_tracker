@@ -529,7 +529,7 @@ public class TaskService : ITaskService
             TaskId = request.TaskId,
             SubTaskId = request.SubTaskId,
             UpdatedBy = userId,
-            UpdateDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            UpdateDate = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5)),
             CompletionPercent = request.CompletionPercent,
             Status = request.Status,
             Remarks = request.Remarks,
@@ -567,7 +567,7 @@ public class TaskService : ITaskService
     public async Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId, long userId)
     {
         if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks")) return new();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5));
         var inactiveSince = DateTime.UtcNow.AddDays(-7);
         var tasks = await _repository.GetTasksAsync(projectId);
         var exceptions = new List<ExceptionItemDto>();
@@ -605,7 +605,7 @@ public class TaskService : ITaskService
     {
         if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks"))
             throw new UnauthorizedAccessException("You cannot view task reports for this project.");
-        var reportDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var reportDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5));
         var tasks = await _repository.GetTasksAsync(projectId);
         var updates = await _repository.GetUpdatesForDateAsync(projectId, reportDate);
 

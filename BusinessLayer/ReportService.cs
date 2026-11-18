@@ -323,7 +323,7 @@ public class ReportService : IReportService
         if (!await _permissions.CanViewProjectAsync(userId, projectId)) return null;
         if (!await _permissions.CanViewModuleAsync(userId, projectId, "Tasks"))
             throw new UnauthorizedAccessException("You cannot view task reports for this project.");
-        return await _repository.GetDailySiteReportAsync(projectId, date ?? DateOnly.FromDateTime(DateTime.UtcNow), cumulative);
+        return await _repository.GetDailySiteReportAsync(projectId, date ?? DateOnly.FromDateTime(DateTime.UtcNow.AddHours(5)), cumulative);
     }
 
     public async Task<List<ComparableProjectDto>> GetComparableProjectsAsync(long userId, ReportFilterDto filter)

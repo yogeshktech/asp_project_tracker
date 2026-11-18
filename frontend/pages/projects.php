@@ -72,7 +72,7 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
           <div style="display:flex; align-items:center; gap:8px; margin-bottom:3px;">
             <strong style="font-size:14px;">' . htmlspecialchars($node['name']) . '</strong>
           </div>
-          <small style="color:var(--text-muted); font-size:11.5px;">' . $relationTxt . ' · WBS: <code>' . htmlspecialchars($node['code']) . '</code> · Discipline: <b>' . htmlspecialchars($node['discipline'] ?? 'General') . '</b> · Lead: <b>' . htmlspecialchars($node['owner'] ?? 'Lead PM') . '</b> · Budget: <b>' . htmlspecialchars($node['budget'] ?? 'MVR 5.00 Cr') . '</b></small>
+          <small style="color:var(--text-muted); font-size:11.5px;">' . $relationTxt . ' · WBS: <code>' . htmlspecialchars($node['code']) . '</code> · Lead: <b>' . htmlspecialchars($node['owner'] ?? 'Lead PM') . '</b> · Budget: <b>' . htmlspecialchars($node['budget'] ?? 'MVR 5.00 Cr') . '</b></small>
         </div>
         <div class="tree-meta">
           <div class="progress ' . $progColor . '" style="width:60px; margin:0;"><i style="width:' . $prog . '%"></i></div>
@@ -164,11 +164,11 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
       <table class="table">
         <thead>
           <tr>
+            <th>SR NO</th>
             <th>WBS LEVEL & TYPE</th>
             <th>PROJECT TITLE & SCOPE</th>
             <th>PARENT HIERARCHY RELATION</th>
             <th>WBS CODE</th>
-            <th>DISCIPLINE</th>
             <th>OWNER</th>
             <th>BUDGET</th>
             <th>PROGRESS</th>
@@ -177,7 +177,7 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($resortProjects as $p): 
+          <?php foreach ($resortProjects as $sequenceIndex => $p):
             $prog = $p['progress'] ?? 50;
             $progColor = $prog >= 80 ? 'green' : ($prog >= 50 ? 'blue' : 'amber');
             $lvl = $p['level'] ?? 1;
@@ -189,6 +189,7 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
             }
           ?>
             <tr>
+              <td><?php echo $sequenceIndex + 1; ?></td>
               <td>
                 <span class="tree-level-pill lvl-<?php echo min(4, $lvl); ?>">
                   <?php echo $lvl == 1 ? '🔵 Level 1 · Root' : ($lvl == 2 ? '🟣 Level 2 · Sub' : ($lvl == 3 ? '🟢 Level 3 · Package' : '🟠 Level ' . $lvl . ' · Task')); ?>
@@ -209,7 +210,6 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
                 <?php endif; ?>
               </td>
               <td><code><?php echo htmlspecialchars($p['code']); ?></code></td>
-              <td><span class="badge blue"><?php echo htmlspecialchars($p['discipline'] ?? 'General'); ?></span></td>
               <td><?php echo htmlspecialchars($p['owner'] ?? 'Lead PM'); ?></td>
               <td><b><?php echo $p['budget'] ?? 'MVR 5.00 Cr'; ?></b></td>
               <td>
@@ -260,7 +260,7 @@ function renderPhpTreeNode($node, $depth = 1, $parentName = '') {
             ↳ Parent: <b><?php echo htmlspecialchars($parentObj['name']); ?></b>
           </div>
         <?php endif; ?>
-        <div style="font-size:11.5px; color:var(--text-muted);">Code: <code><?php echo $p['code']; ?></code> · <?php echo htmlspecialchars($p['discipline'] ?? 'General'); ?></div>
+        <div style="font-size:11.5px; color:var(--text-muted);">Code: <code><?php echo $p['code']; ?></code></div>
         <p style="font-size:12px; color:var(--text-muted); margin:10px 0; min-height:36px;"><?php echo htmlspecialchars($p['desc'] ?? 'Engineering deliverable package with milestones and technical specifications.'); ?></p>
         <div class="progress <?php echo $progColor; ?>"><i style="width:<?php echo $prog; ?>%"></i></div>
         <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
@@ -372,7 +372,7 @@ function syncClientSideProjects() {
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:3px;">
               <strong style="font-size:14px;">${escapeHtml(node.name || '')}</strong>
             </div>
-            <small style="color:var(--text-muted); font-size:11.5px;">${relationTxt} · WBS: <code>${escapeHtml(node.code || '')}</code> · Discipline: <b>${escapeHtml(node.discipline || 'General')}</b> · Lead: <b>${escapeHtml(node.owner || 'Lead PM')}</b> · Budget: <b>${node.budget || 'MVR 5.00 Cr'}</b></small>
+            <small style="color:var(--text-muted); font-size:11.5px;">${relationTxt} · WBS: <code>${escapeHtml(node.code || '')}</code> · Lead: <b>${escapeHtml(node.owner || 'Lead PM')}</b> · Budget: <b>${node.budget || 'MVR 5.00 Cr'}</b></small>
           </div>
           <div class="tree-meta">
             <div class="progress ${progColor}" style="width:60px; margin:0;"><i style="width:${prog}%"></i></div>

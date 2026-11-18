@@ -1427,6 +1427,16 @@ button.btn[disabled] {
 }
 .row-action-popover[hidden] { display: none; }
 .row-action-popover .btn { width: 100%; justify-content: flex-start; white-space: nowrap; }
+
+/* Keep the funding listing compact so more rows fit in the viewport. */
+.card:has(.budget-table-wrap) {
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.budget-table-wrap .table th { padding: 8px 10px; }
+.budget-table-wrap .table td { padding: 8px 10px; }
+.budget-table-wrap .table-actions { justify-content: center; }
+.budget-table-wrap .row-action-trigger { width: 30px; height: 28px; }
 .row-action-popover .btn[aria-label]::after { content: attr(aria-label); margin-left: 8px; }
 
 /* Table Toolbar */

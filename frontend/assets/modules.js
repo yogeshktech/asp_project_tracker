@@ -91,16 +91,16 @@
     return `<tr><td colspan="${colspan}">${esc(msg)}</td></tr>`;
   }
 
-  function formatBudgetValue(amount, currency = 'MVR') {
+  function formatBudgetValue(amount, currency = 'USD') {
     if (amount == null || !Number.isFinite(Number(amount))) return 'Not set';
     const value = Number(amount);
-    const rawCode = String(currency || 'MVR').toUpperCase();
-    const code = ['MVR', 'USD', 'EUR'].includes(rawCode) ? rawCode : 'MVR';
+    const rawCode = String(currency || 'USD').toUpperCase();
+    const code = ['MVR', 'USD', 'EUR'].includes(rawCode) ? rawCode : 'USD';
     return `${code} ${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
   }
 
   function projectBudgetLabel(project) {
-    return formatBudgetValue(project.projectBudgetAmount, project.projectBudgetCurrency || project.currency || 'MVR');
+    return formatBudgetValue(project.projectBudgetAmount, project.projectBudgetCurrency || project.currency || 'USD');
   }
 
   async function loadProjectsList() {
@@ -152,10 +152,11 @@
   }
 
   const PROJECT_CONTEXT_TABS = [
-    ['Overview', 'project-detail.html'], ['Planning & WBS', 'planning.html'],
-    ['Milestones', 'milestones.html'], ['Daily Reports', 'daily-report.html'],
-    ['Issues', 'issues.html'], ['BOQ', 'boq.html'], ['Budget', 'budget.html'],
-    ['Costs', 'costs.html'], ['Drawing Upload', 'drawing-upload.html'], ['Inventory', 'inventory.html'], ['Project Closure', 'closure.html']
+    ['Overview', 'project-detail.html'], ['Budget', 'budget.html'],
+    ['Drawing Upload', 'drawing-upload.html'], ['BOQ', 'boq.html'],
+    ['Milestones', 'milestones.html'], ['Task', 'planning.html'],
+    ['Costs', 'costs.html'], ['Issues', 'issues.html'], ['Daily Reports', 'daily-report.html'],
+    ['Inventory', 'inventory.html'], ['Project Closure', 'closure.html']
   ];
   const PROJECT_CONTEXT_PAGES = new Set(PROJECT_CONTEXT_TABS.map(([, href]) => href));
 
@@ -1315,7 +1316,7 @@
           <div style="flex:1;">
             <div style="display:flex; justify-content:space-between;">
               <strong style="font-size:13px; color:${ev.isAlert ? '#991b1b' : 'var(--text-main)'};">${esc(title)}</strong>
-              <small style="color:var(--text-muted);">${esc(ev.time || (ev.createdAt || ev.CreatedAt ? new Date(ev.createdAt || ev.CreatedAt).toLocaleTimeString() : 'Recent'))}</small>
+              <small style="color:var(--text-muted);">${esc(ev.time || (ev.createdAt || ev.CreatedAt ? wtFormatTime(ev.createdAt || ev.CreatedAt) : 'Recent'))}</small>
             </div>
             <p style="font-size:12px; margin:3px 0 0; color:${ev.isAlert ? '#7f1d1d' : 'var(--text-main)'};">${esc(desc)}</p>
           </div>
@@ -1588,12 +1589,12 @@
             <table class="table" id="wbsMasterTable">
               <thead>
                 <tr>
+                  <th>SR NO</th>
                   <th>Select</th>
                   <th>LEVEL</th>
                   <th>PROJECT / PACKAGE TITLE</th>
                   <th>SUB PROJECT</th>
                   <th>WBS CODE</th>
-                  <th>DISCIPLINE</th>
                   <th>OWNER / LEAD</th>
                   <th>BUDGET</th>
                   <th>PROGRESS</th>
@@ -1657,7 +1658,7 @@ WTPages.switchProjView = function(view) {
       const rootBudgetTotals = new Map();
       for (const p of rootBudgetRows) {
         if (p.projectBudgetAmount == null) continue;
-        const currency = String(p.projectBudgetCurrency || p.currency || 'MVR').toUpperCase();
+        const currency = String(p.projectBudgetCurrency || p.currency || 'USD').toUpperCase();
         rootBudgetTotals.set(currency, (rootBudgetTotals.get(currency) || 0) + Number(p.projectBudgetAmount));
       }
       const portfolioBudgetLabel = rootBudgetTotals.size
@@ -1734,13 +1735,14 @@ WTPages.switchProjView = function(view) {
       }
 
       // 2. Render Table View
-      $('#wbsTableBody').innerHTML = filteredProjects.map(p => {
+      $('#wbsTableBody').innerHTML = filteredProjects.map((p, sequenceIndex) => {
         const prog = p.progress || (p.progressPercent || 0);
         const progColor = prog >= 80 ? 'green' : (prog >= 50 ? 'blue' : 'amber');
         const lvl = Number(p.level) || 1;
         const parentObj = p.parentId ? projects.find(x => String(x.id) === String(p.parentId)) : null;
         return `
           <tr>
+            <td>${sequenceIndex + 1}</td>
             <td><input type="checkbox" aria-label="Select ${esc(p.name || p.title)}" ${selectedProjectIds.has(String(p.id)) ? 'checked' : ''} onchange="WTPages.toggleProjectSelection('${p.id}', this.checked)"></td>
             <td>
               <span class="tree-level-pill lvl-${Math.min(4, lvl)}">
@@ -1755,7 +1757,6 @@ WTPages.switchProjView = function(view) {
               ${parentObj ? `<small style="font-weight:600; color:var(--text-main);">↳ Parent: <u>${esc(parentObj.name)}</u></small>` : `<span class="badge blue">None (Root Parent)</span>`}
             </td>
             <td><code>${esc(p.code || 'PRJ-01')}</code></td>
-            <td><span class="badge blue">${esc(p.discipline || p.disc || 'Civil Structure')}</span></td>
             <td><b>${esc(p.owner || p.ownerName || 'Lead PM')}</b></td>
             <td>${esc(p.projectBudgetDisplay || projectBudgetLabel(p))}</td>
             <td>
@@ -1794,7 +1795,6 @@ WTPages.switchProjView = function(view) {
             </div>
             <h3 style="font-size:15px; font-weight:800; margin:10px 0 4px;">${esc(p.name || p.title)}</h3>
             ${parentObj ? `<div style="font-size:11px; color:#6b21a8; background:#faf5ff; padding:3px 6px; border-radius:4px; margin-bottom:6px;">↳ Parent: <b>${esc(parentObj.name)}</b></div>` : ''}
-            <div style="font-size:11.5px; color:var(--text-muted);">${esc(p.discipline || 'General')}</div>
             <div class="progress ${progColor}"><i style="width:${prog}%"></i></div>
             <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:12px;">
               <span><b>${prog}%</b> complete</span>
@@ -1831,7 +1831,7 @@ WTPages.switchProjView = function(view) {
         const total = summary.totalFunding ?? summary.TotalFunding ?? 0;
         const allocated = summary.allocatedToChildren ?? summary.AllocatedToChildren ?? 0;
         const available = summary.available ?? summary.Available ?? 0;
-        const currency = summary.currency || summary.Currency || 'MVR';
+        const currency = summary.currency || summary.Currency || 'USD';
         const projectName = summary.projectName || summary.ProjectName || `Project #${projectId}`;
         const rows = history.map(item => {
           const from = item.fromProjectName || item.FromProjectName || 'Project';
@@ -1839,7 +1839,7 @@ WTPages.switchProjView = function(view) {
           const amount = item.amount ?? item.Amount ?? 0;
           const at = item.createdAt || item.CreatedAt;
           const actor = item.createdByName || item.CreatedByName || 'User';
-          return `<tr><td>${esc(from)} to ${esc(to)}</td><td>${esc(formatBudgetValue(amount, item.currency || item.Currency || currency))}</td><td>${esc(item.remarks || item.Remarks || '-')}</td><td>${esc(actor)}</td><td>${at ? esc(new Date(at).toLocaleString()) : '-'}</td></tr>`;
+          return `<tr><td>${esc(from)} to ${esc(to)}</td><td>${esc(formatBudgetValue(amount, item.currency || item.Currency || currency))}</td><td>${esc(item.remarks || item.Remarks || '-')}</td><td>${esc(actor)}</td><td>${at ? esc(wtFormatDateTime(at)) : '-'}</td></tr>`;
         }).join('');
         const childOptions = childProjects.map(child => `<option value="${Number(child.id)}">${esc(child.name || child.title)}${child.code ? ` (${esc(child.code)})` : ''}</option>`).join('');
         openModal(`Budget Allocation · ${projectName}`, `
@@ -1898,7 +1898,7 @@ WTPages.switchProjView = function(view) {
           propertyId: project.propertyId ?? null,
           clientName: project.clientName ?? null,
           sponsor: project.sponsor ?? null,
-          currency: project.currency || 'MVR',
+          currency: project.currency || 'USD',
           allowExternalView: !!project.allowExternalView,
           name: project.name || project.title || '',
           code: project.code ?? null,
@@ -2062,9 +2062,9 @@ WTPages.switchProjView = function(view) {
       profileVariance = variance;
     } catch (_) { /* optional profile resources */ }
     p.budget = p.projectBudgetAmount != null ? projectBudgetLabel(p)
-      : profileBudget?.approvedAmount != null ? formatBudgetValue(profileBudget.approvedAmount, profileBudget.currency || p.currency || 'MVR') : 'N/A';
+      : profileBudget?.approvedAmount != null ? formatBudgetValue(profileBudget.approvedAmount, profileBudget.currency || p.currency || 'USD') : 'N/A';
     p.spent = profileVariance && (profileVariance.currentCommitment != null || profileVariance.purchaseTotal != null)
-      ? formatBudgetValue(profileVariance.currentCommitment ?? profileVariance.purchaseTotal, profileVariance.currency || p.currency || 'MVR') : 'N/A';
+      ? formatBudgetValue(profileVariance.currentCommitment ?? profileVariance.purchaseTotal, profileVariance.currency || p.currency || 'USD') : 'N/A';
     p.startDate = p.startDate || 'N/A';
     p.endDate = p.endDate || 'N/A';
     const prog = p.progress !== undefined ? p.progress : (p.progressPercent || 0);
@@ -2141,9 +2141,9 @@ WTPages.switchProjView = function(view) {
         extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
           <strong>Budget</strong>
           <div class="grid g4" style="margin-top:8px;font-size:12.5px;">
-            <div>Approved<br><b>${esc(p.projectBudgetCurrency || p.currency || variance.currency || 'MVR')} ${approvedFunding.toLocaleString('en-US')}</b></div>
-            <div>Purchase<br><b>${esc(variance.currency || 'MVR')} ${Number(variance.purchaseTotal || 0).toLocaleString('en-US')}</b></div>
-            <div>Actual<br><b>${esc(variance.currency || 'MVR')} ${Number(variance.actualTotal || 0).toLocaleString('en-US')}</b></div>
+            <div>Approved<br><b>${esc(p.projectBudgetCurrency || p.currency || variance.currency || 'USD')} ${approvedFunding.toLocaleString('en-US')}</b></div>
+            <div>Purchase<br><b>${esc(variance.currency || 'USD')} ${Number(variance.purchaseTotal || 0).toLocaleString('en-US')}</b></div>
+            <div>Actual<br><b>${esc(variance.currency || 'USD')} ${Number(variance.actualTotal || 0).toLocaleString('en-US')}</b></div>
             <div>Budget Status<br><span class="badge ${variance.ragStatus === 'Red' ? 'red' : variance.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(variance.ragStatus || 'Green')}</span></div>
           </div>
         </div>`);
@@ -2156,7 +2156,7 @@ WTPages.switchProjView = function(view) {
       extra.push(`<div class="card" style="margin-top:12px;padding:12px;">
         <strong>Variance Explanations </strong>
         <style>#wsVarList > p{display:none}</style>
-        <div id="wsVarList" class="table-wrap" style="margin-top:8px;font-size:12.5px;"><table class="table"><thead><tr><th>Variance Type</th><th>Explanation</th><th>Updated By</th><th>Date and Time</th></tr></thead><tbody>${(explanations || []).map(v => `<tr><td>${esc(v.varianceType || v.VarianceType || '—')}</td><td>${esc(v.explanation || v.Explanation || '—')}</td><td>${esc(v.updatedBy || v.UpdatedBy || 'Unknown')}</td><td>${(v.createdAt || v.CreatedAt) ? esc(new Date(v.createdAt || v.CreatedAt).toLocaleString()) : '—'}</td></tr>`).join('')}</tbody></table>${(explanations || []).length
+        <div id="wsVarList" class="table-wrap" style="margin-top:8px;font-size:12.5px;"><table class="table"><thead><tr><th>Variance Type</th><th>Explanation</th><th>Updated By</th><th>Date and Time</th></tr></thead><tbody>${(explanations || []).map(v => `<tr><td>${esc(v.varianceType || v.VarianceType || '—')}</td><td>${esc(v.explanation || v.Explanation || '—')}</td><td>${esc(v.updatedBy || v.UpdatedBy || 'Unknown')}</td><td>${(v.createdAt || v.CreatedAt) ? esc(wtFormatDateTime(v.createdAt || v.CreatedAt)) : '—'}</td></tr>`).join('')}</tbody></table>${(explanations || []).length
           ? explanations.map(v => `<p><b>${esc(v.varianceType || v.VarianceType)}</b> — ${esc(v.explanation || v.Explanation)}</p>`).join('')
           : 'No explanations recorded.'}</div>
       </div>`);
@@ -2183,9 +2183,9 @@ WTPages.switchProjView = function(view) {
     const rows = value => Array.isArray(value) ? value : value?.items || value?.data || [];
     const ms = rows(milestones), ts = rows(tasks), riskItems = rows(exceptions), issueRows = rows(issues), boqRows = rows(boq);
     const completed = item => /complete|closed|done/i.test(String(item.status || item.Status || '')) || Number(item.completionPercent ?? item.CompletionPercent ?? 0) >= 100;
-    const date = value => value ? new Date(value).toLocaleDateString() : '—';
+    const date = value => value ? wtFormatDate(value) : '—';
     const approvedFunding = Number(project.projectBudgetAmount ?? project.ProjectBudgetAmount ?? variance?.approvedBudget ?? variance?.budget ?? 0);
-    const currency = project.projectBudgetCurrency || project.currency || variance?.currency || 'MVR';
+    const currency = project.projectBudgetCurrency || project.currency || variance?.currency || 'USD';
     const money = value => `${esc(currency)} ${Number(value || 0).toLocaleString('en-US')}`;
     const openIssues = issueRows.filter(i => !/closed|resolved/i.test(String(i.status || i.Status || '')));
     const taskActions = ts.flatMap(t => [t, ...rows(t.subTasks || t.SubTasks)]);
@@ -2278,9 +2278,9 @@ WTPages.switchProjView = function(view) {
       $('#itemsBody').innerHTML = items.length ? items.map(it => `
         <tr>
           <td>${it.id}</td><td><code>${esc(it.itemCode || it.code || '')}</code></td>
-          <td>${esc(it.name)}</td><td>${esc(it.currency || it.Currency || 'MVR')} ${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-US')}</td>
+          <td>${esc(it.name)}</td><td>${esc(it.currency || it.Currency || 'USD')} ${Number(it.unitPrice || it.unitRate || 0).toLocaleString('en-US')}</td>
           <td>${esc(it.brand?.name || it.brandName || '—')}</td><td>${esc(it.unit?.name || it.unitName || it.unit?.code || '—')}</td>
-          <td>${it.standardPrice == null ? '—' : `${esc(it.currency || it.Currency || 'MVR')} ${Number(it.standardPrice).toLocaleString('en-US')}`}</td>
+          <td>${it.standardPrice == null ? '—' : `${esc(it.currency || it.Currency || 'USD')} ${Number(it.standardPrice).toLocaleString('en-US')}`}</td>
           <td>${esc(it.effectiveDate || '—')}</td><td>${esc(it.source || '—')}</td>
           <td>${it.imageUrl ? `<a href="${esc(it.imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
           <td class="table-actions">${canUpdate ? `<button class="btn sm" onclick="WTPages.openItemModal(${it.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? ` <button class="btn sm danger" onclick="WTPages.deleteItem(${it.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td>
@@ -2293,9 +2293,9 @@ WTPages.switchProjView = function(view) {
 
   async function openItemModal(id) {
     const [brands, units, cats] = await Promise.all([WisetrackAPI.getBrands(), WisetrackAPI.getUnits(), WisetrackAPI.getCategories()]);
-    let it = { itemCode: '', name: '', unitPrice: 0, currency: 'MVR' };
+    let it = { itemCode: '', name: '', unitPrice: 0, currency: 'USD' };
     if (id) it = await WisetrackAPI.getItem(id);
-    const itemCurrency = String(it.currency || it.Currency || 'MVR').trim().toUpperCase();
+    const itemCurrency = String(it.currency || it.Currency || 'USD').trim().toUpperCase();
     const itemCurrencies = ['MVR', 'USD', 'EUR'];
     openModal(id ? 'Edit Item' : 'Create Item', `
       <form onsubmit="WTPages.saveItem(event, ${id || 'null'})">
@@ -2366,11 +2366,11 @@ WTPages.switchProjView = function(view) {
           const summary = await WisetrackAPI.getProjectBudgetAllocationSummary(projectId);
           const children = summary.children || summary.Children || [];
           const history = summary.history || summary.History || [];
-          const currency = summary.currency || summary.Currency || 'MVR';
+          const currency = summary.currency || summary.Currency || 'USD';
           const total = summary.totalFunding ?? summary.TotalFunding ?? 0;
           const allocated = summary.allocatedToChildren ?? summary.AllocatedToChildren ?? 0;
           const available = summary.available ?? summary.Available ?? 0;
-          const rows = history.map(item => `<tr><td>${esc(item.fromProjectName || item.FromProjectName || 'Project')} → ${esc(item.toProjectName || item.ToProjectName || 'Project')}</td><td>${esc(formatBudgetValue(item.amount ?? item.Amount ?? 0, currency))}</td><td>${esc(item.remarks || item.Remarks || '—')}</td><td>${esc(item.createdByName || item.CreatedByName || 'User')}</td><td>${item.createdAt || item.CreatedAt ? esc(new Date(item.createdAt || item.CreatedAt).toLocaleString()) : '—'}</td></tr>`).join('');
+          const rows = history.map(item => `<tr><td>${esc(item.fromProjectName || item.FromProjectName || 'Project')} → ${esc(item.toProjectName || item.ToProjectName || 'Project')}</td><td>${esc(formatBudgetValue(item.amount ?? item.Amount ?? 0, currency))}</td><td>${esc(item.remarks || item.Remarks || '—')}</td><td>${esc(item.createdByName || item.CreatedByName || 'User')}</td><td>${item.createdAt || item.CreatedAt ? esc(wtFormatDateTime(item.createdAt || item.CreatedAt)) : '—'}</td></tr>`).join('');
           const options = children.map(child => `<option value="${Number(child.id)}">${esc(child.name || child.title)}${child.code ? ` (${esc(child.code)})` : ''}</option>`).join('');
           openModal('Project Budget Distribution', `<div class="project-budget-summary"><div><small>Total funding</small><strong>${esc(formatBudgetValue(total, currency))}</strong></div><div><small>Allocated to children</small><strong>${esc(formatBudgetValue(allocated, currency))}</strong></div><div class="available"><small>Available balance</small><strong>${esc(formatBudgetValue(available, currency))}</strong></div></div>
             ${children.length ? `<form onsubmit="WTPages.saveProjectBudgetAllocation(event, ${Number(projectId)})"><div class="form-grid"><div class="field full"><label>Child project *</label><select id="projectBudgetTarget" required>${options}</select></div><div class="field"><label>Amount (${esc(currency)}) *</label><input id="projectBudgetAmount" type="number" min="0.01" max="${Number(available)}" step="0.01" required></div><div class="field full"><label>Remarks</label><textarea id="projectBudgetRemarks" rows="2"></textarea></div></div><div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Close</button><button type="submit" class="btn primary" ${Number(available) <= 0 ? 'disabled' : ''}>Allocate budget</button></div></form>` : '<p>Create a child project first to allocate budget to it.</p>'}
@@ -2385,21 +2385,21 @@ WTPages.switchProjView = function(view) {
         } catch (error) { showToast(error.message || 'Budget allocation failed.', 'danger'); }
       };
     }
-    el.innerHTML = pageHead('Budgets & Cost Centers', '/api/budgets',
+    el.innerHTML = pageHead('Budgets', '/api/budgets',
       ` ${pid && canUpdateBudget ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
         ${canCreateBudget ? `<button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
-      + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Attachment', 'Actions'], 'budgetBody')
+      + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Created At', 'Attachment', 'Actions'], 'budgetBody', 'budget-table-wrap')
       + `<div hidden>${tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Attachment', 'Actions'], 'ccBody', 'cost-center-table-wrap')}</div>`;
     if (!pid) {
-      $('#budgetBody').innerHTML = emptyRow(9, 'No project available.');
+      $('#budgetBody').innerHTML = emptyRow(10, 'No project available.');
       $('#ccBody').innerHTML = emptyRow(10, 'No project available.');
       return;
     }
     try {
       const [budgets, ccs] = await Promise.all([WisetrackAPI.getBudgets(pid), WisetrackAPI.getCostCenters(pid)]);
       const funding = await WisetrackAPI.getProjectBudgetAllocationSummary(pid).catch(() => null);
-      const fundingCurrency = funding?.currency || funding?.Currency || budgets?.[0]?.currency || 'MVR';
+      const fundingCurrency = funding?.currency || funding?.Currency || budgets?.[0]?.currency || 'USD';
       const fundingValue = (camel, pascal) => Number(funding?.[camel] ?? funding?.[pascal] ?? 0);
       $('#projectFundingPosition').innerHTML = funding
         ? `<div>Total funding<br><strong>${esc(formatBudgetValue(fundingValue('totalFunding', 'TotalFunding'), fundingCurrency))}</strong></div><div>Allocated to child projects<br><strong>${esc(formatBudgetValue(fundingValue('allocatedToChildren', 'AllocatedToChildren'), fundingCurrency))}</strong></div><div>Available balance<br><strong>${esc(formatBudgetValue(fundingValue('available', 'Available'), fundingCurrency))}</strong></div><div>Currency<br><strong>${esc(fundingCurrency)}</strong></div>`
@@ -2436,24 +2436,26 @@ WTPages.switchProjView = function(view) {
         const latestVersion = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo) - Number(a.versionNo ?? a.VersionNo))[0];
         const versionNo = latestVersion?.versionNo ?? latestVersion?.VersionNo;
         const versionLabel = latestVersion?.versionLabel ?? latestVersion?.VersionLabel ?? (versionNo ? `v${versionNo}` : '—');
+        const createdAt = b.created_at ?? b.createdAt ?? b.CreatedAt;
+        const createdAtLabel = createdAt && !Number.isNaN(Date.parse(createdAt)) ? new Date(createdAt).toLocaleString() : '—';
         const canUpdate = canUpdateBudget;
         const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
         const actions = b._projectFunding
           ? '<span class="badge">Parent allocation</span>'
           : `<button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> ${canUpdate ? `<button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> <button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}`;
         return `<tr><td>${b.id || '—'}</td><td>${esc(b.name)}</td>
-          <td>${esc(b.currency || 'MVR')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
-          <td>${esc(b.currency || 'MVR')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'MVR')} ${remaining.toLocaleString('en-US')}</td>
-          <td>${esc(b.currency || b.Currency || 'MVR')}</td><td>${esc(versionLabel)}</td>
+          <td>${esc(b.currency || 'USD')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
+          <td>${esc(b.currency || 'USD')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'USD')} ${remaining.toLocaleString('en-US')}</td>
+          <td>${esc(b.currency || b.Currency || 'USD')}</td><td>${esc(versionLabel)}</td><td>${esc(createdAtLabel)}</td>
           <td><button class="btn sm" title="View attachment history" onclick="WTPages.openAttachmentHistory('budget', ${b.id}, ${canUpdate})"><i class="fa-solid fa-paperclip"></i> ${(b.attachments || b.Attachments || []).length}</button></td>
-          <td class="table-actions">${actions}</td></tr>`;
-      }).join('') || emptyRow(9, 'No budgets');
+          <td class="table-actions">${taskRowActionMenu(actions)}</td></tr>`;
+      }).join('') || emptyRow(10, 'No budgets');
       const allocationMap = new Map();
       const allocationSources = new Map();
       for (const b of budgets || []) for (const a of (b.allocations || b.Allocations || [])) {
         const centerId = Number(a.costCenterId ?? a.CostCenterId), amount = Number(a.allocatedAmount ?? a.AllocatedAmount ?? 0);
         allocationMap.set(centerId, (allocationMap.get(centerId) || 0) + amount);
-        const source = `${b.name || b.Name}: ${b.currency || b.Currency || 'MVR'} ${amount.toLocaleString('en-US')}${a.remarks || a.Remarks ? ` · ${a.remarks || a.Remarks}` : ''}`;
+        const source = `${b.name || b.Name}: ${b.currency || b.Currency || 'USD'} ${amount.toLocaleString('en-US')}${a.remarks || a.Remarks ? ` · ${a.remarks || a.Remarks}` : ''}`;
         allocationSources.set(centerId, [...(allocationSources.get(centerId) || []), source]);
       }
       const projectTransfers = await Promise.all((ccs || []).filter(c => Number(c.projectId) && Number(c.projectId) !== Number(pid)).map(async c => [Number(c.projectId), await WisetrackAPI.getProjectBudgetAllocationSummary(Number(c.projectId)).catch(() => null)]));
@@ -2466,7 +2468,7 @@ WTPages.switchProjView = function(view) {
         const incomingTransfers = (childSummary?.history || childSummary?.History || []).filter(t => Number(t.toProjectId ?? t.ToProjectId) === Number(c.projectId));
         const transferred = incomingTransfers.reduce((sum, t) => sum + Number(t.amount ?? t.Amount ?? 0), 0);
         const allocated = legacyAllocated + transferred;
-        const sourceTitle = [...(allocationSources.get(Number(c.id)) || []), ...incomingTransfers.map(t => `${t.fromProjectName || t.FromProjectName || 'Parent project'} → ${c.name}: ${t.currency || t.Currency || 'MVR'} ${Number(t.amount ?? t.Amount ?? 0).toLocaleString('en-US')}${t.remarks || t.Remarks ? ` · ${t.remarks || t.Remarks}` : ''}`)].join('\n');
+        const sourceTitle = [...(allocationSources.get(Number(c.id)) || []), ...incomingTransfers.map(t => `${t.fromProjectName || t.FromProjectName || 'Parent project'} → ${c.name}: ${t.currency || t.Currency || 'USD'} ${Number(t.amount ?? t.Amount ?? 0).toLocaleString('en-US')}${t.remarks || t.Remarks ? ` · ${t.remarks || t.Remarks}` : ''}`)].join('\n');
         const status = rollup.ragStatus || 'Green';
         const ccProjectId = Number(c.projectId || pid);
         const canEditCenter = !wtCan || wtCan('Budgets', 'update', ccProjectId);
@@ -2486,11 +2488,11 @@ WTPages.switchProjView = function(view) {
           ? `<button class="btn sm" title="View project budget history" aria-label="View project budget history" onclick="WTPages.openChildBudgetHistory(${ccProjectId}, ${childNameArg})"><i class="fa-solid fa-clock-rotate-left"></i></button>`
           : '';
         return `<tr><td>${esc(costCenterDisplayName(c.name))}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
-          <td title="${esc(sourceTitle || 'No budget allocations')}">${esc(budgets?.[0]?.currency || fundingCurrency || 'MVR')} ${centerBudget.toLocaleString('en-US')}${sourceTitle ? ' <i class="fa-solid fa-circle-info" aria-label="Allocation sources"></i>' : ''}</td>
-          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-US')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.actualSpend || 0).toLocaleString('en-US')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.forecast ?? rollup.spent ?? 0).toLocaleString('en-US')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'MVR')} ${Number(rollup.variance ?? allocated).toLocaleString('en-US')}</td>
+          <td title="${esc(sourceTitle || 'No budget allocations')}">${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${centerBudget.toLocaleString('en-US')}${sourceTitle ? ' <i class="fa-solid fa-circle-info" aria-label="Allocation sources"></i>' : ''}</td>
+          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-US')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.actualSpend || 0).toLocaleString('en-US')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.forecast ?? rollup.spent ?? 0).toLocaleString('en-US')}</td>
+          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.variance ?? allocated).toLocaleString('en-US')}</td>
           <td><span class="badge ${rollup.budgetStatus === 'Over Budget' ? 'red' : rollup.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(rollup.budgetStatus || 'On Budget')}</span></td>
           <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td>
           <td><button class="btn sm" title="View attachment history" onclick="WTPages.openAttachmentHistory('costcenter', ${c.id}, ${canEditCenter})"><i class="fa-solid fa-paperclip"></i> ${(c.attachments || c.Attachments || []).length}</button></td>
@@ -2508,7 +2510,7 @@ WTPages.switchProjView = function(view) {
     const budget = id ? (await WisetrackAPI.getBudgets(pid)).find(b => Number(b.id) === Number(id)) : null;
     if (id && !budget) { showToast('Budget not found', 'danger'); return; }
     const project = await WisetrackAPI.getProject(pid);
-    const currency = String(project.currency || project.Currency || budget?.currency || 'MVR').toUpperCase();
+    const currency = String(project.currency || project.Currency || budget?.currency || 'USD').toUpperCase();
     budgetFormQueuedFiles = [];
     openModal(budget ? 'Edit Budget' : 'Create Budget', `
       <form onsubmit="WTPages.saveBudget(event)">
@@ -2558,7 +2560,7 @@ WTPages.switchProjView = function(view) {
       payload.append('projectId', $('#bProj').value);
       payload.append('name', $('#bName').value.trim());
       payload.append('approvedAmount', $('#bAmt').value);
-      payload.append('currency', $('#bCur').value.trim() || 'MVR');
+      payload.append('currency', $('#bCur').value.trim() || 'USD');
       payload.append('remarks', $('#bReason')?.value.trim() || '');
       for (const file of $('#bAttachment').files) payload.append('attachments', file);
       if (id) await WisetrackAPI.updateBudget(id, payload);
@@ -2586,7 +2588,7 @@ WTPages.switchProjView = function(view) {
       budgetRevisionQueuedFiles = [];
       openModal('Revise Approved Budget', `<form onsubmit="WTPages.saveBudgetRevision(event)">
         <input type="hidden" id="revisionBudgetId" value="${id}">
-        <p class="card-subtitle">Current approved amount: ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</p>
+        <p class="card-subtitle">Current approved amount: ${esc(budget.currency || 'USD')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</p>
         <div class="field"><label>Revised Budget *</label><input id="revisionAmount" type="number" min="0.01" step="0.01" value="${Number(budget.approvedAmount || 0)}" required></div>
         <div class="field"><label>Revision Reason *</label><textarea id="revisionReason" rows="3" maxlength="2000" required></textarea></div>
         <div class="field"><label>Attachments (optional)</label><input id="revisionAttachments" type="file" multiple accept=".jpg,.jpeg,.webp,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt" onchange="WTPages.previewBudgetRevisionFiles(this)"><small class="card-subtitle">Select multiple files: JPG, JPEG, WEBP, PDF, DOC, DOCX, XLS, XLSX, CSV, or TXT. Up to 10 files, 25 MB each.</small><div id="revisionAttachmentPreview" style="display:grid;gap:8px;margin-top:8px"></div></div>
@@ -2651,18 +2653,18 @@ WTPages.switchProjView = function(view) {
       const versions = [...(budget.versions || [])].sort((a, z) => Number(a.versionNo) - Number(z.versionNo));
       const latestNo = versions.reduce((n, v) => Math.max(n, Number(v.versionNo ?? v.VersionNo ?? 0)), 0);
       const rows = versions.map((v, index) => {
-        const previous = index > 0 ? `${esc(versions[index - 1].currency || budget.currency || 'MVR')} ${Number(versions[index - 1].totalAmount || 0).toLocaleString('en-US')}` : '—';
+        const previous = index > 0 ? `${esc(versions[index - 1].currency || budget.currency || 'USD')} ${Number(versions[index - 1].totalAmount || 0).toLocaleString('en-US')}` : '—';
         const versionNo = Number(v.versionNo ?? v.VersionNo ?? 0);
         const versionLabel = v.versionLabel || v.VersionLabel || `v${versionNo}`;
         const isCurrent = versionNo === latestNo;
         return `<tr><td>${esc(versionLabel)}${isCurrent ? ' <span class="badge green">Current approved</span>' : ''}</td>
-          <td>${previous}</td><td>${esc(v.currency || budget.currency || 'MVR')} ${Number(v.totalAmount || 0).toLocaleString('en-US')}</td>
-          <td>${esc(v.remarks || '—')}</td><td>${esc(v.createdAt ? new Date(v.createdAt).toLocaleString() : '—')}</td>
+          <td>${previous}</td><td>${esc(v.currency || budget.currency || 'USD')} ${Number(v.totalAmount || 0).toLocaleString('en-US')}</td>
+          <td>${esc(v.remarks || '—')}</td><td>${esc(v.createdAt ? wtFormatDateTime(v.createdAt) : '—')}</td>
           <td>${esc(v.approverName || (v.approverId ? `User #${v.approverId}` : '—'))}</td></tr>`;
       }).join('');
       const latestVersion = versions.find(v => Number(v.versionNo ?? v.VersionNo ?? 0) === latestNo);
       const latestLabel = latestVersion?.versionLabel || latestVersion?.VersionLabel || `v${latestNo || '—'}`;
-      openModal(`Budget History · ${esc(budget.name)}`, `<div class="card-subtitle" style="margin-bottom:12px">Current approved version: ${esc(latestLabel)} · ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</div>
+      openModal(`Budget History · ${esc(budget.name)}`, `<div class="card-subtitle" style="margin-bottom:12px">Current approved version: ${esc(latestLabel)} · ${esc(budget.currency || 'USD')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')}</div>
         <div class="table-wrap"><table><thead><tr><th>Version</th><th>Previous Budget</th><th>Revised Budget</th><th>Revision Reason</th><th>Revision Date</th><th>Approver</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="6">No version history found.</td></tr>'}</tbody></table></div>`);
     } catch (e) { showToast(e.message, 'danger'); }
@@ -2680,12 +2682,12 @@ WTPages.switchProjView = function(view) {
         const versionNo = Number(version.versionNo ?? version.VersionNo ?? 0);
         const label = version.versionLabel || version.VersionLabel || `v${versionNo}`;
         const amount = Number(version.totalAmount ?? version.TotalAmount ?? 0);
-        const currency = version.currency || version.Currency || budget.currency || budget.Currency || 'MVR';
+        const currency = version.currency || version.Currency || budget.currency || budget.Currency || 'USD';
         const createdAt = version.createdAt || version.CreatedAt;
         const approver = version.approverName || version.ApproverName || (version.approverId || version.ApproverId ? `User #${version.approverId || version.ApproverId}` : '—');
         return `<tr><td>${esc(budget.name || budget.Name || 'Budget')}</td><td>${esc(label)}${current ? ' <span class="badge green">Current approved</span>' : ''}</td>
           <td>${esc(currency)} ${amount.toLocaleString('en-US')}</td><td>${esc(version.remarks || version.Remarks || '—')}</td>
-          <td>${esc(createdAt ? new Date(createdAt).toLocaleString() : '—')}</td><td>${esc(approver)}</td></tr>`;
+          <td>${esc(createdAt ? wtFormatDateTime(createdAt) : '—')}</td><td>${esc(approver)}</td></tr>`;
       }).join('');
       openModal(`Budget History · ${esc(projectName || 'Sub-project')}`, `<div class="table-wrap"><table><thead><tr><th>Budget</th><th>Version</th><th>Approved amount</th><th>Remarks</th><th>Date</th><th>Approver</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No budget history found.</td></tr>'}</tbody></table></div>`);
     } catch (error) { showToast(error.message || 'Could not load project budget history.', 'danger'); }
@@ -2701,7 +2703,7 @@ WTPages.switchProjView = function(view) {
       const options = (centers || []).map(c => `<option value="${c.id}">${esc(costCenterDisplayName(c.name))}${c.projectId !== Number(pid) ? ' (Sub-project cost center)' : ''}</option>`).join('');
       openModal('Allocate Budget to Cost Center', `<form onsubmit="WTPages.saveAllocation(event)">
         <input type="hidden" id="allocBudgetId" value="${budgetId}">
-        <p class="card-subtitle">${esc(budget.name)} · Approved ${esc(budget.currency || 'MVR')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')} · Remaining ${esc(budget.currency || 'MVR')} ${(Number(budget.approvedAmount || 0) - allocated).toLocaleString('en-US')}</p>
+        <p class="card-subtitle">${esc(budget.name)} · Approved ${esc(budget.currency || 'USD')} ${Number(budget.approvedAmount || 0).toLocaleString('en-US')} · Remaining ${esc(budget.currency || 'USD')} ${(Number(budget.approvedAmount || 0) - allocated).toLocaleString('en-US')}</p>
         <div class="field"><label>Cost Center *</label><select id="allocCenter" required>${options}</select></div>
         <div class="field"><label>Amount *</label><input id="allocAmount" type="number" min="0.01" step="0.01" max="${Math.max(0, Number(budget.approvedAmount || 0) - allocated)}" required></div>
         <div class="field"><label>Remarks</label><input id="allocRemarks"></div>
@@ -2763,7 +2765,7 @@ WTPages.switchProjView = function(view) {
         const fileId = Number(file.id ?? file.Id);
         const fileName = file.fileName || file.FileName || 'Attachment';
         const uploadedAt = file.uploadedAt || file.UploadedAt;
-        return `<tr><td>${esc(fileName)}</td><td>${esc(uploadedAt ? new Date(uploadedAt).toLocaleString() : '—')}</td><td><button class="btn sm" title="View" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, true)"><i class="fa-solid fa-download"></i></button>${canDelete ? ` <button class="btn sm danger" title="Delete file" onclick="WTPages.deleteAttachment('${kind}', ${id}, ${fileId})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
+        return `<tr><td>${esc(fileName)}</td><td>${esc(uploadedAt ? wtFormatDateTime(uploadedAt) : '—')}</td><td><button class="btn sm" title="View" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, false)"><i class="fa-solid fa-eye"></i></button> <button class="btn sm" title="Download" onclick="WTPages.openAttachmentFile('${kind}', ${id}, ${fileId}, true)"><i class="fa-solid fa-download"></i></button>${canDelete ? ` <button class="btn sm danger" title="Delete file" onclick="WTPages.deleteAttachment('${kind}', ${id}, ${fileId})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('');
       openModal(`Attachment History · ${esc(owner.name || owner.Name || 'Record')}`, `<div class="table-wrap"><table class="table attachment-history-table"><thead><tr><th>File name</th><th>Uploaded date & time</th><th>Options</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No files uploaded.</td></tr>'}</tbody></table></div>`);
     } catch (e) { showToast(e.message || 'Could not load attachment history.', 'danger'); }
@@ -3049,7 +3051,7 @@ WTPages.switchProjView = function(view) {
         })
       ));
       const explanations = await WisetrackAPI.getVarianceExplanations(pid).catch(() => []);
-      const currency = esc(variance.currency || 'MVR');
+      const currency = esc(variance.currency || 'USD');
       const money = amount => `${currency} ${Number(amount || 0).toLocaleString('en-US')}`;
       const budget = Number(variance.budget ?? variance.approvedBudget ?? 0);
       const forecast = Number(variance.forecastTotal ?? (Number(variance.purchaseTotal || 0) + Number(variance.actualSpend ?? variance.actualTotal ?? 0)));
@@ -3063,7 +3065,7 @@ WTPages.switchProjView = function(view) {
         <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
           <strong>Variance Explanations</strong>
           <style>#varExplainList > p{display:none}</style>
-          <div id="varExplainList" class="table-wrap" style="margin:8px 0;font-size:13px;"><table class="table"><thead><tr><th>Variance Type</th><th>Explanation</th><th>Updated By</th><th>Date and Time</th></tr></thead><tbody>${(explanations || []).map(v => `<tr><td>${esc(v.varianceType || v.VarianceType || '—')}</td><td>${esc(v.explanation || v.Explanation || '—')}</td><td>${esc(v.updatedBy || v.UpdatedBy || 'Unknown')}</td><td>${(v.createdAt || v.CreatedAt) ? esc(new Date(v.createdAt || v.CreatedAt).toLocaleString()) : '—'}</td></tr>`).join('')}</tbody></table>${(explanations || []).length
+          <div id="varExplainList" class="table-wrap" style="margin:8px 0;font-size:13px;"><table class="table"><thead><tr><th>Variance Type</th><th>Explanation</th><th>Updated By</th><th>Date and Time</th></tr></thead><tbody>${(explanations || []).map(v => `<tr><td>${esc(v.varianceType || v.VarianceType || '—')}</td><td>${esc(v.explanation || v.Explanation || '—')}</td><td>${esc(v.updatedBy || v.UpdatedBy || 'Unknown')}</td><td>${(v.createdAt || v.CreatedAt) ? esc(wtFormatDateTime(v.createdAt || v.CreatedAt)) : '—'}</td></tr>`).join('')}</tbody></table>${(explanations || []).length
             ? explanations.map(v => `<p style="margin:4px 0;"><b>${esc(v.varianceType || v.VarianceType)}</b> — ${esc(v.explanation || v.Explanation)}</p>`).join('')
             : '<p style="color:var(--text-muted);margin:4px 0;">No explanations yet. Record why cost or schedule moved.</p>'}</div>
           <div class="form-grid">
@@ -3584,7 +3586,7 @@ WTPages.switchProjView = function(view) {
         <div class="field full"><label>Status *</label><select id="boqEditStatus" required>${options}</select></div>
         </div><div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Update status</button></div></form>
         <div class="card" style="padding:12px;margin-top:16px"><strong>Status history</strong><div class="table-wrap" style="margin-top:8px"><table class="table"><thead><tr><th>Previous status</th><th>New status</th><th>Updated by</th><th>Email</th><th>Date &amp; time</th></tr></thead><tbody>
-        ${history.length ? history.map(h => `<tr><td>${esc(h.previousStatus || '—')}</td><td>${esc(h.newStatus || '—')}</td><td>${esc(h.userName || 'Unknown')}</td><td>${esc(h.userEmail || '—')}</td><td>${esc(new Date(h.createdAt).toLocaleString())}</td></tr>`).join('') : '<tr><td colspan="5">No status changes recorded yet.</td></tr>'}
+        ${history.length ? history.map(h => `<tr><td>${esc(h.previousStatus || '—')}</td><td>${esc(h.newStatus || '—')}</td><td>${esc(h.userName || 'Unknown')}</td><td>${esc(h.userEmail || '—')}</td><td>${esc(wtFormatDateTime(h.createdAt))}</td></tr>`).join('') : '<tr><td colspan="5">No status changes recorded yet.</td></tr>'}
         </tbody></table></div></div>`);
     } catch (error) { showToast(error.message || 'Could not load BOQ.', 'danger'); }
   }
@@ -4594,7 +4596,7 @@ WTPages.switchProjView = function(view) {
         if (!rows.length) return [`<tr><td>${esc(resortName)}</td><td>${esc(projectName)}</td><td colspan="4" style="color:var(--text-muted)">No ${cumulative ? 'progress snapshot' : 'daily report entries'} for this date.</td></tr>`];
         return rows.map(u => `<tr><td>${esc(resortName)}</td><td>${esc(projectName)}</td><td>${esc(u.title || u.Title || '')}${(u.subTaskTitle || u.SubTaskTitle) ? `<small style="display:block;color:var(--text-muted)">${esc(u.subTaskTitle || u.SubTaskTitle)}</small>` : ''}</td><td>${esc(u.status || u.Status || '—')}</td><td>${Number(u.completionPercent ?? u.CompletionPercent ?? 0)}%</td><td>${esc(u.remarks || u.Remarks || '—')}</td></tr>`);
       });
-      target.innerHTML = `<div style="margin-bottom:10px"><strong>${cumulative ? 'Progress as of' : 'Updates on'}:</strong> ${esc(date || new Date().toLocaleDateString('en-CA'))} &nbsp; <strong>Selected resorts:</strong> ${resortIds.length} &nbsp; <strong>Projects included:</strong> ${selectedProjects.length} &nbsp; <strong>Daily entries:</strong> ${updates.length}</div>
+      target.innerHTML = `<div style="margin-bottom:10px"><strong>${cumulative ? 'Progress as of' : 'Updates on'}:</strong> ${esc(date || wtTodayInputDate())} &nbsp; <strong>Selected resorts:</strong> ${resortIds.length} &nbsp; <strong>Projects included:</strong> ${selectedProjects.length} &nbsp; <strong>Daily entries:</strong> ${updates.length}</div>
         <div class="table-wrap"><table class="table"><thead><tr><th>Resort</th><th>Project</th><th>Task / Sub-task</th><th>Status</th><th>Completion</th><th>Remarks</th></tr></thead><tbody>
           ${reportRows.length ? reportRows.join('') : '<tr><td colspan="6">No projects found for the selected resorts.</td></tr>'}
         </tbody></table></div>`;
@@ -5450,7 +5452,7 @@ WTPages.switchProjView = function(view) {
         const title = note.title || note.subject || 'Notification';
         const body = note.body || note.message || '';
         const type = note.type || '';
-        const when = note.createdAt ? new Date(note.createdAt).toLocaleString() : '';
+        const when = note.createdAt ? wtFormatDateTime(note.createdAt) : '';
         const unread = n.isRead === false;
         const rid = n.id || n.recipientId;
         return `
@@ -5481,7 +5483,7 @@ WTPages.switchProjView = function(view) {
           <td>${r.delayHours ?? 0}</td>
           <td>${esc(roleName(r.targetRoleId))}</td>
           <td><span class="badge ${r.isActive === false ? 'gray' : 'green'}">${r.isActive === false ? 'Inactive' : 'Active'}</span> ${canUpdateNotifications ? `<button class="btn sm" onclick="WTPages.setEscRuleActive(${Number(r.id)},${r.isActive === false ? 'true' : 'false'})">${r.isActive === false ? 'Enable' : 'Pause'}</button>` : ''}</td>
-          <td>${r.createdAt ? esc(new Date(r.createdAt).toLocaleString()) : '—'}</td>
+          <td>${r.createdAt ? esc(wtFormatDateTime(r.createdAt)) : '—'}</td>
         </tr>`).join('') : emptyRow(7, 'No escalation rules');
 
       const scheduledRows = Array.isArray(scheduled) ? scheduled : [];
@@ -5490,7 +5492,7 @@ WTPages.switchProjView = function(view) {
           <td>${n.id}</td>
           <td><strong>${esc(n.projectName || `Project #${n.projectId}`)}</strong><small style="display:block;color:var(--text-muted)">${esc(n.relatedType)}: ${esc(n.relatedName || `#${n.relatedId}`)}</small></td>
           <td><strong>${esc(n.title)}</strong><small style="display:block;color:var(--text-muted)">${esc(n.body)}</small></td>
-          <td>${esc(new Date(n.scheduledAt).toLocaleString())}</td>
+          <td>${esc(wtFormatDateTime(n.scheduledAt))}</td>
           <td>${(n.recipients || []).map(u => esc(u.fullName || u.email)).join(', ')}</td>
           <td>${n.sendEmail ? 'In-app + Email' : 'In-app'}</td>
           <td><span class="badge ${n.status === 'Sent' ? 'green' : n.status === 'Failed' ? 'red' : n.status === 'Cancelled' ? 'gray' : 'amber'}">${esc(n.status)}</span>${n.lastError ? `<small style="display:block;color:var(--danger)">${esc(n.lastError)}</small>` : ''}</td>
@@ -5773,9 +5775,9 @@ WTPages.switchProjView = function(view) {
       const averageProgress = ts.length ? Math.round(ts.reduce((n,t) => n + Number(t.completionPercent ?? t.CompletionPercent ?? 0), 0) / ts.length) : 0;
       const pending = ts.flatMap(t => [t, ...(t.subTasks || t.SubTasks || [])]).filter(t => !done(t)).sort((a,b) => new Date(a.dueDate || a.DueDate || '9999-12-31') - new Date(b.dueDate || b.DueDate || '9999-12-31'));
       const openIssues = issueRows.filter(i => !/closed|resolved/i.test(String(i.status || i.Status || '')));
-      const currency = esc(project.currency || project.Currency || 'MVR');
+      const currency = esc(project.currency || project.Currency || 'USD');
       const cash = value => `${currency} ${Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
-      const fmtDate = value => value ? new Date(value).toLocaleDateString() : '—';
+      const fmtDate = value => value ? wtFormatDate(value) : '—';
       const list = (items, empty) => items.length ? `<ul>${items.join('')}</ul>` : `<p style="color:var(--text-muted)">${empty}</p>`;
       const finance = can('Budgets') || can('Costs') ? `<p>${can('Budgets') ? `Approved budget: <b>${cash(approvedBudget)}</b>` : 'Approved budget hidden.'}</p>
           ${can('Costs') ? `<p>Purchases this month: <b>${cash(monthlyPurchases)}</b> · Actual costs this month: <b>${cash(monthlyActuals)}</b> · Total monthly spend: <b>${cash(monthlyPurchases + monthlyActuals)}</b></p>` : '<p>Monthly cost entries hidden.</p>'}` : '<p style="color:var(--text-muted)">Financial data hidden for your permissions.</p>';
@@ -5788,7 +5790,7 @@ WTPages.switchProjView = function(view) {
         ${can('Tasks') || can('Issues') ? `<h3>Task Alerts &amp; Issues</h3><p>Task alerts are generated automatically for overdue tasks or tasks without progress updates for 7 days.</p>${list([...(can('Tasks') ? riskRows.map(r => `<li>${esc(r.type || r.Type || 'Task alert')} ? ${esc(r.title || r.Title || r.message || r.Message || 'Task alert')}</li>`) : []), ...(can('Issues') ? openIssues.map(i => `<li>${i.isEscalated || i.IsEscalated ? '<b>Escalated ? </b>' : ''}${esc(i.title || i.Title || 'Open issue')} ? ${esc(i.status || i.Status || 'Open')}</li>`) : [])], 'No active task alerts or open issues.')}` : ''}
         <h3>Decisions</h3><p style="white-space:pre-wrap">${esc(decisions || 'No decisions recorded for this month.')}</p>
         ${can('Tasks') ? `<h3>Next Actions</h3>${list(pending.slice(0,20).map(t => `<li><b>${esc(t.title || t.Title || 'Task')}</b> ? ${esc(t.status || t.Status || 'Not started')} ? due ${fmtDate(t.dueDate || t.DueDate)}</li>`), 'No outstanding actions.')}` : ''}
-        <hr><small>Generated ${new Date().toLocaleString()} · Reporting period ${period}</small>
+        <hr><small>Generated ${wtFormatDateTime()} · Reporting period ${period}</small>
         </div>`;
       result.innerHTML = reportHtml;
       await WisetrackAPI.createReport({
@@ -5894,8 +5896,8 @@ WTPages.switchProjView = function(view) {
           <td title="${esc(r.scope || r.Scope || '')}">${esc(r.scope || r.Scope || '-')}</td>
           <td>${(r.varianceExplanations || r.VarianceExplanations || []).map(v => `<div><b>${esc(v.varianceType || v.VarianceType)}:</b> ${esc(v.explanation || v.Explanation)}</div>`).join('') || '-'}</td>
           <td>${esc(r.startDate || r.StartDate || '-')} to ${esc(r.endDate || r.EndDate || '-')}</td>
-          ${showBudget ? `<td>${esc(r.currency || 'MVR')} ${Number(r.approvedBudget || r.ApprovedBudget || 0).toLocaleString('en-US')}</td>` : ''}
-          ${showCost ? `<td>${esc(r.currency || 'MVR')} ${Number(r.purchaseCost || r.PurchaseCost || 0).toLocaleString('en-US')}</td><td>${esc(r.currency || 'MVR')} ${Number(r.actualCost || r.ActualCost || 0).toLocaleString('en-US')}</td><td>${esc(r.currency || 'MVR')} ${Number(r.totalCost || r.TotalCost || 0).toLocaleString('en-US')}</td>` : ''}
+          ${showBudget ? `<td>${esc(r.currency || 'USD')} ${Number(r.approvedBudget || r.ApprovedBudget || 0).toLocaleString('en-US')}</td>` : ''}
+          ${showCost ? `<td>${esc(r.currency || 'USD')} ${Number(r.purchaseCost || r.PurchaseCost || 0).toLocaleString('en-US')}</td><td>${esc(r.currency || 'USD')} ${Number(r.actualCost || r.ActualCost || 0).toLocaleString('en-US')}</td><td>${esc(r.currency || 'USD')} ${Number(r.totalCost || r.TotalCost || 0).toLocaleString('en-US')}</td>` : ''}
           <td>${r.durationDays ?? r.DurationDays ?? '-'} days</td></tr>`).join('')}</tbody>
         </table></div>` : '<p>No completed projects match these filters.</p>';
     } catch (err) { $('#comparableResults').innerHTML = `<p style="color:#dc2626">${esc(err.message)}</p>`; }
@@ -6146,7 +6148,7 @@ WTPages.switchProjView = function(view) {
       const openIssues = issueRows.filter(i => !/closed|resolved/i.test(i.status || ''));
       const doneTasks = taskRows.filter(t => /complete|closed/i.test(t.status || '') || Number(t.completionPercent || 0) >= 100).length;
       const htmlList = (items, empty) => items.length ? `<ul>${items.join('')}</ul>` : `<p>${empty}</p>`;
-      const escDate = value => esc(value ? new Date(value).toLocaleDateString() : '—');
+      const escDate = value => esc(value ? wtFormatDate(value) : '—');
       const reportHtml = `<!doctype html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta name="ProgId" content="Word.Document"><title>Project Completion & Handover Report</title><style>body{font:14px Arial,sans-serif;color:#111827;margin:32px;line-height:1.5}h1{color:#123d67;border-bottom:3px solid #123d67;padding-bottom:10px}h2{font-size:17px;color:#123d67;margin:22px 0 6px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #cbd5e1;padding:7px;text-align:left}th{background:#eff6ff}.signature{display:flex;gap:50px;margin-top:48px}.signature div{width:45%;border-top:1px solid #111;padding-top:6px}@media print{body{margin:15mm}}</style></head><body>
         <h1>Project Completion / Handover Report</h1><p><b>Project:</b> ${esc(project.name || project.Name)} · <b>Code:</b> ${esc(project.code || project.Code || '—')}</p>
         <p><b>Status:</b> ${esc(project.status || project.Status)} · <b>Project dates:</b> ${escDate(project.startDate || project.StartDate)} – ${escDate(project.endDate || project.EndDate)}</p>
@@ -6156,7 +6158,7 @@ WTPages.switchProjView = function(view) {
         <h2>Open Issues / Risks</h2>${htmlList(openIssues.map(i => `<li>${esc(i.title || i.Title)} · ${esc(i.priority?.name || i.Priority?.Name || 'Priority not set')} · ${esc(i.impact || i.Impact || '')}</li>`), 'No open issues recorded.')}
         <h2>Leftover Inventory Reconciliation</h2>${inventoryRows.length ? `<table><thead><tr><th>Item</th><th>Quantity</th><th>Disposition / Remarks</th></tr></thead><tbody>${inventoryRows.map(i => `<tr><td>${esc(i.description || i.Description || i.item?.name || i.Item?.Name || '—')}</td><td>${Number(i.quantity ?? i.Quantity ?? 0)}</td><td>${esc(i.remarks || i.Remarks || '—')}</td></tr>`).join('')}</tbody></table>` : '<p>Inventory reconciliation has not been recorded.</p>'}
         <h2>Handover Notes / Outstanding Actions</h2><p>Record punch-list status, warranties, manuals, keys, training and any accepted outstanding action before signature.</p><p style="min-height:70px;border-bottom:1px solid #cbd5e1"></p>
-        <div class="signature"><div>Project Manager signature / date</div><div>Client / receiving representative signature / date</div></div><p style="margin-top:30px;color:#64748b">Generated ${new Date().toLocaleString()}. Review, complete notes, sign, and upload the signed copy before project closure.</p>
+        <div class="signature"><div>Project Manager signature / date</div><div>Client / receiving representative signature / date</div></div><p style="margin-top:30px;color:#64748b">Generated ${wtFormatDateTime()}. Review, complete notes, sign, and upload the signed copy before project closure.</p>
         </body></html>`;
       const reportBlob = new Blob(['\ufeff', reportHtml], { type: 'application/msword;charset=utf-8' });
       const reportUrl = URL.createObjectURL(reportBlob);
