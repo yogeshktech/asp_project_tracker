@@ -1145,14 +1145,14 @@ async function wtLoadLiveTasksAndOwners() {
     m.teamRole || (m.roles && m.roles[0]),
     m.email
   ));
-  if (!owners.length) {
-    wtAsArray(allUsers).filter(u => u.isActive !== false).forEach(u => pushOwner(
-      Number(u.id),
-      u.fullName || u.name,
-      (u.roles && u.roles[0]) || 'Team',
-      u.email
-    ));
-  }
+  // Project team membership may contain only a subset of assignable users.
+  // Add every active account returned by the admin users endpoint as well.
+  wtAsArray(allUsers).filter(u => u.isActive !== false && u.IsActive !== false).forEach(u => pushOwner(
+    Number(u.id ?? u.Id),
+    u.fullName || u.FullName || u.name || u.Name,
+    ((u.roles || u.Roles || [])[0]) || 'Team',
+    u.email || u.Email
+  ));
   return { pid, tasks, owners, projects };
 }
 
