@@ -165,9 +165,10 @@ public class TaskService : ITaskService
         var mapped = ordered.Select((t, i) =>
         {
             var dto = MapTask(t, userId, isAdmin, canEdit, canUpdate, canDelete);
-            dto.DisplayCode = $"Task-{i + 1}";
+            dto.DisplayCode = $"{i + 1}.0";
             var subs = (t.SubTasks ?? Array.Empty<SubTask>()).OrderBy(s => s.Id).ToList();
-            dto.SubTasks = BuildSubTree(subs, null, dto.DisplayCode, 1, userId, isAdmin, canEdit, canUpdate, canDelete, t.AssignedTo);
+            var subSequence = 0;
+            dto.SubTasks = BuildSubTree(subs, null, i + 1, ref subSequence, userId, isAdmin, canEdit, canUpdate, canDelete, t.AssignedTo);
             return dto;
         }).ToList();
         ApplyDependencyFlags(ordered, mapped);
@@ -228,18 +229,11 @@ public class TaskService : ITaskService
         };
     }
 
-    private static string NestLabel(int depth) => depth switch
-    {
-        1 => "Sub",
-        2 => "Child",
-        _ => $"L{depth}"
-    };
-
     private static List<SubTaskItemDto> BuildSubTree(
         List<SubTask> all,
         long? parentId,
-        string parentCode,
-        int depth,
+        int taskNumber,
+        ref int subSequence,
         long userId,
         bool isAdmin,
         bool canEdit,
@@ -247,15 +241,16 @@ public class TaskService : ITaskService
         bool canDelete,
         long? parentAssignedTo)
     {
-        return all.Where(s => s.ParentSubTaskId == parentId)
-            .Select((s, j) =>
-            {
-                var dto = MapSubTask(s, userId, isAdmin, canEdit, canUpdate, canDelete, parentAssignedTo);
-                dto.DisplayCode = $"{parentCode}-{NestLabel(depth)}-{j + 1}";
-                dto.Children = BuildSubTree(all, s.Id, dto.DisplayCode, depth + 1, userId, isAdmin, canEdit, canUpdate, canDelete, parentAssignedTo);
-                return dto;
-            })
-            .ToList();
+        var result = new List<SubTaskItemDto>();
+        foreach (var s in all.Where(s => s.ParentSubTaskId == parentId).OrderBy(s => s.Id))
+        {
+            subSequence++;
+            var dto = MapSubTask(s, userId, isAdmin, canEdit, canUpdate, canDelete, parentAssignedTo);
+            dto.DisplayCode = $"{taskNumber}.{subSequence}";
+            dto.Children = BuildSubTree(all, s.Id, taskNumber, ref subSequence, userId, isAdmin, canEdit, canUpdate, canDelete, parentAssignedTo);
+            result.Add(dto);
+        }
+        return result;
     }
 
     private static SubTaskItemDto MapSubTask(SubTask s, long userId, bool isAdmin, bool canEdit, bool canUpdate, bool canDelete, long? parentAssignedTo) => new()
@@ -408,22 +403,24 @@ public class TaskService : ITaskService
         await _audit.LogAsync(userId, "Create", nestParent == null ? "SubTask" : "ChildTask", sub.Id);
         var projectTasks = await _repository.GetTasksAsync(parent.ProjectId);
         var taskNo = projectTasks.OrderBy(t => t.Id).Select((t, i) => (t.Id, No: i + 1)).First(x => x.Id == parent.Id).No;
-        var siblings = (projectTasks.First(t => t.Id == parent.Id).SubTasks ?? Array.Empty<SubTask>())
-            .Where(s => s.ParentSubTaskId == nestParent?.Id)
-            .OrderBy(s => s.Id)
-            .ToList();
-        var depth = 1;
-        var ancestor = nestParent;
         var allSubs = (projectTasks.First(t => t.Id == parent.Id).SubTasks ?? Array.Empty<SubTask>()).ToList();
-        while (ancestor != null)
-        {
-            depth++;
-            ancestor = allSubs.FirstOrDefault(s => s.Id == ancestor.ParentSubTaskId);
-        }
-        var subNo = siblings.Select((s, i) => (s.Id, No: i + 1)).First(x => x.Id == sub.Id).No;
+        var sequence = 0;
+        var taskSubs = BuildSubTree(allSubs, null, taskNo, ref sequence, userId ?? 0, false, false, false, false, parent.AssignedTo);
+        var createdDto = FindSubTaskDto(taskSubs, sub.Id);
         var dto = MapSubTask(sub, userId ?? 0, false, false, false, false, parent.AssignedTo);
-        dto.DisplayCode = $"Task-{taskNo}-{NestLabel(depth)}-{subNo}";
+        dto.DisplayCode = createdDto?.DisplayCode ?? $"{taskNo}.1";
         return dto;
+    }
+
+    private static SubTaskItemDto? FindSubTaskDto(IEnumerable<SubTaskItemDto> items, long id)
+    {
+        foreach (var item in items)
+        {
+            if (item.Id == id) return item;
+            var nested = FindSubTaskDto(item.Children, id);
+            if (nested != null) return nested;
+        }
+        return null;
     }
 
     public async Task UpdateSubTaskAsync(long subTaskId, CreateSubTaskRequest request, long userId)

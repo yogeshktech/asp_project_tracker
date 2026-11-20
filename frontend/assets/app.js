@@ -1061,19 +1061,15 @@ function wtFindSub(task, subId) {
 }
 
 function wtTaskCode(task, index) {
-  return task?.displayCode || task?.DisplayCode || `Task-${(index ?? 0) + 1}`;
-}
-
-function wtNestLabel(depth) {
-  if (depth <= 1) return 'Sub';
-  if (depth === 2) return 'Child';
-  return 'L' + depth;
+  return task?.displayCode || task?.DisplayCode || `${(index ?? 0) + 1}.0`;
 }
 
 function wtSubTaskCode(task, sub, subIndex, depth) {
   if (sub?.displayCode || sub?.DisplayCode) return sub.displayCode || sub.DisplayCode;
   const d = depth || 1;
-  return `${wtTaskCode(task)}-${wtNestLabel(d)}-${(subIndex ?? 0) + 1}`;
+  const rows = wtWalkSubs(task);
+  const position = rows.findIndex(x => Number(x.node.id ?? x.node.Id) === Number(sub?.id ?? sub?.Id));
+  return `${String(wtTaskCode(task)).replace(/\.0$/, '')}.${position >= 0 ? position + 1 : (subIndex ?? 0) + 1}`;
 }
 
 function wtApplyTaskDisplayCodes(tasks) {
@@ -1086,16 +1082,17 @@ function wtApplyTaskDisplayCodes(tasks) {
   Object.values(grouped).forEach(list => {
     list.sort((a, b) => Number(a.id) - Number(b.id));
     list.forEach((t, i) => {
-      t.displayCode = t.displayCode || t.DisplayCode || `Task-${i + 1}`;
+      t.displayCode = `${i + 1}.0`;
       const nested = wtNestSubTasks(wtSubTasksOf(t));
       t.subTasks = nested;
-      const stamp = (nodes, parentCode, depth) => {
+      let subSequence = 0;
+      const stamp = (nodes) => {
         (nodes || []).forEach((s, j) => {
-          s.displayCode = s.displayCode || s.DisplayCode || `${parentCode}-${wtNestLabel(depth)}-${j + 1}`;
-          stamp(s.children || [], s.displayCode, depth + 1);
+          s.displayCode = `${i + 1}.${++subSequence}`;
+          stamp(s.children || []);
         });
       };
-      stamp(nested, t.displayCode, 1);
+      stamp(nested);
     });
   });
   return tasks;

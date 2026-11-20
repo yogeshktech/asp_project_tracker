@@ -4320,8 +4320,8 @@ WTPages.switchProjView = function(view) {
       + tableWrap(kind === 'milestones'
         ? ['ID', 'Milestone & Project', 'Schedule', 'Status', 'Progress', 'Actions']
         : kind === 'planning'
-        ? ['ID', 'Task', 'Sub-Task L1', 'Sub-Task L2', 'Sub-Task L3+', 'Assigned To', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
-        : ['ID', 'Task', 'Sub-Task L1', 'Sub-Task L2', 'Sub-Task L3+', 'Status', 'Progress', 'Actions'], 'tasksBody')
+        ? ['ID', 'Task', 'Sub-task', 'Nested sub-task', 'Further nested tasks', 'Assigned To', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
+        : ['ID', 'Task', 'Sub-task', 'Nested sub-task', 'Further nested tasks', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="display:none;margin-top:16px;"><h3 class="card-title">⚠️ Automatic Task Alerts</h3><small class="card-subtitle">Generated for overdue tasks or tasks without a progress update for 7 days. Update or complete the task to clear an alert.</small><div id="excList">Loading...</div></div>`;
 
     if (kind === 'daily') {
@@ -4441,7 +4441,7 @@ WTPages.switchProjView = function(view) {
         };
         
         const dash = '<span class="nest-empty">—</span>';
-        const nestTitle = (s, depth) => `<strong class="planning-level-name">L${depth}</strong><span>${esc(s.title || s.name)}</span>`;
+        const nestTitle = (s, depth) => `<strong class="planning-level-name">${esc(s.displayCode || s.DisplayCode || '')}</strong><span>${esc(s.title || s.name)}</span>`;
         const planningInfoCells = (row, isSubTask = false) => {
           if (kind !== 'planning') return '';
           const assignee = row.assignedTo || row.AssignedTo;
@@ -4464,7 +4464,7 @@ WTPages.switchProjView = function(view) {
           const sub = depth === 1 ? html : dash;
           const child = depth === 2 ? html : dash;
           const other = depth >= 3
-            ? `<small style="display:block;color:var(--text-muted);font-weight:700;">L${depth}</small>${html}`
+            ? html
             : dash;
           return `<td class="nest-col depth-sub${depth === 1 ? ' is-filled' : ''}">${sub}</td>
             <td class="nest-col depth-child${depth === 2 ? ' is-filled' : ''}">${child}</td>
