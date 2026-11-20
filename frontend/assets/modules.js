@@ -4320,7 +4320,7 @@ WTPages.switchProjView = function(view) {
       + tableWrap(kind === 'milestones'
         ? ['ID', 'Milestone & Project', 'Schedule', 'Status', 'Progress', 'Actions']
         : kind === 'planning'
-        ? ['ID', 'Task', 'Sub-task', 'Nested sub-task', 'Further nested tasks', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
+        ? ['ID', 'Task', 'Sub-task', 'Nested sub-task', 'Further nested tasks', 'Assigned To', 'Start Date', 'End Date', 'Status', 'Progress', 'Issues', 'Dependency', 'Actions']
         : ['ID', 'Task', 'Sub-task', 'Nested sub-task', 'Further nested tasks', 'Status', 'Progress', 'Actions'], 'tasksBody')
       + `<div class="card" id="excBox" style="display:none;margin-top:16px;"><h3 class="card-title">⚠️ Automatic Task Alerts</h3><small class="card-subtitle">Generated for overdue tasks or tasks without a progress update for 7 days. Update or complete the task to clear an alert.</small><div id="excList">Loading...</div></div>`;
 
@@ -4338,7 +4338,7 @@ WTPages.switchProjView = function(view) {
       };
     }
     
-    const nestCols = kind === 'planning' ? 12 : 8;
+    const nestCols = kind === 'planning' ? 13 : 8;
     if (kind === 'planning') {
       el.querySelector('#tasksBody')?.closest('.table-wrap')?.classList.add('planning-table-wrap');
       el.querySelector('#tasksBody')?.closest('table')?.classList.add('planning-table');
@@ -4444,9 +4444,11 @@ WTPages.switchProjView = function(view) {
         const nestTitle = (s, depth) => `<strong class="planning-level-name">${esc(s.displayCode || s.DisplayCode || '')}</strong><span>${esc(s.title || s.name)}</span>`;
         const planningInfoCells = (row, isSubTask = false) => {
           if (kind !== 'planning') return '';
+          const assignee = row.assignedTo || row.AssignedTo;
           const start = row.startDate || row.StartDate;
           const end = row.dueDate || row.DueDate;
-          return `<td>${start ? esc(String(start).slice(0, 10)) : '—'}</td>
+          return `<td>${esc(userName(assignee))}</td>
+            <td>${start ? esc(String(start).slice(0, 10)) : '—'}</td>
             <td>${end ? esc(String(end).slice(0, 10)) : '—'}</td>
             `;
         };
