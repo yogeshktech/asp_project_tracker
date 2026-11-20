@@ -5292,7 +5292,20 @@ WTPages.switchProjView = function(view) {
   }
 
   async function openTaskDetails(taskId, subTaskId = null) {
-    openModal('Task details', 'Loading task details…');
+    openModal('Task details', 'Loading task details…', '', 'task-details-modal');
+    const detailsModal = document.getElementById('modal');
+    const modalGeneration = window.__modalGeneration;
+    const detailsModalIsCurrent = () => detailsModal
+      && detailsModal.isConnected
+      && detailsModal.classList.contains('show')
+      && document.getElementById('modal') === detailsModal
+      && window.__modalGeneration === modalGeneration;
+    const renderDetailsModal = (title, html) => {
+      if (!detailsModalIsCurrent()) return;
+      detailsModal.querySelector('#modalTitle').textContent = title;
+      detailsModal.querySelector('#modalBody').innerHTML = html;
+      detailsModal.querySelector('#modalFoot').style.display = 'none';
+    };
     try {
       const projectId = await selectedProjectId();
       const [rows, users] = await Promise.all([WisetrackAPI.getTasks(projectId), WisetrackAPI.getUsers().catch(() => [])]);
@@ -5315,13 +5328,13 @@ WTPages.switchProjView = function(view) {
       const labelFor = key => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ').replace(/^./, char => char.toUpperCase());
       const detailsHtml = `<div class="task-detail-field"><span>Owner</span><strong>${esc(owner?.fullName || owner?.name || owner?.email || (ownerId ? `User #${ownerId}` : 'Unassigned'))}</strong></div>`
         + details.map(([key, value]) => `<div class="task-detail-field"><span>${esc(labelFor(key))}</span><strong>${esc(String(value) || '—')}</strong></div>`).join('');
-      openModal(title, `<div class="task-details">
+      renderDetailsModal(title, `<div class="task-details">
         <section class="task-details-notes"><article><h4>Description</h4><p>${description ? esc(description) : 'No description added.'}</p></article><article><h4>Remark</h4><p>${remark ? esc(remark) : 'No remark added.'}</p></article></section>
         <section class="task-details-grid">${detailsHtml || '<p class="task-details-empty">No additional task fields available.</p>'}</section>
         ${Array.isArray(children) && children.length ? `<section class="task-details-children"><h4>Sub-tasks</h4><ul>${children.map(child => `<li>${esc(child.title || child.Title || child.name || child.Name || 'Untitled sub-task')}</li>`).join('')}</ul></section>` : ''}
-      </div>`, '', 'task-details-modal');
+      </div>`);
     } catch (error) {
-      openModal('Task details', `<p style="color:#dc2626">${esc(error.message || 'Could not load task details.')}</p>`);
+      renderDetailsModal('Task details', `<p style="color:#dc2626">${esc(error.message || 'Could not load task details.')}</p>`);
     }
   }
 

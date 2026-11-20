@@ -80,6 +80,7 @@ function showToast(message, type = 'success') {
 
 // Modal Management
 function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
+  window.__modalGeneration = (window.__modalGeneration || 0) + 1;
   window.__modalStack = window.__modalStack || [];
   let modal = document.getElementById('modal');
   if (modal && modal.classList.contains('show')) {
@@ -120,6 +121,7 @@ function openModal(title, contentHtml, footerHtml = '', boxClass = '') {
 }
 
 function closeModal() {
+  window.__modalGeneration = (window.__modalGeneration || 0) + 1;
   const modal = document.getElementById('modal');
   if (!modal) return;
   modal.classList.remove('show', 'boq-fullscreen');
@@ -128,7 +130,7 @@ function closeModal() {
     modal.remove();
     previous.id = 'modal';
     previous.classList.add('show');
-  }
+  } else modal.remove();
 }
 
 // Get Data from LocalStorage (static WISETRACK_DATA is optional — live API pages may omit data.js)
