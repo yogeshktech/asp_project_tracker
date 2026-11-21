@@ -2743,6 +2743,7 @@ WTPages.switchProjView = function(view) {
     event.preventDefault();
     try {
       const form = new FormData();
+      form.append('projectId', String(projectId));
       form.append('file', $('#ccImportFile').files[0]);
       const result = await WisetrackAPI.importCostCenters(projectId, form);
       closeModal(); showToast(`Imported ${result.imported} Cost Centre(s).`); await pageBudget();

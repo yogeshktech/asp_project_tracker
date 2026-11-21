@@ -149,6 +149,7 @@ public class BudgetsController : ControllerBase
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> ImportCostCenters([FromForm] long projectId, [FromForm] IFormFile file)
     {
+        if (projectId <= 0) return BadRequest(new { message = "Project is required." });
         await _permissions.EnsureModuleAsync(UserId, projectId, "Budgets", "edit");
         if (file == null || file.Length == 0) return BadRequest(new { message = "Select a CC import file." });
         using var reader = new StreamReader(file.OpenReadStream());
