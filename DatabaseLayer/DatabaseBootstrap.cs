@@ -44,6 +44,12 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS vendor TEXT NULL""");
     }
 
+    public static async Task EnsureCostCentreBoqSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS budget_amount NUMERIC(18,2) NOT NULL DEFAULT 0""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE boq_items ADD COLUMN IF NOT EXISTS cost_center_id BIGINT NULL REFERENCES cost_centers(id) ON DELETE SET NULL""");
+    }
+
     public static async Task EnsureTaskCompletionEvidenceSchemaAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
@@ -190,6 +196,7 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS start_date DATE NULL""");
         await EnsureDrawingUploadSchemaAsync(db);
         await EnsureActualCostBoqItemsSchemaAsync(db);
+        await EnsureCostCentreBoqSchemaAsync(db);
         await DbSeeder.SeedAsync(db);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
         await EnsureUserResortAccessSchemaAsync(db);

@@ -62,6 +62,13 @@ public class CostService : ICostService
             throw new UnauthorizedAccessException("No permission.");
         var canChangeDate = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
         var boqItemIds = await ValidateActualBoqItemsAsync(request);
+        if (boqItemIds.Count > 0)
+        {
+            var centerIds = await _repository.GetCostCentersForBoqItemsAsync(request.ProjectId, boqItemIds);
+            if (centerIds.Count > 1) throw new InvalidOperationException("Selected BOQ lines belong to different Cost Centres. Add separate actual cost entries.");
+            if (centerIds.Count == 1) request.CostCenterId = centerIds[0];
+        }
+        if (!request.CostCenterId.HasValue) throw new InvalidOperationException("Cost Centre is required.");
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var cost = await _repository.AddActualAsync(new ActualCost
         {
@@ -153,11 +160,14 @@ public class CostService : ICostService
                         Amount = row.Amount, PurchaseDate = row.CostDate, Vendor = row.Vendor, Description = row.Description
                     }, userId);
                 else
+                {
+                    if (!row.CostCenterId.HasValue) throw new InvalidOperationException("Cost Centre is required for actual cost imports.");
                     await AddActualAsync(new CreateActualCostRequest
                     {
                         ProjectId = request.ProjectId, BoqItemId = row.BoqItemId, CostCenterId = row.CostCenterId,
                         Amount = row.Amount, CostDate = row.CostDate, Vendor = row.Vendor, Description = row.Description
                     }, userId);
+                }
                 result.Imported++;
             }
             catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)

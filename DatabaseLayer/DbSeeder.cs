@@ -354,7 +354,8 @@ public static class DbSeeder
         await db.SaveChangesAsync();
 
         // ── Team assignment + deny-by-default others (PM-02) ───────────────
-        db.ProjectUsers.AddRange(
+        var projectUserLinks = new[]
+        {
             new ProjectUser { ProjectId = parentA.Id, UserId = admin.Id, TeamRole = "Portfolio Admin" },
             new ProjectUser { ProjectId = parentA.Id, UserId = pm.Id, TeamRole = "Project Manager" },
             new ProjectUser { ProjectId = parentA.Id, UserId = site.Id, TeamRole = "Site Engineer" },
@@ -373,7 +374,12 @@ public static class DbSeeder
             new ProjectUser { ProjectId = subSpaShell.Id, UserId = site.Id, TeamRole = "Site Engineer" },
             new ProjectUser { ProjectId = closedProj.Id, UserId = pm.Id, TeamRole = "Project Manager" },
             new ProjectUser { ProjectId = closedProj.Id, UserId = auditor.Id, TeamRole = "Auditor" }
-        );
+        };
+        var trackedProjectUserKeys = db.ProjectUsers.Local
+            .Where(link => db.Entry(link).State != EntityState.Deleted)
+            .Select(link => (link.ProjectId, link.UserId))
+            .ToHashSet();
+        db.ProjectUsers.AddRange(projectUserLinks.Where(link => trackedProjectUserKeys.Add((link.ProjectId, link.UserId))));
 
         // Granular module rights (PM-03) — finance can view budgets but not edit BOQ prices on site project
         db.ProjectPermissions.AddRange(

@@ -38,6 +38,7 @@ public class BoqItem
     public long Id { get; set; }
     public long BoqVersionId { get; set; }
     public long? ItemId { get; set; }
+    public long? CostCenterId { get; set; }
     public string? ItemCode { get; set; }
     public string? ItemName { get; set; }
     public int? LineNo { get; set; }

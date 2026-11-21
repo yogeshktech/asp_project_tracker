@@ -209,6 +209,7 @@ public class CreateCostCenterRequest
     public long? SubProjectId { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public decimal BudgetAmount { get; set; }
     public string? Description { get; set; }
     public List<IFormFile> Attachments { get; set; } = new();
 }
@@ -267,6 +268,8 @@ public class BOQImportDto
 public class BOQImportLineDto
 {
     public long? ItemId { get; set; }
+    public long? CostCenterId { get; set; }
+    public string? CostCenterName { get; set; }
     public string? ItemCode { get; set; }
     public int? LineNo { get; set; }
     public string? DisplayLineNo { get; set; }
@@ -322,6 +325,7 @@ public class UpdateBoqVersionItemRequest
     public decimal AdditionalConsumptionUnitPrice { get; set; }
     public string? Description { get; set; }
     public string? Remarks { get; set; }
+    public long? CostCenterId { get; set; }
 }
 
 public class UpdateBoqRevisionLineRequest

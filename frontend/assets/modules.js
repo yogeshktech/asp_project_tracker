@@ -2210,7 +2210,7 @@ WTPages.switchProjView = function(view) {
       </div>` : `<span style="color:var(--text-muted)">${can('Budgets') && can('Costs') ? 'Budget data is unavailable.' : 'Budget and cost data are hidden for your permissions.'}</span>`;
     const centers = rows(variance?.costCenters);
     const costCenterLabel = c => costCenterDisplayName(c.costCenterName || c.name || `#${c.costCenterId}`);
-    const costCenterPanel = variance ? (centers.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Cost center</th><th>Budget</th><th>Commitment</th><th>Actual</th><th>Forecast RAG</th></tr></thead><tbody>${centers.map(c => `<tr><td>${esc(costCenterLabel(c))}</td><td>${money(c.budget)}</td><td>${money(c.currentCommitment ?? c.purchaseCost)}</td><td>${money(c.actualSpend)}</td><td><span class="badge ${c.ragStatus === 'Red' ? 'red' : c.ragStatus === 'Amber' ? 'amber' : 'green'}">${esc(c.ragStatus || 'Green')}</span></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No cost center rollups.</span>') : budgetPanel;
+    const costCenterPanel = variance ? (centers.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>CC Name</th><th>Budget Status</th></tr></thead><tbody>${centers.map(c => `<tr><td>${esc(costCenterLabel(c))}</td><td><span class="badge ${c.budgetStatus === 'Over Budget' ? 'red' : c.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(c.budgetStatus || 'On Budget')}</span></td></tr>`).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No cost center rollups.</span>') : budgetPanel;
     const boqPanel = boqRows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>BOQ</th><th>Status</th><th>Baseline</th><th>Lines</th></tr></thead><tbody>${boqRows.map(b => { const versions = rows(b.versions || b.Versions); const baseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); const lines = rows(baseline?.items || baseline?.Items); return `<tr><td>${esc(b.title || b.Title || `BOQ #${b.id || b.Id}`)}</td><td>${esc(b.status || b.Status || '—')}</td><td>${baseline ? `v${baseline.versionNo || baseline.VersionNo}` : 'Not set'}</td><td>${lines.length || (b.itemCount ?? b.ItemCount ?? '—')}</td></tr>`; }).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No BOQ records available or permission is restricted.</span>';
     box.innerHTML = `<div class="card-header"><div><h2 class="card-title">${esc(project.name || project.title || 'Project')} · Project Dashboard</h2><div class="card-subtitle">Project dates, delivery progress, financial position, risks and actions</div></div></div>
       <div class="grid g2" style="margin-top:12px">
@@ -2390,10 +2390,11 @@ WTPages.switchProjView = function(view) {
         ${canCreateBudget ? `<button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Created At', 'Attachment', 'Actions'], 'budgetBody', 'budget-table-wrap')
-      + `<div hidden>${tableWrap(['Cost Center', 'Budget', 'Purchase / Commitment', 'Actual Spend', 'Forecast', 'Variance vs Actual', 'Budget Status', 'RAG (Forecast)', 'Attachment', 'Actions'], 'ccBody', 'cost-center-table-wrap')}</div>`;
+      + `<h3 style="margin:22px 0 10px">Cost Centre Budgets</h3><div style="display:flex;gap:8px;margin:8px 0">${canUpdateBudget ? '<button class="btn primary" onclick="WTPages.openCostCenterModal()">+ Add CC</button><button class="btn" onclick="WTPages.importCostCenters()">Import CC Details</button>' : ''}</div>`
+      + tableWrap(['CC Name', 'Budget Amount', 'Amount Used', 'Balance', 'Budget Status'], 'ccBody', 'cost-center-table-wrap');
     if (!pid) {
       $('#budgetBody').innerHTML = emptyRow(10, 'No project available.');
-      $('#ccBody').innerHTML = emptyRow(10, 'No project available.');
+      $('#ccBody').innerHTML = emptyRow(5, 'No project available.');
       return;
     }
     try {
@@ -2487,20 +2488,15 @@ WTPages.switchProjView = function(view) {
         const childHistoryButton = ccProjectId !== Number(pid)
           ? `<button class="btn sm" title="View project budget history" aria-label="View project budget history" onclick="WTPages.openChildBudgetHistory(${ccProjectId}, ${childNameArg})"><i class="fa-solid fa-clock-rotate-left"></i></button>`
           : '';
-        return `<tr><td>${esc(costCenterDisplayName(c.name))}${c.projectId && c.projectId !== Number(pid) ? ' <span class="badge">Sub-project</span>' : ''}</td>
-          <td title="${esc(sourceTitle || 'No budget allocations')}">${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${centerBudget.toLocaleString('en-US')}${sourceTitle ? ' <i class="fa-solid fa-circle-info" aria-label="Allocation sources"></i>' : ''}</td>
-          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.currentCommitment ?? rollup.purchaseCost ?? 0).toLocaleString('en-US')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.actualSpend || 0).toLocaleString('en-US')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.forecast ?? rollup.spent ?? 0).toLocaleString('en-US')}</td>
-          <td>${esc(budgets?.[0]?.currency || 'USD')} ${Number(rollup.variance ?? allocated).toLocaleString('en-US')}</td>
-          <td><span class="badge ${rollup.budgetStatus === 'Over Budget' ? 'red' : rollup.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(rollup.budgetStatus || 'On Budget')}</span></td>
-          <td><span class="badge ${status === 'Red' ? 'red' : status === 'Amber' ? 'amber' : 'green'}">${esc(status)}</span></td>
-          <td><button class="btn sm" title="View attachment history" onclick="WTPages.openAttachmentHistory('costcenter', ${c.id}, ${canEditCenter})"><i class="fa-solid fa-paperclip"></i> ${(c.attachments || c.Attachments || []).length}</button></td>
-          <td class="table-actions">${childHistoryButton}${canEditCenter ? `<button class="btn sm" title="Edit cost center" aria-label="Edit cost center" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDeleteCenter ? `<button class="btn sm danger" title="Delete cost center" aria-label="Delete cost center" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
-      }).join('') || emptyRow(10, 'No cost centers. Add sub-projects to use them as cost centers.');
+        const budgetAmount = Number(c.budgetAmount ?? c.BudgetAmount ?? centerBudget);
+        const used = Number(rollup.actualSpend ?? rollup.ActualSpend ?? 0);
+        const balance = budgetAmount - used;
+        const budgetStatus = used > budgetAmount ? 'Over Budget' : used < budgetAmount ? 'Under Budget' : 'On Budget';
+        return `<tr><td>${esc(costCenterDisplayName(c.name))}</td><td>${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${budgetAmount.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${used.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${balance.toLocaleString('en-US')}</td><td><span class="badge ${budgetStatus === 'Over Budget' ? 'red' : budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(budgetStatus)}</span> ${canEditCenter ? `<button class="btn sm" onclick="WTPages.openCostCenterModal(${c.id})" title="Edit CC"><i class="fa-solid fa-pen"></i></button>` : ''}</td></tr>`;
+      }).join('') || emptyRow(5, 'No cost centres. Add one to get started.');
     } catch (e) {
       $('#budgetBody').innerHTML = errRow(9, e);
-      $('#ccBody').innerHTML = errRow(10, e);
+      $('#ccBody').innerHTML = errRow(5, e);
       showToast(e.message, 'danger');
     }
   }
@@ -2729,11 +2725,28 @@ WTPages.switchProjView = function(view) {
         <input type="hidden" id="ccId" value="${existing?.id || ''}">
         <div class="form-grid">
           <div class="field"><label>Name *</label><input id="ccName" value="${esc(existing?.name || '')}" required></div>
-          <div class="field full"><label>Attachment ${existing ? '(optional; adds to file history)' : '*'} (Excel, PDF, CSV, Word, or TXT; up to 25 MB each)</label>${existing ? `<small class="card-subtitle">${(existing.attachments || existing.Attachments || []).length} saved file(s). Existing files stay in history. Add files here only when needed.</small>` : '<small class="card-subtitle">Attach at least one file when creating a cost center.</small>'}<input id="ccAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" multiple ${existing ? '' : 'required'}></div>
+          <div class="field"><label>Budget Amount *</label><input id="ccBudgetAmount" type="number" min="0" step="0.01" value="${Number(existing?.budgetAmount || 0)}" required></div>
+          <div class="field full"><label>Attachment (optional; adds to file history)</label>${existing ? `<small class="card-subtitle">${(existing.attachments || existing.Attachments || []).length} saved file(s). Existing files stay in history. Add files here only when needed.</small>` : ''}<input id="ccAttachment" type="file" accept=".xlsx,.xls,.pdf,.csv,.doc,.docx,.txt" multiple></div>
         </div>
         <p class="card-subtitle" style="margin:8px 0 0">Code auto-assigns (CC-001).</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
       </form>`);
+  }
+
+  async function importCostCenters() {
+    const pid = await selectedProjectId();
+    if (!pid) { showToast('Select a project first.', 'danger'); return; }
+    openModal('Import CC Details', `<form onsubmit="WTPages.saveCostCenterImport(event, ${Number(pid)})"><div class="field"><label>CSV file *</label><input id="ccImportFile" type="file" accept=".csv" required></div><small>Required columns: CC Name, Budget Amount</small><div style="margin:10px 0"><button class="btn sm" type="button" onclick="wtDownloadText('cost-centre-import-template.csv','CC Name,Budget Amount\\nExample CC,10000\\n','text/csv;charset=utf-8')">Download CSV template</button></div><div class="modalfoot"><button class="btn primary" type="submit">Import CC Details</button></div></form>`);
+  }
+
+  async function saveCostCenterImport(event, projectId) {
+    event.preventDefault();
+    try {
+      const form = new FormData();
+      form.append('file', $('#ccImportFile').files[0]);
+      const result = await WisetrackAPI.importCostCenters(projectId, form);
+      closeModal(); showToast(`Imported ${result.imported} Cost Centre(s).`); await pageBudget();
+    } catch (error) { showToast(error.message || 'CC import failed.', 'danger'); }
   }
 
   async function saveCC(e) {
@@ -2743,6 +2756,7 @@ WTPages.switchProjView = function(view) {
       const data = new FormData();
       data.append('projectId', $('#ccProj').value);
       data.append('name', $('#ccName').value.trim());
+      data.append('budgetAmount', $('#ccBudgetAmount').value);
       for (const file of $('#ccAttachment').files) data.append('attachments', file);
       if (id) await WisetrackAPI.updateCostCenter(id, data); else await WisetrackAPI.createCostCenter(data);
       closeModal(); showToast(id ? 'Cost center updated' : 'Created'); await pageBudget();
@@ -2880,6 +2894,7 @@ WTPages.switchProjView = function(view) {
   // ---------- COSTS ----------
   let pendingCostImportRows = [];
   let costImportBoqItemNames = new Map();
+  let costImportCentersByName = new Map();
   let costImportRawRows = [];
   let costImportHeaders = [];
   let costImportMappings = {};
@@ -2888,6 +2903,7 @@ WTPages.switchProjView = function(view) {
     { key: 'amount', label: 'Amount', required: true, aliases: ['amount', 'costamount', 'total'] },
     { key: 'date', label: 'Date', aliases: ['costdate', 'purchasedate', 'date'] },
     { key: 'boqItem', label: 'Item Name / BOQ Item', aliases: ['boqitemname', 'itemname', 'boqitem', 'item'] },
+    { key: 'costCenter', label: 'Cost Centre', required: true, aliases: ['costcentre', 'costcenter', 'cc', 'ccname'] },
     { key: 'vendor', label: 'Vendor', aliases: ['vendor', 'supplier'] },
     { key: 'remark', label: 'Remark', aliases: ['remark', 'remarks', 'description', 'reference'] }
   ];
@@ -2896,6 +2912,7 @@ WTPages.switchProjView = function(view) {
     const projectId = await selectedProjectId();
     if (!projectId) { showToast('Select a project first.', 'danger'); return; }
     costImportBoqItemNames = new Map();
+    costImportCentersByName = new Map((await WisetrackAPI.getCostCenters(projectId).catch(() => [])).map(c => [String(c.name || c.Name).trim().toLowerCase(), Number(c.id || c.Id)]));
     try {
       const boqs = await WisetrackAPI.getBoqs(projectId);
       (boqs || []).forEach(boq => (boq.versions || boq.Versions || []).forEach(version =>
@@ -2913,7 +2930,7 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>CSV file *</label><input id="ciFile" type="file" accept=".csv,.tsv,.txt" required onchange="WTPages.previewCostImport(this)"></div>
           <div class="field full"><small>Map your file columns below. Amount is required. Item Name is free text; it links to a BOQ line when the name matches, otherwise it is saved as the cost description. Dates may use YYYY-MM-DD or DD-MM-YYYY.</small></div>
         </div>
-        <button class="btn sm" type="button" onclick="wtDownloadText('wisetrack-cost-import-template.csv','Amount,Date,BOQ Item Name,Vendor,Remark\\n','text/csv;charset=utf-8')">Download CSV template</button>
+        <button class="btn sm" type="button" onclick="wtDownloadText('wisetrack-cost-import-template.csv','Amount,Date,BOQ Item Name,Cost Centre,Vendor,Remark\\n','text/csv;charset=utf-8')">Download CSV template</button>
         <div id="ciMapping" style="margin-top:12px"></div>
         <div id="ciPreview" style="margin-top:12px;color:var(--text-muted)">Choose a file to preview rows.</div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Import rows</button></div>
@@ -2975,6 +2992,8 @@ WTPages.switchProjView = function(view) {
         const amountText = getValue(r, 'amount');
         const dateText = String(getValue(r, 'date') || '').trim();
         const boqName = String(getValue(r, 'boqItem') || '').trim();
+        const ccName = String(getValue(r, 'costCenter') || '').trim();
+        const costCenterId = costImportCentersByName.get(ccName.toLowerCase()) || null;
         const amount = Number(String(amountText).replace(/[,MVR $ ]/g, ''));
         const boqItemId = boqName ? (costImportBoqItemNames.get(boqName.toLowerCase()) ?? null) : null;
         const isoDate = /^\d{2}-\d{2}-\d{4}$/.test(dateText)
@@ -2984,12 +3003,13 @@ WTPages.switchProjView = function(view) {
           && !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === isoDate);
         const errors = [];
         if (!costImportMappings.amount) errors.push('Map the required Amount column');
+        if (!costImportMappings.costCenter || !costCenterId) errors.push('Specify a valid Cost Centre for this row');
         if (!Number.isFinite(amount) || amount <= 0) errors.push('Amount must be greater than zero');
         if (!validDate) errors.push('Date must use YYYY-MM-DD or DD-MM-YYYY');
         const remark = String(getValue(r, 'remark') || '').trim();
         const description = [boqItemId == null ? boqName : '', remark].filter(Boolean).join(' — ') || null;
         return {
-          rowNo: index + 2, amount, costDate: validDate && dateText ? isoDate : null, boqItemId,
+          rowNo: index + 2, amount, costDate: validDate && dateText ? isoDate : null, boqItemId, costCenterId,
           vendor: getValue(r, 'vendor') || null,
           description,
           errors
@@ -3027,6 +3047,8 @@ WTPages.switchProjView = function(view) {
       ` ${(!wtCan || wtCan('Costs', 'edit', Number(pid))) ? `<button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>` : ''}`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
+      + '<h3 style="margin:22px 0 10px">Actual Spent by CC</h3>'
+      + tableWrap(['CC Name', 'Actual Cost', 'Balance', 'Budget Status'], 'actualSpendByCcBody')
       + '<h3 style="margin:22px 0 10px">Actual Spend by Date</h3>'
       + tableWrap(['Date', 'Actual Spend', 'Balance (Remaining Budget - Actual)', 'Budget Status'], 'actualSpendByDateBody')
       + '<h3 style="margin:22px 0 10px">Actual Cost</h3>'
@@ -3034,6 +3056,7 @@ WTPages.switchProjView = function(view) {
     if (!pid) {
       $('#varianceBox').innerHTML = 'No project available.';
       $('#actualSpendByDateBody').innerHTML = emptyRow(4, 'No project available.');
+      $('#actualSpendByCcBody').innerHTML = emptyRow(4, 'No project available.');
       $('#costsBody').innerHTML = emptyRow(7, 'No project available.');
       return;
     }
@@ -3053,6 +3076,14 @@ WTPages.switchProjView = function(view) {
       const explanations = await WisetrackAPI.getVarianceExplanations(pid).catch(() => []);
       const currency = esc(variance.currency || 'USD');
       const money = amount => `${currency} ${Number(amount || 0).toLocaleString('en-US')}`;
+      const ccRollups = variance.costCenters || variance.CostCenters || [];
+      const ccMap = new Map(ccRollups.map(cc => [Number(cc.costCenterId ?? cc.CostCenterId), cc]));
+      $('#actualSpendByCcBody').innerHTML = ccRollups.length ? ccRollups.map(cc => {
+        const ccId = Number(cc.costCenterId ?? cc.CostCenterId);
+        const spent = Number(cc.actualSpend ?? cc.ActualSpend ?? 0);
+        const balance = Number(cc.budget ?? cc.Budget ?? 0) - spent;
+        return `<tr><td><button class="btn sm" onclick="WTPages.showActualsForCc(${ccId})">${esc(cc.name || cc.Name)}</button></td><td>${money(spent)}</td><td>${money(balance)}</td><td>${esc(cc.budgetStatus || cc.BudgetStatus || 'On Budget')}</td></tr>`;
+      }).join('') : emptyRow(4, 'No Cost Centre actuals.');
       const budget = Number(variance.budget ?? variance.approvedBudget ?? 0);
       const forecast = Number(variance.forecastTotal ?? (Number(variance.purchaseTotal || 0) + Number(variance.actualSpend ?? variance.actualTotal ?? 0)));
       $('#varianceBox').innerHTML = `
@@ -3106,7 +3137,7 @@ WTPages.switchProjView = function(view) {
         const itemNames = boqItemIds.map(itemId => boqItemNames.get(String(itemId)) || `BOQ Line #${itemId}`);
         if (r.includesOther || r.IncludesOther) itemNames.push('Other');
         const itemName = itemNames.join(', ') || 'Other';
-        return `<tr data-cost-type="${esc(r._t)}"><td>${r.id}</td><td>${esc(vendor)}</td><td>${esc(itemName)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
+        return `<tr data-cost-type="${esc(r._t)}" data-cost-center-id="${Number(r.costCenterId || r.CostCenterId || 0)}"><td>${r.id}</td><td>${esc(vendor)}</td><td>${esc(itemName)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
           <td>${esc(r.costDate || r.purchaseDate || r.createdAt || 'N/A')}</td><td>${esc(r.remarks || r.description || r.notes || 'N/A')}</td><td class="table-actions">${canUpdate ? `<button class="btn sm" title="Edit ${r._t.toLowerCase()}" aria-label="Edit ${r._t.toLowerCase()}" onclick="WTPages.open${r._t}Modal(${r.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete ${r._t.toLowerCase()}" aria-label="Delete ${r._t.toLowerCase()}" onclick="WTPages.deleteCost('${r._t}', ${r.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
       }).join('') : emptyRow(7, 'No cost entries');
     } catch (e) { showToast(e.message, 'danger'); }
@@ -3124,6 +3155,15 @@ WTPages.switchProjView = function(view) {
     const body = matching.length ? matching.map(item => `<tr>${item.innerHTML}</tr>`).join('')
       : '<tr><td colspan="7">No actual cost details found for this date.</td></tr>';
     openModal(`Actual spend on ${esc(date)}`, `<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Vendor</th><th>Item Name</th><th>Amount</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>`);
+  }
+
+  function showActualsForCc(costCenterId) {
+    const matching = [...document.querySelectorAll('#costsBody tr[data-cost-type="Actual"]')]
+      .filter(item => Number(item.dataset.costCenterId) === Number(costCenterId));
+    const body = matching.length ? matching.map(item => `<tr>${item.innerHTML}</tr>`).join('')
+      : '<tr><td colspan="7">No actual cost details found for this Cost Centre.</td></tr>';
+    const name = document.querySelector(`#actualSpendByCcBody button[onclick="WTPages.showActualsForCc(${Number(costCenterId)})"]`)?.textContent || 'Cost Centre';
+    openModal(`Actual costs: ${esc(name)}`, `<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Vendor</th><th>Item Name</th><th>Amount</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>`);
   }
 
   async function pageDrawings() {
@@ -3428,6 +3468,7 @@ WTPages.switchProjView = function(view) {
     const existing = id ? (await WisetrackAPI.getActuals(pid)).find(x => Number(x.id) === Number(id)) : null;
     if (id && !existing) { showToast('Actual cost not found', 'danger'); return; }
     const boqs = await WisetrackAPI.getBoqs(pid).catch(() => []);
+    const costCenters = await WisetrackAPI.getCostCenters(pid).catch(() => []);
     const boqLines = (boqs || []).flatMap(b => {
       const versions = b.versions || b.Versions || [];
       const version = [...versions].sort((a, z) => Number(z.versionNo ?? z.VersionNo ?? 0) - Number(a.versionNo ?? a.VersionNo ?? 0))[0];
@@ -3437,8 +3478,9 @@ WTPages.switchProjView = function(view) {
       const itemName = i.itemName || i.ItemName || i.item?.name || i.Item?.name || i.description || i.Description || i.itemCode || i.ItemCode || 'BOQ line';
       const price = i.unitPrice ?? i.UnitPrice ?? i.unitRate ?? i.UnitRate ?? i.rate ?? i.Rate ?? i.price ?? i.Price;
       const label = itemName;
-      return `<option value="${i.id || i.Id}" data-price="${Number(price) || 0}">${esc(label)}</option>`;
+      return `<option value="${i.id || i.Id}" data-price="${Number(price) || 0}" data-cc="${i.costCenterId || i.CostCenterId || ''}">${esc(label)}</option>`;
     }).join('');
+    const ccOptions = costCenters.map(c => `<option value="${c.id}" ${Number(c.id) === Number(existing?.costCenterId) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
     const today = new Date();
     const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const canChangeActualDate = typeof wtIsAdmin === 'function' && wtIsAdmin();
@@ -3451,6 +3493,7 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>Date</label><input id="aDate" type="date" value="${existing?.costDate?.slice(0, 10) || todayLocal}" ${canChangeActualDate ? '' : 'disabled'}>${canChangeActualDate ? '' : '<small>Only an Admin can change this date.</small>'}</div>
           <div class="field full"><label>BOQ Line *</label><select id="aBoq" multiple size="5" required style="min-height:130px">${lineOptions}<option value="other">Other</option></select><small>Use Ctrl (Windows) or Command (Mac) to select multiple BOQ lines.</small></div>
           <div class="field full"><label id="aRemLabel">Remarks</label><input id="aRem" value="${esc(existing?.description || '')}"></div>
+          <div class="field full"><label>Cost Centre *</label><select id="aCC" required>${ccOptions}</select></div>
           <div class="field"><label>Vendor</label><input id="aVendor" value="${esc(existing?.vendor || '')}"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -3476,6 +3519,8 @@ WTPages.switchProjView = function(view) {
       const totalPrice = selected.reduce((sum, option) => sum + Number(option.dataset.price || 0), 0);
       if (totalPrice > 0) $('#aAmt').value = totalPrice.toFixed(2);
       else if (selected.some(option => option.value === 'other')) $('#aAmt').value = '';
+      const centers = [...new Set(selected.map(option => option.dataset.cc).filter(Boolean))];
+      if (centers.length === 1) $('#aCC').value = centers[0];
     });
   }
 
@@ -3493,7 +3538,7 @@ WTPages.switchProjView = function(view) {
         includesOther: isOther,
         amount: Number($('#aAmt').value),
         costDate: $('#aDate').value || null,
-        costCenterId: null,
+        costCenterId: Number($('#aCC').value) || null,
         vendor: $('#aVendor').value.trim() || null,
         description: $('#aRem').value.trim()
       };
@@ -3767,8 +3812,8 @@ WTPages.switchProjView = function(view) {
 
   function downloadBoqImportTemplate() {
     const rows = [
-      ['Item Name', 'Unit', 'Quantity', 'Unit Price', 'Additional Consumption', 'Price for Additional Consumption', 'Brand', 'Remarks'],
-      ['Example item - replace this row', 'Nos', '1', '0.00', '0', '0.00', '', 'Replace with your item details']
+      ['Item Name', 'Unit', 'Quantity', 'Unit Price', 'Cost Centre', 'Additional Consumption', 'Price for Additional Consumption', 'Brand', 'Remarks'],
+      ['Example item - replace this row', 'Nos', '1', '0.00', 'Other', '0', '0.00', '', 'Replace with your item details']
     ];
     const csv = '\uFEFF' + rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -3821,6 +3866,7 @@ WTPages.switchProjView = function(view) {
     { key: 'TotalAmount', label: 'Line Total', aliases: ['total', 'amount', 'totalamount', 'lineamount', 'linetotal', 'extendedamount', 'totalprice'] },
     { key: 'AdditionalConsumption', label: 'Additional Consumption', aliases: ['additionalconsumption', 'additionalqty', 'additionalquantity', 'additionalconsumptionqty'] },
     { key: 'AdditionalConsumptionUnitPrice', label: 'Additional Consumption Price', aliases: ['priceforadditionalconsumption', 'additionalconsumptionprice', 'additionalunitprice'] },
+    { key: 'CostCenter', label: 'Cost Centre', aliases: ['costcentre', 'costcenter', 'ccname', 'cc'] },
     { key: 'Brand', label: 'Brand / Make', aliases: ['brand', 'make', 'manufacturer'] },
     { key: 'Remarks', label: 'Remarks', aliases: ['remark', 'remarks', 'notes', 'specification', 'specifications'] }
   ];
@@ -4008,6 +4054,8 @@ WTPages.switchProjView = function(view) {
     try {
       const b = await WisetrackAPI.getBoq(id);
       const projectId = Number(b.projectId || b.ProjectId);
+      const boqCostCenters = await WisetrackAPI.getCostCenters(projectId).catch(() => []);
+      const boqCostCenterNames = new Map(boqCostCenters.map(center => [Number(center.id || center.Id), center.name || center.Name]));
       const canCreate = !wtCan || wtCan('BOQ', 'edit', projectId);
       const canUpdate = !wtCan || wtCan('BOQ', 'update', projectId);
       const versions = b.versions || b.Versions || [];
@@ -4019,6 +4067,7 @@ WTPages.switchProjView = function(view) {
       const items = sortBoqItems(sourceVersion?.items || sourceVersion?.Items || b.items || b.Items || []);
       const sourceVersionIdForSave = sourceVersion?.id || sourceVersion?.Id;
       const canEditRevision = editMode && canUpdate;
+      const canEditCostCenter = canEditRevision || (!!currentBaseline && Number(currentBaseline.id || currentBaseline.Id) === Number(sourceVersionIdForSave) && typeof wtIsAdmin === 'function' && wtIsAdmin());
       const latestLabel = boqVersionLabel(sourceVersion, versions);
       const firstLabel = boqVersionLabel(first, versions);
       const baselineLabel = boqVersionLabel(currentBaseline, versions);
@@ -4034,14 +4083,15 @@ WTPages.switchProjView = function(view) {
         </div>
         <p class="card-subtitle">${canEditRevision ? `Editing a draft for ${draftLabel}, copied from ${latestLabel}. The selected version stays unchanged; ${draftLabel} is created when you save.` : `Showing ${latestLabel}. This version is read-only. Use Add additional item to prepare a revision from this version.`}</p>
         ${canEditRevision ? `<h3 style="margin:18px 0 8px">Revision from ${esc(latestLabel)} (Editable)</h3>` : ''}
-        ${canEditRevision ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${sourceVersionIdForSave},true)">Save all changes</button></div>` : ''}
+        ${canEditRevision || canEditCostCenter ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${sourceVersionIdForSave},${canEditRevision})">Save all changes</button></div>` : ''}
         <div class="table-wrap"><table class="table" id="boqRevisionItemsTable">
-          <thead><tr><th>#</th><th>Item</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Action</th></tr></thead>
+          <thead><tr><th>#</th><th>Item</th><th>Cost Centre</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Action</th></tr></thead>
           <tbody>
             ${items.length ? items.map((it, index) => `
               <tr data-item-id="${it.id || it.Id}" data-line-no="${it.lineNo ?? it.LineNo ?? ''}" data-unit-price="${it.unitPrice ?? it.UnitPrice ?? 0}" data-quantity="${it.quantity ?? it.Quantity ?? 0}" data-description="${esc(it.description ?? it.Description ?? '')}">
                 <td>${index + 1}</td>
                 <td>${esc(it.itemName || it.ItemName || it.itemCode || it.ItemCode || it.item?.name || it.Item?.name || '—')}</td>
+                <td>${canEditCostCenter ? `<select id="boqCostCenter-${it.id || it.Id}">${boqCostCenters.map(cc => `<option value="${cc.id || cc.Id}" ${Number(cc.id || cc.Id) === Number(it.costCenterId || it.CostCenterId) ? 'selected' : ''}>${esc(cc.name || cc.Name)}</option>`).join('')}</select>` : esc(it.costCenterName || it.CostCenterName || boqCostCenterNames.get(Number(it.costCenterId || it.CostCenterId)) || 'Other')}</td>
                 <td>${esc(it.unit || it.Unit || it.item?.unit?.name || it.Item?.unit?.name || '—')}</td>
                 <td>MVR ${Number(it.unitPrice ?? it.UnitPrice ?? 0).toLocaleString('en-US')}</td>
                 <td>${Number(it.quantity ?? it.Quantity ?? 0).toLocaleString('en-US')}</td>
@@ -4102,7 +4152,7 @@ WTPages.switchProjView = function(view) {
         row.querySelector('input[id^="boqPrice-"]')?.addEventListener('input', () => calcBoqRevisionTotals(id));
       }
     });
-    table.querySelectorAll('tbody td[colspan="12"]').forEach(cell => { cell.colSpan = 16; });
+    table.querySelectorAll('tbody td[colspan="12"]').forEach(cell => { cell.colSpan = 17; });
   }
 
   function calcBoqRevisionTotals(itemId) {
@@ -4183,6 +4233,7 @@ WTPages.switchProjView = function(view) {
         additionalConsumptionUnitPrice: Number($(`#boqAdditionalPrice-${itemId}`)?.value || 0),
         description: row.dataset.description || '',
         remarks: $(`#boqRemark-${itemId}`).value.trim() || null
+        ,costCenterId: Number($(`#boqCostCenter-${itemId}`)?.value) || null
       });
       showToast('Revision line saved. Earlier versions remain unchanged.');
       await viewBoq(boqId);
@@ -4201,7 +4252,8 @@ WTPages.switchProjView = function(view) {
         additionalConsumption: Number($(`#boqAdditionalQty-${itemId}`)?.value || 0),
         additionalConsumptionUnitPrice: Number($(`#boqAdditionalPrice-${itemId}`)?.value || 0),
         description: row.dataset.description || '',
-        remarks: $(`#boqRemark-${itemId}`)?.value.trim() || null
+        remarks: $(`#boqRemark-${itemId}`)?.value.trim() || null,
+        costCenterId: Number($(`#boqCostCenter-${itemId}`)?.value) || null
       }};
     });
     if (!lines.length && !removedRows.length) { showToast('There are no line changes to save.', 'info'); return; }
@@ -6881,11 +6933,11 @@ WTPages.switchProjView = function(view) {
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
-    openBudgetModal, saveBudget, previewBudgetFiles, removeBudgetFile, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
+    openBudgetModal, saveBudget, previewBudgetFiles, removeBudgetFile, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, importCostCenters, saveCostCenterImport, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, changeCostImportMapping, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,
-    openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
+    openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, showActualsForCc, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, previewBoqImportFile, changeBoqImportMapping, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, previewMilestoneEvidenceFiles, removeMilestoneEvidenceFile, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
     openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, previewTaskUpdateFiles, removeTaskUpdateFile, downloadTaskEvidence, openTaskHistory, openTaskDetails, loadDailyTaskReport,

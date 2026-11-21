@@ -356,6 +356,7 @@ internal static class BOQSpreadsheetReader
         var total = FindMapped("TotalAmount", TotalHeaders); var brand = FindMapped("Brand", BrandHeaders); var remarks = FindMapped("Remarks", RemarkHeaders);
         var additionalQty = FindMapped("AdditionalConsumption", ["additionalconsumption", "additionalqty", "additionalquantity", "additionalconsumptionqty"]);
         var additionalPrice = FindMapped("AdditionalConsumptionUnitPrice", ["priceforadditionalconsumption", "additionalconsumptionprice", "additionalunitprice"]);
+        var costCenter = FindMapped("CostCenter", ["costcentre", "costcenter", "ccname", "cc"]);
         if (description < 0 && code < 0) throw new InvalidDataException("Could not identify an item code or description column.");
         if (qty < 0) throw new InvalidDataException("Could not identify a quantity column (for example Qty or Quantity).");
         if (price < 0) throw new InvalidDataException("Could not identify a price column (for example Rate or Unit Price).");
@@ -408,6 +409,7 @@ internal static class BOQSpreadsheetReader
                 LineNo = result.Count + 1,
                 DisplayLineNo = Empty(serialText),
                 ItemCode = Empty(Cell(row, code)),
+                CostCenterName = Empty(Cell(row, costCenter)),
                 Description = Empty(descriptionText),
                 Quantity = quantity,
                 UnitPrice = unitPrice,

@@ -145,13 +145,39 @@ public class BudgetsController : ControllerBase
     public async Task<IActionResult> CostCenters([FromQuery] long? projectId) =>
         Ok(await _budgetService.GetCostCentersAsync(UserId, projectId));
 
+    [HttpPost("cost-centers/import")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> ImportCostCenters([FromForm] long projectId, [FromForm] IFormFile file)
+    {
+        await _permissions.EnsureModuleAsync(UserId, projectId, "Budgets", "edit");
+        if (file == null || file.Length == 0) return BadRequest(new { message = "Select a CC import file." });
+        using var reader = new StreamReader(file.OpenReadStream());
+        var lines = new List<string>();
+        while (await reader.ReadLineAsync() is { } line) if (!string.IsNullOrWhiteSpace(line)) lines.Add(line);
+        if (lines.Count < 2) return BadRequest(new { message = "Import file needs a header and at least one CC row." });
+        var headers = lines[0].Split(',').Select(x => x.Trim().Trim('"')).ToList();
+        var nameIndex = headers.FindIndex(x => x.Equals("CC Name", StringComparison.OrdinalIgnoreCase) || x.Equals("Cost Centre", StringComparison.OrdinalIgnoreCase) || x.Equals("Cost Center", StringComparison.OrdinalIgnoreCase));
+        var amountIndex = headers.FindIndex(x => x.Equals("Budget Amount", StringComparison.OrdinalIgnoreCase));
+        if (nameIndex < 0 || amountIndex < 0) return BadRequest(new { message = "Required columns: CC Name, Budget Amount." });
+        var imported = 0;
+        foreach (var row in lines.Skip(1))
+        {
+            var cells = row.Split(',').Select(x => x.Trim().Trim('"')).ToArray();
+            if (nameIndex >= cells.Length || amountIndex >= cells.Length || string.IsNullOrWhiteSpace(cells[nameIndex]) ||
+                !decimal.TryParse(cells[amountIndex], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var amount) || amount < 0)
+                return BadRequest(new { message = $"Invalid CC name or Budget Amount in row {imported + 2}." });
+            await _budgetService.CreateCostCenterAsync(new CreateCostCenterRequest { ProjectId = projectId, Name = cells[nameIndex], BudgetAmount = amount }, UserId);
+            imported++;
+        }
+        return Ok(new { imported });
+    }
+
     [HttpPost("cost-centers")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]
     public async Task<IActionResult> CreateCostCenter([FromForm] CreateCostCenterRequest request)
     {
-        if (request.Attachments.Count == 0) return BadRequest(new { message = "Attach at least one cost center file." });
-        var files = await StoreAttachmentsAsync(request.Attachments, "costcenter");
+        var files = request.Attachments.Count > 0 ? await StoreAttachmentsAsync(request.Attachments, "costcenter") : new List<(string Path, string Name)>();
         try
         {
             var center = await _budgetService.CreateCostCenterAsync(request, UserId);

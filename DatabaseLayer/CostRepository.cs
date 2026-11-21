@@ -17,6 +17,7 @@ public interface ICostRepository
     Task DeleteActualAsync(long id);
     Task<bool> CostCenterBelongsToProjectAsync(long projectId, long costCenterId);
     Task<bool> BoqItemBelongsToProjectAsync(long projectId, long boqItemId);
+    Task<List<long>> GetCostCentersForBoqItemsAsync(long projectId, List<long> boqItemIds);
     Task<List<PurchaseCost>> GetPurchasesAsync(long projectId);
     Task<List<ActualCost>> GetActualsAsync(long projectId);
     Task<decimal> GetApprovedBudgetAsync(long projectId);
@@ -103,6 +104,10 @@ public class CostRepository : ICostRepository
     public Task<bool> BoqItemBelongsToProjectAsync(long projectId, long boqItemId) =>
         _db.BoqItems.AnyAsync(i => i.Id == boqItemId && i.BoqVersion.Boq.ProjectId == projectId);
 
+    public Task<List<long>> GetCostCentersForBoqItemsAsync(long projectId, List<long> boqItemIds) =>
+        _db.BoqItems.Where(i => boqItemIds.Contains(i.Id) && i.BoqVersion.Boq.ProjectId == projectId && i.CostCenterId.HasValue)
+            .Select(i => i.CostCenterId!.Value).Distinct().ToListAsync();
+
     public async Task<string> GetProjectCurrencyAsync(long projectId) =>
         await _db.Projects.Where(p => p.Id == projectId).Select(p => p.Currency).FirstOrDefaultAsync() ?? "USD";
 
@@ -123,6 +128,7 @@ public class CostRepository : ICostRepository
         foreach (var cc in centers)
         {
             var allocated = await _db.BudgetAllocations.Where(a => a.CostCenterId == cc.Id && a.Budget.ProjectId == projectId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
+            if (cc.BudgetAmount > 0) allocated = cc.BudgetAmount;
             if (cc.ProjectId.HasValue)
             {
                 allocated += (await _db.ProjectBudgetAllocations.Where(a => a.ToProjectId == cc.ProjectId.Value)

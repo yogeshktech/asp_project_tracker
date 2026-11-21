@@ -92,6 +92,7 @@ CREATE TABLE permissions (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code        VARCHAR(100) NOT NULL UNIQUE,
     name        VARCHAR(200) NOT NULL,
+    budget_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
     module      VARCHAR(100) NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -319,6 +320,7 @@ CREATE TABLE boq_items (
     id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     boq_version_id BIGINT NOT NULL REFERENCES boq_versions(id) ON DELETE CASCADE,
     item_id        BIGINT REFERENCES items(id),
+    cost_center_id BIGINT REFERENCES cost_centers(id),
     item_code      VARCHAR(50),
     item_name      VARCHAR(250),
     line_no        INT,

@@ -148,6 +148,28 @@ public class BOQService : IBOQService
         if (!dto.Commit || !result.IsValid)
             return result;
 
+        var projectCenters = await _db.CostCenters.Where(c => c.ProjectId == dto.ProjectId).ToListAsync();
+        var otherCenter = projectCenters.FirstOrDefault(c => c.Name == "Other");
+        if (otherCenter == null)
+        {
+            otherCenter = new CostCenter { ProjectId = dto.ProjectId, Code = EntityCodes.Next(projectCenters.Select(c => c.Code), EntityCodes.CostCenter), Name = "Other", CreatedAt = DateTime.UtcNow };
+            _db.CostCenters.Add(otherCenter);
+            await _db.SaveChangesAsync();
+        }
+        foreach (var line in dto.Lines)
+        {
+            if (line.CostCenterId.HasValue && !projectCenters.Any(c => c.Id == line.CostCenterId.Value))
+                result.Errors.Add(new BOQValidationErrorDto { Row = line.LineNo ?? 0, Field = "Cost Centre", Message = "Cost Centre does not belong to this project." });
+            if (!line.CostCenterId.HasValue && !string.IsNullOrWhiteSpace(line.CostCenterName))
+            {
+                line.CostCenterId = projectCenters.FirstOrDefault(c => string.Equals(c.Name, line.CostCenterName.Trim(), StringComparison.OrdinalIgnoreCase))?.Id;
+                if (!line.CostCenterId.HasValue)
+                    result.Errors.Add(new BOQValidationErrorDto { Row = line.LineNo ?? 0, Field = "Cost Centre", Message = $"Cost Centre '{line.CostCenterName}' was not found in this project's Budget tab." });
+            }
+            line.CostCenterId ??= otherCenter.Id;
+        }
+        if (result.Errors.Count > 0) { result.ErrorCount = result.Errors.Count; result.IsValid = false; return result; }
+
         await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         Boq boq;
         BoqVersion version;
@@ -170,6 +192,7 @@ public class BOQService : IBOQService
             lines = source.Items.Select(item => new BoqItem
             {
                 BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
+                CostCenterId = item.CostCenterId,
                 LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
                 Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount,
                 AdditionalConsumption = item.AdditionalConsumption, AdditionalConsumptionUnitPrice = item.AdditionalConsumptionUnitPrice,
@@ -208,6 +231,7 @@ public class BOQService : IBOQService
             {
                 BoqVersionId = version.Id,
                 ItemId = itemId,
+                CostCenterId = l.CostCenterId,
                 ItemCode = masterItem?.ItemCode ?? l.ItemCode,
                 ItemName = masterItem?.Name ?? l.Description,
                 LineNo = dto.BoqId.HasValue ? lines.Count + 1 : l.LineNo ?? lines.Count + 1,
@@ -240,6 +264,13 @@ public class BOQService : IBOQService
     {
         if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, projectId, "BOQ", "edit");
         if (requestedLines.Count == 0) throw new InvalidOperationException("Select at least one Item Master item.");
+        var otherCenter = await _db.CostCenters.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Name == "Other");
+        if (otherCenter == null)
+        {
+            otherCenter = new CostCenter { ProjectId = projectId, Code = EntityCodes.Next((await _db.CostCenters.Select(c => c.Code).ToListAsync()), EntityCodes.CostCenter), Name = "Other", CreatedAt = DateTime.UtcNow };
+            _db.CostCenters.Add(otherCenter);
+            await _db.SaveChangesAsync();
+        }
         var items = new List<(BoqFromMasterLineRequest Request, Item Item)>();
         foreach (var line in requestedLines)
         {
@@ -270,6 +301,7 @@ public class BOQService : IBOQService
             lines.AddRange(source.Items.Select(item => new BoqItem
             {
                 BoqVersionId = version.Id, ItemId = item.ItemId, ItemCode = item.ItemCode, ItemName = item.ItemName,
+                CostCenterId = item.CostCenterId,
                 LineNo = item.LineNo, DisplayLineNo = item.DisplayLineNo, Description = item.Description,
                 Quantity = item.Quantity, UnitPrice = item.UnitPrice, Amount = item.Amount,
                 AdditionalConsumption = item.AdditionalConsumption, AdditionalConsumptionUnitPrice = item.AdditionalConsumptionUnitPrice,
@@ -301,6 +333,7 @@ public class BOQService : IBOQService
             {
                 BoqVersionId = version.Id,
                 ItemId = item.Id,
+                CostCenterId = otherCenter.Id,
                 ItemCode = item.ItemCode,
                 ItemName = item.Name,
                 LineNo = lineNo,
@@ -434,13 +467,25 @@ public class BOQService : IBOQService
         if (boq == null) return null;
         await _permissions.EnsureModuleAsync(userId, boq.ProjectId, "BOQ", "update");
         var latest = boq.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
-        if (latest == null || latest.Id != versionId || latest.IsCurrentBaseline)
-            throw new InvalidOperationException("Only the latest non-baseline revision can be edited. Create a new revision first.");
+        var superAdmin = await _permissions.IsAdminAsync(userId);
+        var requestedVersion = boq.Versions.FirstOrDefault(v => v.Id == versionId);
+        var adminBaselineEdit = requestedVersion?.IsCurrentBaseline == true && superAdmin;
+        if (requestedVersion == null || (!adminBaselineEdit && (latest == null || latest.Id != versionId || latest.IsCurrentBaseline)))
+            throw new InvalidOperationException("Only the latest draft revision or Super-Admin baseline Cost Centre edits are allowed.");
         if (request.Quantity <= 0) throw new InvalidOperationException("Quantity must be greater than zero.");
         if (request.AdditionalConsumption < 0) throw new InvalidOperationException("Additional consumption cannot be negative.");
         if (request.AdditionalConsumptionUnitPrice < 0) throw new InvalidOperationException("Price for additional consumption cannot be negative.");
         var item = await _repository.GetItemAsync(itemId);
         if (item == null || item.BoqVersionId != versionId) return null;
+        if (request.CostCenterId.HasValue && !await _db.CostCenters.AnyAsync(c => c.Id == request.CostCenterId && c.ProjectId == boq.ProjectId))
+            throw new InvalidOperationException("Cost Centre does not belong to this project.");
+        if (adminBaselineEdit)
+        {
+            item.CostCenterId = request.CostCenterId;
+            await _repository.UpdateItemAsync(item);
+            await _audit.LogAsync(userId, "UpdateCostCentre", "BOQ", boqId, $"Baseline line {itemId}");
+            return item;
+        }
         if (request.UnitPrice != item.UnitPrice)
             throw new InvalidOperationException("Purchase price cannot be changed in a BOQ revision.");
         if (request.Quantity != item.Quantity)
@@ -483,6 +528,7 @@ public class BOQService : IBOQService
         item.AdditionalConsumptionAmount = additionalAmount;
         item.AllTotal = allTotal;
         item.Remarks = remarks;
+        item.CostCenterId = request.CostCenterId ?? item.CostCenterId;
         await _repository.UpdateItemAsync(item);
         await _audit.LogAsync(userId, "UpdateRevisionLine", "BOQ", boqId, $"Version {latest.VersionNo}, line {itemId}");
         return item;

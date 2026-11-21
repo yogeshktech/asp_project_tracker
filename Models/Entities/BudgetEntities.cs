@@ -10,6 +10,7 @@ public class CostCenter
     public long? ProjectId { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public decimal BudgetAmount { get; set; }
     public string? Description { get; set; }
     public string? AttachmentPath { get; set; }
     public string? AttachmentName { get; set; }

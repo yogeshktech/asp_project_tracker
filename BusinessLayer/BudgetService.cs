@@ -164,6 +164,7 @@ public class BudgetService : IBudgetService
 
     public async Task<CostCenter> CreateCostCenterAsync(CreateCostCenterRequest request, long? userId)
     {
+        if (request.BudgetAmount < 0) throw new InvalidOperationException("Budget Amount cannot be negative.");
         var projectId = request.SubProjectId ?? request.ProjectId ?? 0;
         if (userId.HasValue && projectId > 0)
             await _permissions.EnsureModuleAsync(userId.Value, projectId, "Budgets", "edit");
@@ -172,6 +173,7 @@ public class BudgetService : IBudgetService
             ProjectId = request.SubProjectId ?? request.ProjectId,
             Code = EntityCodes.Next((await _repository.GetCostCentersAsync(null)).Select(c => c.Code), EntityCodes.CostCenter),
             Name = request.Name,
+            BudgetAmount = request.BudgetAmount,
             Description = request.Description,
             CreatedAt = DateTime.UtcNow
         });
@@ -237,6 +239,8 @@ public class BudgetService : IBudgetService
         if (string.IsNullOrWhiteSpace(cc.Code))
             cc.Code = EntityCodes.Next((await _repository.GetCostCentersAsync(null)).Select(c => c.Code), EntityCodes.CostCenter);
         cc.Name = request.Name;
+        if (request.BudgetAmount < 0) throw new InvalidOperationException("Budget Amount cannot be negative.");
+        cc.BudgetAmount = request.BudgetAmount;
         cc.Description = request.Description;
         await _repository.UpdateCostCenterAsync(cc);
         await _audit.LogAsync(userId, "Update", "CostCenter", id);
