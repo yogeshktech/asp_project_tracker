@@ -160,17 +160,22 @@ public class BudgetsController : ControllerBase
         var nameIndex = headers.FindIndex(x => x.Equals("CC Name", StringComparison.OrdinalIgnoreCase) || x.Equals("Cost Centre", StringComparison.OrdinalIgnoreCase) || x.Equals("Cost Center", StringComparison.OrdinalIgnoreCase));
         var amountIndex = headers.FindIndex(x => x.Equals("Budget Amount", StringComparison.OrdinalIgnoreCase));
         if (nameIndex < 0 || amountIndex < 0) return BadRequest(new { message = "Required columns: CC Name, Budget Amount." });
-        var imported = 0;
-        foreach (var row in lines.Skip(1))
+        var requests = new List<CreateCostCenterRequest>();
+        for (var index = 1; index < lines.Count; index++)
         {
-            var cells = row.Split(',').Select(x => x.Trim().Trim('"')).ToArray();
+            var cells = lines[index].Split(',').Select(x => x.Trim().Trim('"')).ToArray();
             if (nameIndex >= cells.Length || amountIndex >= cells.Length || string.IsNullOrWhiteSpace(cells[nameIndex]) ||
                 !decimal.TryParse(cells[amountIndex], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var amount) || amount < 0)
-                return BadRequest(new { message = $"Invalid CC name or Budget Amount in row {imported + 2}." });
-            await _budgetService.CreateCostCenterAsync(new CreateCostCenterRequest { ProjectId = projectId, Name = cells[nameIndex], BudgetAmount = amount }, UserId);
-            imported++;
+                return BadRequest(new { message = $"Invalid CC name or Budget Amount in row {index + 1}." });
+            requests.Add(new CreateCostCenterRequest { ProjectId = projectId, Name = cells[nameIndex], BudgetAmount = amount });
         }
-        return Ok(new { imported });
+        try
+        {
+            var imported = await _budgetService.ImportCostCentersAsync(projectId, requests, UserId);
+            return Ok(new { imported = imported.Count });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
     }
 
     [HttpPost("cost-centers/{id:long}/revise-budget")]

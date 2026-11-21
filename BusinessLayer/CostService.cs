@@ -62,13 +62,7 @@ public class CostService : ICostService
             throw new UnauthorizedAccessException("No permission.");
         var canChangeDate = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
         var boqItemIds = await ValidateActualBoqItemsAsync(request);
-        if (boqItemIds.Count > 0)
-        {
-            var centerIds = await _repository.GetCostCentersForBoqItemsAsync(request.ProjectId, boqItemIds);
-            if (centerIds.Count > 1) throw new InvalidOperationException("Selected BOQ lines belong to different Cost Centres. Add separate actual cost entries.");
-            if (centerIds.Count == 1) request.CostCenterId = centerIds[0];
-        }
-        if (!request.CostCenterId.HasValue) throw new InvalidOperationException("Cost Centre is required.");
+        var costCenterId = await ResolveActualCostCenterIdAsync(request, boqItemIds);
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var cost = await _repository.AddActualAsync(new ActualCost
         {
@@ -76,7 +70,7 @@ public class CostService : ICostService
             BoqItemId = boqItemIds.Count == 0 ? null : boqItemIds[0],
             BoqItemIdsJson = boqItemIds.Count == 0 ? null : JsonSerializer.Serialize(boqItemIds),
             IncludesOther = request.IncludesOther,
-            CostCenterId = request.CostCenterId,
+            CostCenterId = costCenterId,
             Vendor = request.Vendor,
             Description = request.Description,
             Amount = request.Amount,
@@ -121,10 +115,11 @@ public class CostService : ICostService
         if (request.ProjectId != cost.ProjectId) throw new InvalidOperationException("Cost project cannot be changed.");
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
         var boqItemIds = await ValidateActualBoqItemsAsync(request);
+        var costCenterId = await ResolveActualCostCenterIdAsync(request, boqItemIds);
         cost.BoqItemId = boqItemIds.Count == 0 ? null : boqItemIds[0];
         cost.BoqItemIdsJson = boqItemIds.Count == 0 ? null : JsonSerializer.Serialize(boqItemIds);
         cost.IncludesOther = request.IncludesOther;
-        cost.CostCenterId = request.CostCenterId;
+        cost.CostCenterId = costCenterId;
         cost.Vendor = request.Vendor;
         cost.Description = request.Description; cost.Amount = request.Amount;
         if (canChangeDate && request.CostDate.HasValue) cost.CostDate = request.CostDate.Value;
@@ -199,6 +194,25 @@ public class CostService : ICostService
             await ValidateCostDimensionsAsync(request.ProjectId, id, null);
         await ValidateCostDimensionsAsync(request.ProjectId, null, request.CostCenterId);
         return ids;
+    }
+
+    private async Task<long> ResolveActualCostCenterIdAsync(CreateActualCostRequest request, List<long> boqItemIds)
+    {
+        var boqCostCenterIds = boqItemIds.Count == 0
+            ? new List<long>()
+            : await _repository.GetCostCentersForBoqItemsAsync(request.ProjectId, boqItemIds);
+        if (boqCostCenterIds.Count > 1)
+            throw new InvalidOperationException("Selected BOQ lines belong to different Cost Centres. Add separate actual cost entries.");
+
+        // Imports and the Actual Cost form may explicitly provide a Cost Centre.
+        // Keep that selection; infer from the BOQ only when it was omitted.
+        long? costCenterId = request.CostCenterId;
+        if (!costCenterId.HasValue && boqCostCenterIds.Count == 1)
+            costCenterId = boqCostCenterIds[0];
+        if (!costCenterId.HasValue || costCenterId.Value <= 0)
+            throw new InvalidOperationException("Cost Centre is required.");
+        await ValidateCostDimensionsAsync(request.ProjectId, null, costCenterId.Value);
+        return costCenterId.Value;
     }
 
     public async Task<List<PurchaseCost>> GetPurchasesAsync(long userId, long projectId)

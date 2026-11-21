@@ -17,6 +17,7 @@ public interface IBudgetService
     Task DeleteAsync(long budgetId, long userId);
     Task<BudgetVersion> ReviseAsync(long budgetId, decimal totalAmount, string? remarks, long? userId);
     Task<CostCenter> CreateCostCenterAsync(CreateCostCenterRequest request, long? userId);
+    Task<List<CostCenter>> ImportCostCentersAsync(long projectId, List<CreateCostCenterRequest> requests, long userId);
     Task<List<CostCenter>> GetCostCentersAsync(long userId, long? projectId);
     Task<CostCenter?> UpdateCostCenterAsync(long id, UpdateCostCenterRequest request, long? userId);
     Task<CostCenter?> ReviseCostCenterBudgetAsync(long id, ReviseCostCenterBudgetRequest request, long userId);
@@ -98,8 +99,10 @@ public class BudgetService : IBudgetService
         if (request.ApprovedAmount <= 0) throw new InvalidOperationException("Approved budget must be greater than zero.");
         if (userId.HasValue && !await _permissions.CanUpdateModuleAsync(userId.Value, budget.ProjectId, "Budgets"))
             throw new UnauthorizedAccessException("No update permission on budget.");
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         var allocated = await _db.BudgetAllocations.Where(a => a.BudgetId == budgetId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
         if (request.ApprovedAmount < allocated) throw new InvalidOperationException("Approved budget cannot be lower than the amount already allocated.");
+        await EnsureCostCenterBudgetsFitFundingAsync(budget.ProjectId, budgetId, request.ApprovedAmount, projectCurrency);
         var amountChanged = request.ApprovedAmount != budget.ApprovedAmount;
         var baselineChanged = amountChanged || !string.Equals(projectCurrency, budget.Currency, StringComparison.OrdinalIgnoreCase);
         if (baselineChanged && string.IsNullOrWhiteSpace(request.Remarks))
@@ -109,7 +112,6 @@ public class BudgetService : IBudgetService
         budget.ApprovedAmount = request.ApprovedAmount;
         budget.Currency = projectCurrency;
         budget.UpdatedAt = DateTime.UtcNow;
-        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         var versionLabel = baselineChanged ? await NextProjectVersionLabelAsync(budget.ProjectId) : null;
         await _repository.UpdateAsync(budget);
         if (baselineChanged) await _repository.AddVersionAsync(new BudgetVersion
@@ -126,7 +128,10 @@ public class BudgetService : IBudgetService
     {
         var budget = await _repository.GetAsync(budgetId) ?? throw new InvalidOperationException("Budget not found.");
         await _permissions.EnsureModuleAsync(userId, budget.ProjectId, "Budgets", "delete");
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await EnsureCostCenterBudgetsFitFundingAsync(budget.ProjectId, budgetId, null, null);
         await _repository.DeleteAsync(budgetId);
+        await transaction.CommitAsync();
         await _audit.LogAsync(userId, "Delete", "Budget", budgetId);
     }
 
@@ -140,10 +145,11 @@ public class BudgetService : IBudgetService
         var allocated = await _db.BudgetAllocations.Where(a => a.BudgetId == budgetId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
         if (totalAmount < allocated) throw new InvalidOperationException("Approved budget cannot be lower than the amount already allocated.");
 
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await EnsureCostCenterBudgetsFitFundingAsync(budget.ProjectId, budgetId, totalAmount, budget.Currency);
         var next = (budget.Versions.Count == 0 ? 0 : budget.Versions.Max(v => v.VersionNo)) + 1;
         budget.ApprovedAmount = totalAmount;
         budget.UpdatedAt = DateTime.UtcNow;
-        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         var versionLabel = await NextProjectVersionLabelAsync(budget.ProjectId);
         await _repository.UpdateAsync(budget);
         var version = await _repository.AddVersionAsync(new BudgetVersion
@@ -167,20 +173,58 @@ public class BudgetService : IBudgetService
     {
         if (request.BudgetAmount < 0) throw new InvalidOperationException("Budget Amount cannot be negative.");
         var projectId = request.SubProjectId ?? request.ProjectId ?? 0;
-        if (userId.HasValue && projectId > 0)
+        if (projectId <= 0) throw new InvalidOperationException("Project is required for a Cost Centre budget.");
+        if (userId.HasValue)
             await _permissions.EnsureModuleAsync(userId.Value, projectId, "Budgets", "edit");
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await EnsureCostCenterBudgetTotalAsync(projectId, request.BudgetAmount);
         var cc = await _repository.AddCostCenterAsync(new CostCenter
         {
-            ProjectId = request.SubProjectId ?? request.ProjectId,
+            ProjectId = projectId,
             Code = EntityCodes.Next((await _repository.GetCostCentersAsync(null)).Select(c => c.Code), EntityCodes.CostCenter),
             Name = request.Name,
             BudgetAmount = request.BudgetAmount,
             Description = request.Description,
             CreatedAt = DateTime.UtcNow
         });
+        await transaction.CommitAsync();
         await _audit.LogAsync(userId, "Create", "CostCenter", cc.Id);
         await _audit.LogAsync(userId, "Create", "CostCenterBudget", cc.Id, $"Initial budget: {cc.BudgetAmount:0.##}");
         return cc;
+    }
+
+    public async Task<List<CostCenter>> ImportCostCentersAsync(long projectId, List<CreateCostCenterRequest> requests, long userId)
+    {
+        if (projectId <= 0) throw new InvalidOperationException("Project is required for a Cost Centre budget.");
+        if (requests.Count == 0) throw new InvalidOperationException("Import file contains no Cost Centre rows.");
+        if (requests.Any(row => row.BudgetAmount < 0)) throw new InvalidOperationException("Budget Amount cannot be negative.");
+        await _permissions.EnsureModuleAsync(userId, projectId, "Budgets", "edit");
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await EnsureCostCenterBudgetTotalAsync(projectId, requests.Sum(row => row.BudgetAmount));
+        var existingCodes = (await _repository.GetCostCentersAsync(null)).Select(center => center.Code).ToList();
+        var imported = new List<CostCenter>(requests.Count);
+        foreach (var request in requests)
+        {
+            var center = await _repository.AddCostCenterAsync(new CostCenter
+            {
+                ProjectId = projectId,
+                Code = EntityCodes.Next(existingCodes, EntityCodes.CostCenter),
+                Name = request.Name,
+                BudgetAmount = request.BudgetAmount,
+                Description = request.Description,
+                CreatedAt = DateTime.UtcNow
+            });
+            existingCodes.Add(center.Code);
+            imported.Add(center);
+        }
+        await transaction.CommitAsync();
+        foreach (var center in imported)
+        {
+            await _audit.LogAsync(userId, "Create", "CostCenter", center.Id);
+            await _audit.LogAsync(userId, "Create", "CostCenterBudget", center.Id, $"Initial budget: {center.BudgetAmount:0.##}");
+        }
+        return imported;
     }
 
     public async Task<List<CostCenter>> GetCostCentersAsync(long userId, long? projectId)
@@ -235,17 +279,22 @@ public class BudgetService : IBudgetService
     {
         var cc = await _repository.GetCostCenterAsync(id);
         if (cc == null) return null;
-        if (userId.HasValue && cc.ProjectId.HasValue)
-            await _permissions.EnsureModuleAsync(userId.Value, cc.ProjectId.Value, "Budgets", "update");
+        var targetProjectId = request.SubProjectId ?? request.ProjectId ?? cc.ProjectId ?? 0;
+        if (targetProjectId <= 0) throw new InvalidOperationException("Project is required for a Cost Centre budget.");
+        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, targetProjectId, "Budgets", "update");
         var previousAmount = cc.BudgetAmount;
-        cc.ProjectId = request.SubProjectId ?? request.ProjectId;
         if (string.IsNullOrWhiteSpace(cc.Code))
             cc.Code = EntityCodes.Next((await _repository.GetCostCentersAsync(null)).Select(c => c.Code), EntityCodes.CostCenter);
         cc.Name = request.Name;
         if (request.BudgetAmount < 0) throw new InvalidOperationException("Budget Amount cannot be negative.");
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await EnsureCostCenterBudgetTotalAsync(targetProjectId, request.BudgetAmount,
+            targetProjectId == cc.ProjectId ? id : null);
+        cc.ProjectId = targetProjectId;
         cc.BudgetAmount = request.BudgetAmount;
         cc.Description = request.Description;
         await _repository.UpdateCostCenterAsync(cc);
+        await transaction.CommitAsync();
         await _audit.LogAsync(userId, "Update", "CostCenter", id);
         if (previousAmount != cc.BudgetAmount)
             await _audit.LogAsync(userId, "EditBudget", "CostCenterBudget", id, $"Budget changed from {previousAmount:0.##} to {cc.BudgetAmount:0.##}");
@@ -261,11 +310,83 @@ public class BudgetService : IBudgetService
         var reason = request.Remarks?.Trim();
         if (string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("Revision reason is required.");
         var previousAmount = cc.BudgetAmount;
+        if (!cc.ProjectId.HasValue) throw new InvalidOperationException("Project is required for a Cost Centre budget.");
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+        await EnsureCostCenterBudgetTotalAsync(cc.ProjectId.Value, request.BudgetAmount, id);
         cc.BudgetAmount = request.BudgetAmount;
         await _repository.UpdateCostCenterAsync(cc);
+        await transaction.CommitAsync();
         await _audit.LogAsync(userId, "ReviseBudget", "CostCenterBudget", id,
             $"Budget changed from {previousAmount:0.##} to {cc.BudgetAmount:0.##}. Reason: {reason}");
         return cc;
+    }
+
+    private async Task EnsureCostCenterBudgetTotalAsync(long projectId, decimal proposedAmount, long? replacingCostCenterId = null)
+    {
+        var projectCurrency = await _db.Projects.Where(project => project.Id == projectId)
+            .Select(project => project.Currency).SingleOrDefaultAsync()
+            ?? throw new InvalidOperationException("Project not found.");
+        var totalFunding = await GetProjectFundingAsync(projectId);
+        var existingBudgets = await _db.CostCenters
+            .Where(center => center.ProjectId == projectId && (!replacingCostCenterId.HasValue || center.Id != replacingCostCenterId.Value))
+            .SumAsync(center => (decimal?)center.BudgetAmount) ?? 0;
+        var proposedTotal = existingBudgets + proposedAmount;
+        if (proposedTotal > totalFunding)
+            throw new InvalidOperationException(
+                $"Total Cost Centre budgets ({projectCurrency} {proposedTotal:N2}) cannot exceed total project funding ({projectCurrency} {totalFunding:N2}).");
+    }
+
+    private async Task<decimal> GetProjectFundingAsync(long projectId)
+    {
+        var projectCurrency = await _db.Projects.Where(project => project.Id == projectId)
+            .Select(project => project.Currency).SingleOrDefaultAsync()
+            ?? throw new InvalidOperationException("Project not found.");
+        var funding = await _db.Budgets.AsNoTracking().Where(budget => budget.ProjectId == projectId)
+            .Select(budget => new { Amount = budget.ApprovedAmount, budget.Currency }).ToListAsync();
+        var incomingTransfers = await _db.ProjectBudgetAllocations.AsNoTracking()
+            .Where(allocation => allocation.ToProjectId == projectId)
+            .Select(allocation => new { Amount = allocation.Amount, allocation.Currency }).ToListAsync();
+        var incomingLegacyAllocations = await _db.BudgetAllocations.AsNoTracking()
+            .Where(allocation => allocation.CostCenter.ProjectId == projectId && allocation.Budget.ProjectId != projectId)
+            .Select(allocation => new { Amount = allocation.AllocatedAmount, allocation.Budget.Currency }).ToListAsync();
+        var sources = funding.Select(source => (source.Amount, source.Currency))
+            .Concat(incomingTransfers.Select(source => (source.Amount, source.Currency)))
+            .Concat(incomingLegacyAllocations.Select(source => (source.Amount, source.Currency)))
+            .ToList();
+        if (sources.Any(source => !string.Equals(source.Currency, projectCurrency, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Cost Centre budgets cannot be validated while project funding uses multiple currencies.");
+        return sources.Sum(source => source.Amount);
+    }
+
+    private async Task EnsureCostCenterBudgetsFitFundingAsync(
+        long projectId, long replacedBudgetId, decimal? replacementAmount, string? replacementCurrency)
+    {
+        var projectCurrency = await _db.Projects.Where(project => project.Id == projectId)
+            .Select(project => project.Currency).SingleOrDefaultAsync()
+            ?? throw new InvalidOperationException("Project not found.");
+        var existingBudgets = await _db.Budgets.AsNoTracking().Where(budget => budget.ProjectId == projectId)
+            .Where(budget => budget.Id != replacedBudgetId)
+            .Select(budget => new { Amount = budget.ApprovedAmount, budget.Currency }).ToListAsync();
+        var funding = existingBudgets.Select(source => (source.Amount, source.Currency)).ToList();
+        if (replacementAmount.HasValue)
+            funding.Add((replacementAmount.Value, replacementCurrency ?? projectCurrency));
+        var incomingTransfers = await _db.ProjectBudgetAllocations.AsNoTracking()
+            .Where(allocation => allocation.ToProjectId == projectId)
+            .Select(allocation => new { Amount = allocation.Amount, allocation.Currency }).ToListAsync();
+        funding.AddRange(incomingTransfers.Select(source => (source.Amount, source.Currency)));
+        var incomingLegacyAllocations = await _db.BudgetAllocations.AsNoTracking()
+            .Where(allocation => allocation.CostCenter.ProjectId == projectId && allocation.Budget.ProjectId != projectId)
+            .Select(allocation => new { Amount = allocation.AllocatedAmount, allocation.Budget.Currency }).ToListAsync();
+        funding.AddRange(incomingLegacyAllocations.Select(source => (source.Amount, source.Currency)));
+        if (funding.Any(source => !string.Equals(source.Currency, projectCurrency, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Cost Centre budgets cannot be validated while project funding uses multiple currencies.");
+
+        var totalFunding = funding.Sum(source => source.Amount);
+        var totalCostCenterBudgets = await _db.CostCenters.AsNoTracking().Where(center => center.ProjectId == projectId)
+            .SumAsync(center => (decimal?)center.BudgetAmount) ?? 0;
+        if (totalCostCenterBudgets > totalFunding)
+            throw new InvalidOperationException(
+                $"The approved budget cannot be reduced because Cost Centre budgets total {projectCurrency} {totalCostCenterBudgets:N2}, above the resulting total funding of {projectCurrency} {totalFunding:N2}.");
     }
 
     public async Task DeleteCostCenterAsync(long id, long? userId)
