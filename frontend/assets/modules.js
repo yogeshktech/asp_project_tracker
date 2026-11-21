@@ -2391,10 +2391,10 @@ WTPages.switchProjView = function(view) {
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Created At', 'Attachment', 'Actions'], 'budgetBody', 'budget-table-wrap')
       + `<h3 style="margin:22px 0 10px">Cost Centre Budgets</h3><div style="display:flex;gap:8px;margin:8px 0">${canUpdateBudget ? '<button class="btn primary" onclick="WTPages.openCostCenterModal()">+ Add CC</button><button class="btn" onclick="WTPages.importCostCenters()">Import CC Details</button>' : ''}</div>`
-      + tableWrap(['CC Name', 'Budget Amount', 'Amount Used', 'Balance', 'Budget Status'], 'ccBody', 'cost-center-table-wrap');
+      + tableWrap(['CC Name', 'Budget Amount', 'Amount Used', 'Balance', 'Budget Status', 'Actions'], 'ccBody', 'cost-center-table-wrap');
     if (!pid) {
       $('#budgetBody').innerHTML = emptyRow(10, 'No project available.');
-      $('#ccBody').innerHTML = emptyRow(5, 'No project available.');
+      $('#ccBody').innerHTML = emptyRow(6, 'No project available.');
       return;
     }
     try {
@@ -2492,11 +2492,12 @@ WTPages.switchProjView = function(view) {
         const used = Number(rollup.actualSpend ?? rollup.ActualSpend ?? 0);
         const balance = budgetAmount - used;
         const budgetStatus = used > budgetAmount ? 'Over Budget' : used < budgetAmount ? 'Under Budget' : 'On Budget';
-        return `<tr><td>${esc(costCenterDisplayName(c.name))}</td><td>${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${budgetAmount.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${used.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${balance.toLocaleString('en-US')}</td><td><span class="badge ${budgetStatus === 'Over Budget' ? 'red' : budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(budgetStatus)}</span> ${canEditCenter ? `<button class="btn sm" onclick="WTPages.openCostCenterModal(${c.id})" title="Edit CC"><i class="fa-solid fa-pen"></i></button>` : ''}</td></tr>`;
-      }).join('') || emptyRow(5, 'No cost centres. Add one to get started.');
+        const ccActions = `${canEditCenter ? `<button class="btn sm" type="button" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i> Edit</button><button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetRevision(${c.id})"><i class="fa-solid fa-arrows-rotate"></i> Revise budget</button>` : ''}<button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetHistory(${c.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>${canDeleteCenter ? `<button class="btn sm danger" type="button" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}`;
+        return `<tr><td>${esc(costCenterDisplayName(c.name))}</td><td>${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${budgetAmount.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${used.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${balance.toLocaleString('en-US')}</td><td><span class="badge ${budgetStatus === 'Over Budget' ? 'red' : budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(budgetStatus)}</span></td><td class="table-actions">${taskRowActionMenu(ccActions)}</td></tr>`;
+      }).join('') || emptyRow(6, 'No cost centres. Add one to get started.');
     } catch (e) {
       $('#budgetBody').innerHTML = errRow(9, e);
-      $('#ccBody').innerHTML = errRow(5, e);
+      $('#ccBody').innerHTML = errRow(6, e);
       showToast(e.message, 'danger');
     }
   }
@@ -2762,6 +2763,41 @@ WTPages.switchProjView = function(view) {
       if (id) await WisetrackAPI.updateCostCenter(id, data); else await WisetrackAPI.createCostCenter(data);
       closeModal(); showToast(id ? 'Cost center updated' : 'Created'); await pageBudget();
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  async function openCostCenterBudgetRevision(id) {
+    const pid = await selectedProjectId();
+    try {
+      const center = (await WisetrackAPI.getCostCenters(pid)).find(item => Number(item.id || item.Id) === Number(id));
+      if (!center) throw new Error('Cost Centre not found.');
+      openModal('Revise Cost Centre Budget', `<form onsubmit="WTPages.saveCostCenterBudgetRevision(event, ${Number(id)})">
+        <div class="form-grid">
+          <div class="field"><label>Current Budget</label><input value="${Number(center.budgetAmount ?? center.BudgetAmount ?? 0)}" readonly></div>
+          <div class="field"><label>Revised Budget Amount *</label><input id="ccRevisedBudgetAmount" type="number" min="0" step="0.01" value="${Number(center.budgetAmount ?? center.BudgetAmount ?? 0)}" required></div>
+          <div class="field full"><label>Revision Reason *</label><textarea id="ccRevisedBudgetReason" rows="3" maxlength="2000" required></textarea></div>
+        </div>
+        <div class="modalfoot"><button class="btn primary" type="submit">Save revision</button></div>
+      </form>`);
+    } catch (error) { showToast(error.message || 'Could not load Cost Centre.', 'danger'); }
+  }
+
+  async function saveCostCenterBudgetRevision(event, id) {
+    event.preventDefault();
+    try {
+      await WisetrackAPI.reviseCostCenterBudget(id, {
+        budgetAmount: Number($('#ccRevisedBudgetAmount').value),
+        remarks: $('#ccRevisedBudgetReason').value.trim()
+      });
+      closeModal(); showToast('Cost Centre budget revision saved.'); await pageBudget();
+    } catch (error) { showToast(error.message || 'Could not revise Cost Centre budget.', 'danger'); }
+  }
+
+  async function openCostCenterBudgetHistory(id) {
+    try {
+      const history = await WisetrackAPI.getCostCenterBudgetHistory(id);
+      const rows = (history || []).map(item => `<tr><td>${esc(item.createdAt ? wtFormatDateTime(item.createdAt) : '—')}</td><td>${esc(item.action || '—')}</td><td>${esc(item.details || '—')}</td><td>${esc(item.userName || 'System')}</td></tr>`).join('');
+      openModal('Cost Centre Budget History', `<div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Action</th><th>Budget Change / Reason</th><th>Updated By</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No budget history found.</td></tr>'}</tbody></table></div>`);
+    } catch (error) { showToast(error.message || 'Could not load budget history.', 'danger'); }
   }
 
   async function deleteCC(id) {
@@ -6935,7 +6971,7 @@ WTPages.switchProjView = function(view) {
     addTeam, saveWorkspaceVariance,
     openItemModal, saveItem, deleteItem, openBrandModal, openUnitModal, openCategoryModal,
     deleteBrand, deleteUnit, deleteCategory, refreshItemsAll,
-    openBudgetModal, saveBudget, previewBudgetFiles, removeBudgetFile, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, importCostCenters, saveCostCenterImport, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
+    openBudgetModal, saveBudget, previewBudgetFiles, removeBudgetFile, reviseBudget, openBudgetRevision, saveBudgetRevision, previewBudgetRevisionFiles, removeBudgetRevisionFile, openBudgetHistory, openChildBudgetHistory, openAllocationModal, saveAllocation, openCostCenterModal, saveCC, openCostCenterBudgetRevision, saveCostCenterBudgetRevision, openCostCenterBudgetHistory, importCostCenters, saveCostCenterImport, deleteCC, openAttachmentHistory, openAttachmentFile, deleteAttachment,
     deleteBudget,
     openCostImportModal, previewCostImport, changeCostImportMapping, saveCostImport,
     openDrawingModal, saveDrawing, deleteDrawing, viewDrawingFile, downloadDrawingFile, viewDrawingAttachment, previewDrawingFiles, removeDrawingSelectedFile, removeDrawingCurrentFile,

@@ -216,6 +216,12 @@ public class CreateCostCenterRequest
 
 public class UpdateCostCenterRequest : CreateCostCenterRequest { }
 
+public class ReviseCostCenterBudgetRequest
+{
+    public decimal BudgetAmount { get; set; }
+    public string Remarks { get; set; } = string.Empty;
+}
+
 public class CreateAllocationRequest
 {
     public long BudgetId { get; set; }

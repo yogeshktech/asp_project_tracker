@@ -283,6 +283,8 @@ const WisetrackAPI = {
   reviseBudget(id, data) { return this._fetch(`/budgets/${id}/revise`, { method: 'POST', body: data }); },
   getCostCenters(projectId) { return this.get(`/budgets/cost-centers${projectId ? '?projectId=' + projectId : ''}`); },
   importCostCenters(projectId, data) { return this._fetch(`/budgets/cost-centers/import?projectId=${projectId}`, { method: 'POST', body: data }); },
+  reviseCostCenterBudget(id, data) { return this.post(`/budgets/cost-centers/${id}/revise-budget`, data); },
+  getCostCenterBudgetHistory(id) { return this.get(`/budgets/cost-centers/${id}/budget-history`); },
   createCostCenter(data) { return this._fetch('/budgets/cost-centers', { method: 'POST', body: data }); },
   updateCostCenter(id, data) { return this._fetch(`/budgets/cost-centers/${id}`, { method: 'PUT', body: data }); },
   deleteCostCenterAttachment(id, attachmentId) { return this.del(`/budgets/cost-centers/${id}/attachments/${attachmentId}`); },

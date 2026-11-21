@@ -173,6 +173,43 @@ public class BudgetsController : ControllerBase
         return Ok(new { imported });
     }
 
+    [HttpPost("cost-centers/{id:long}/revise-budget")]
+    public async Task<IActionResult> ReviseCostCenterBudget(long id, [FromBody] ReviseCostCenterBudgetRequest request)
+    {
+        try
+        {
+            var center = await _budgetService.ReviseCostCenterBudgetAsync(id, request, UserId);
+            return center == null ? NotFound() : Ok(center);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
+    [HttpGet("cost-centers/{id:long}/budget-history")]
+    public async Task<IActionResult> CostCenterBudgetHistory(long id)
+    {
+        var center = await _db.CostCenters.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (center == null) return NotFound();
+        if (center.ProjectId.HasValue)
+        {
+            if (!await _permissions.CanViewModuleAsync(UserId, center.ProjectId.Value, "Budgets")) return Forbid();
+        }
+        else if (!await _permissions.IsAdminAsync(UserId)) return Forbid();
+
+        var logs = await _db.AuditLogs.AsNoTracking().Where(a => a.EntityName == "CostCenterBudget" && a.EntityId == id)
+            .OrderByDescending(a => a.CreatedAt).Take(100).ToListAsync();
+        var userIds = logs.Where(a => a.UserId.HasValue).Select(a => a.UserId!.Value).Distinct().ToList();
+        var names = await _db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName);
+        return Ok(logs.Select(a => new
+        {
+            a.Id,
+            a.Action,
+            a.Details,
+            a.CreatedAt,
+            UserName = a.UserId.HasValue && names.TryGetValue(a.UserId.Value, out var name) ? name : "System"
+        }));
+    }
+
     [HttpPost("cost-centers")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(100_000_000)]

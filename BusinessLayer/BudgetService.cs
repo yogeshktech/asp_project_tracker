@@ -19,6 +19,7 @@ public interface IBudgetService
     Task<CostCenter> CreateCostCenterAsync(CreateCostCenterRequest request, long? userId);
     Task<List<CostCenter>> GetCostCentersAsync(long userId, long? projectId);
     Task<CostCenter?> UpdateCostCenterAsync(long id, UpdateCostCenterRequest request, long? userId);
+    Task<CostCenter?> ReviseCostCenterBudgetAsync(long id, ReviseCostCenterBudgetRequest request, long userId);
     Task DeleteCostCenterAsync(long id, long? userId);
     Task AllocateAsync(CreateAllocationRequest request, long? userId);
     Task<ProjectBudgetAllocationSummaryDto> GetProjectAllocationSummaryAsync(long userId, long projectId);
@@ -178,6 +179,7 @@ public class BudgetService : IBudgetService
             CreatedAt = DateTime.UtcNow
         });
         await _audit.LogAsync(userId, "Create", "CostCenter", cc.Id);
+        await _audit.LogAsync(userId, "Create", "CostCenterBudget", cc.Id, $"Initial budget: {cc.BudgetAmount:0.##}");
         return cc;
     }
 
@@ -235,6 +237,7 @@ public class BudgetService : IBudgetService
         if (cc == null) return null;
         if (userId.HasValue && cc.ProjectId.HasValue)
             await _permissions.EnsureModuleAsync(userId.Value, cc.ProjectId.Value, "Budgets", "update");
+        var previousAmount = cc.BudgetAmount;
         cc.ProjectId = request.SubProjectId ?? request.ProjectId;
         if (string.IsNullOrWhiteSpace(cc.Code))
             cc.Code = EntityCodes.Next((await _repository.GetCostCentersAsync(null)).Select(c => c.Code), EntityCodes.CostCenter);
@@ -244,6 +247,24 @@ public class BudgetService : IBudgetService
         cc.Description = request.Description;
         await _repository.UpdateCostCenterAsync(cc);
         await _audit.LogAsync(userId, "Update", "CostCenter", id);
+        if (previousAmount != cc.BudgetAmount)
+            await _audit.LogAsync(userId, "EditBudget", "CostCenterBudget", id, $"Budget changed from {previousAmount:0.##} to {cc.BudgetAmount:0.##}");
+        return cc;
+    }
+
+    public async Task<CostCenter?> ReviseCostCenterBudgetAsync(long id, ReviseCostCenterBudgetRequest request, long userId)
+    {
+        var cc = await _repository.GetCostCenterAsync(id);
+        if (cc == null) return null;
+        if (cc.ProjectId.HasValue) await _permissions.EnsureModuleAsync(userId, cc.ProjectId.Value, "Budgets", "update");
+        if (request.BudgetAmount < 0) throw new InvalidOperationException("Budget Amount cannot be negative.");
+        var reason = request.Remarks?.Trim();
+        if (string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("Revision reason is required.");
+        var previousAmount = cc.BudgetAmount;
+        cc.BudgetAmount = request.BudgetAmount;
+        await _repository.UpdateCostCenterAsync(cc);
+        await _audit.LogAsync(userId, "ReviseBudget", "CostCenterBudget", id,
+            $"Budget changed from {previousAmount:0.##} to {cc.BudgetAmount:0.##}. Reason: {reason}");
         return cc;
     }
 
