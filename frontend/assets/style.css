@@ -914,6 +914,16 @@ header.topbar {
   flex-wrap: wrap;
 }
 
+.daily-report-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.daily-report-head h1 {
+  white-space: nowrap;
+}
+
 /* Breadcrumbs */
 .breadcrumb-nav {
   display: flex;
@@ -3354,6 +3364,10 @@ button.btn[disabled] {
 
   .head h1 {
     font-size: 21px;
+  }
+
+  .daily-report-head h1 {
+    white-space: normal;
   }
 
   .kpis {

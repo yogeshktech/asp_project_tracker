@@ -4377,6 +4377,7 @@ WTPages.switchProjView = function(view) {
       + `<div class="card" id="excBox" style="display:none;margin-top:16px;"><h3 class="card-title">⚠️ Automatic Task Alerts</h3><small class="card-subtitle">Generated for overdue tasks or tasks without a progress update for 7 days. Update or complete the task to clear an alert.</small><div id="excList">Loading...</div></div>`;
 
     if (kind === 'daily') {
+      el.querySelector('.head')?.classList.add('daily-report-head');
       WTPages.toggleDailyResortMenu = function() {
         const menu = $('#dailyResortMenu');
         if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
