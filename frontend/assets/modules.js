@@ -3090,12 +3090,12 @@ WTPages.switchProjView = function(view) {
       + '<h3 style="margin:22px 0 10px">Actual Spend by Date</h3>'
       + tableWrap(['Date', 'Actual Spend', 'Balance (Remaining Budget - Actual)', 'Budget Status'], 'actualSpendByDateBody')
       + '<h3 style="margin:22px 0 10px">Actual Cost</h3>'
-      + tableWrap(['ID', 'Vendor', 'Item Name', 'Amount', 'Date', 'Notes', 'Actions'], 'costsBody');
+      + tableWrap(['ID', 'Vendor', 'Item Name', 'CC Name', 'Amount', 'Date', 'Notes', 'Actions'], 'costsBody');
     if (!pid) {
       $('#varianceBox').innerHTML = 'No project available.';
       $('#actualSpendByDateBody').innerHTML = emptyRow(4, 'No project available.');
       $('#actualSpendByCcBody').innerHTML = emptyRow(4, 'No project available.');
-      $('#costsBody').innerHTML = emptyRow(7, 'No project available.');
+      $('#costsBody').innerHTML = emptyRow(8, 'No project available.');
       return;
     }
     try {
@@ -3175,9 +3175,11 @@ WTPages.switchProjView = function(view) {
         const itemNames = boqItemIds.map(itemId => boqItemNames.get(String(itemId)) || `BOQ Line #${itemId}`);
         if (r.includesOther || r.IncludesOther) itemNames.push('Other');
         const itemName = itemNames.join(', ') || 'Other';
-        return `<tr data-cost-type="${esc(r._t)}" data-cost-center-id="${Number(r.costCenterId || r.CostCenterId || 0)}"><td>${r.id}</td><td>${esc(vendor)}</td><td>${esc(itemName)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
+        const costCenterId = Number(r.costCenterId || r.CostCenterId || 0);
+        const costCenterName = ccMap.get(costCenterId)?.name || ccMap.get(costCenterId)?.Name || '—';
+        return `<tr data-cost-type="${esc(r._t)}" data-cost-center-id="${costCenterId}"><td>${r.id}</td><td>${esc(vendor)}</td><td>${esc(itemName)}</td><td>${esc(costCenterName)}</td><td>${money(r.amount || r.totalAmount || 0)}</td>
           <td>${esc(r.costDate || r.purchaseDate || r.createdAt || 'N/A')}</td><td>${esc(r.remarks || r.description || r.notes || 'N/A')}</td><td class="table-actions">${canUpdate ? `<button class="btn sm" title="Edit ${r._t.toLowerCase()}" aria-label="Edit ${r._t.toLowerCase()}" onclick="WTPages.open${r._t}Modal(${r.id})"><i class="fa-solid fa-pen"></i></button>` : ''}${canDelete ? `<button class="btn sm danger" title="Delete ${r._t.toLowerCase()}" aria-label="Delete ${r._t.toLowerCase()}" onclick="WTPages.deleteCost('${r._t}', ${r.id})"><i class="fa-solid fa-trash"></i></button>` : ''}</td></tr>`;
-      }).join('') : emptyRow(7, 'No cost entries');
+      }).join('') : emptyRow(8, 'No cost entries');
     } catch (e) { showToast(e.message, 'danger'); }
   }
 
@@ -3189,19 +3191,19 @@ WTPages.switchProjView = function(view) {
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
     const matching = [...document.querySelectorAll('#costsBody tr[data-cost-type="Actual"]')].filter(item =>
-      item.cells?.[4]?.textContent.trim().slice(0, 10) === date);
+      item.cells?.[5]?.textContent.trim().slice(0, 10) === date);
     const body = matching.length ? matching.map(item => `<tr>${item.innerHTML}</tr>`).join('')
-      : '<tr><td colspan="7">No actual cost details found for this date.</td></tr>';
-    openModal(`Actual spend on ${esc(date)}`, `<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Vendor</th><th>Item Name</th><th>Amount</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>`);
+      : '<tr><td colspan="8">No actual cost details found for this date.</td></tr>';
+    openModal(`Actual spend on ${esc(date)}`, `<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Vendor</th><th>Item Name</th><th>CC Name</th><th>Amount</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>`);
   }
 
   function showActualsForCc(costCenterId) {
     const matching = [...document.querySelectorAll('#costsBody tr[data-cost-type="Actual"]')]
       .filter(item => Number(item.dataset.costCenterId) === Number(costCenterId));
     const body = matching.length ? matching.map(item => `<tr>${item.innerHTML}</tr>`).join('')
-      : '<tr><td colspan="7">No actual cost details found for this Cost Centre.</td></tr>';
+      : '<tr><td colspan="8">No actual cost details found for this Cost Centre.</td></tr>';
     const name = document.querySelector(`#actualSpendByCcBody button[onclick="WTPages.showActualsForCc(${Number(costCenterId)})"]`)?.textContent || 'Cost Centre';
-    openModal(`Actual costs: ${esc(name)}`, `<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Vendor</th><th>Item Name</th><th>Amount</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>`);
+    openModal(`Actual costs: ${esc(name)}`, `<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Vendor</th><th>Item Name</th><th>CC Name</th><th>Amount</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead><tbody>${body}</tbody></table></div>`);
   }
 
   async function pageDrawings() {
@@ -4232,11 +4234,13 @@ WTPages.switchProjView = function(view) {
       const version = versions.find(v => Number(v.id || v.Id) === Number(versionId));
       if (!version) throw new Error('BOQ version was not found.');
       const items = sortBoqItems(version.items || version.Items || []);
+      const costCenters = await WisetrackAPI.getCostCenters(boq.projectId || boq.ProjectId).catch(() => []);
+      const costCenterNames = new Map((costCenters || []).map(cc => [Number(cc.id || cc.Id), cc.name || cc.Name || '']));
       const label = boqVersionLabel(version, versions);
       const rows = items.map((item, index) => `<tr>
         <td>${index + 1}</td>
         <td>${esc(item.itemName || item.ItemName || item.description || item.Description || '—')}</td>
-        <td>${esc(item.itemCode || item.ItemCode || '—')}</td>
+        <td>${esc(item.costCenterName || item.CostCenterName || costCenterNames.get(Number(item.costCenterId || item.CostCenterId)) || '—')}</td>
         <td>${esc(item.unit || item.Unit || '—')}</td>
         <td>${Number(item.quantity ?? item.Quantity ?? 0).toLocaleString('en-US')}</td>
         <td>${Number(item.unitPrice ?? item.UnitPrice ?? 0).toLocaleString('en-US')}</td>
@@ -4253,7 +4257,7 @@ WTPages.switchProjView = function(view) {
           ${version.isCurrentBaseline || version.IsCurrentBaseline ? '<span class="badge green">Current Baseline</span>' : ''}
           <span>${esc(version.remarks || version.Remarks || '')}</span>
         </div>
-        <div class="table-wrap boq-version-table-wrap"><table class="table"><thead><tr><th>#</th><th>Item name</th><th>Code</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Description</th></tr></thead>
+        <div class="table-wrap boq-version-table-wrap"><table class="table"><thead><tr><th>#</th><th>Item name</th><th>CC Name</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Description</th></tr></thead>
           <tbody>${rows || '<tr><td colspan="12">No items in this version.</td></tr>'}</tbody></table></div>`);
       document.getElementById('modal')?.classList.add('boq-fullscreen');
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 50);
