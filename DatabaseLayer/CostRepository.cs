@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using project_tracker_madhu.DatabaseLayer.Context;
 using project_tracker_madhu.Models.Entities;
 using project_tracker_madhu.Models.Responses;
+using System.Text.Json;
 
 namespace project_tracker_madhu.DatabaseLayer.Costs;
 
@@ -123,6 +124,12 @@ public class CostRepository : ICostRepository
         var centers = await _db.CostCenters.Where(c => c.ProjectId == projectId ||
             (c.ProjectId.HasValue && _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId)))
             .AsNoTracking().ToListAsync();
+        var costProjectIds = await _db.Projects.Where(p => p.Id == projectId || p.ParentProjectId == projectId)
+            .Select(p => p.Id).ToListAsync();
+        var actualCosts = await _db.ActualCosts.AsNoTracking().Where(c => costProjectIds.Contains(c.ProjectId)).ToListAsync();
+        var boqCostCenters = await _db.BoqItems.AsNoTracking()
+            .Where(i => costProjectIds.Contains(i.BoqVersion.Boq.ProjectId))
+            .Select(i => new { i.Id, i.CostCenterId }).ToDictionaryAsync(i => i.Id, i => i.CostCenterId);
         var result = new List<CostCenterRollupDto>();
 
         foreach (var cc in centers)
@@ -138,8 +145,24 @@ public class CostRepository : ICostRepository
             }
             var purchase = await _db.PurchaseCosts.Where(c => c.CostCenterId == cc.Id &&
                 (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
-            var actual = await _db.ActualCosts.Where(c => c.CostCenterId == cc.Id &&
-                (c.ProjectId == projectId || _db.Projects.Any(p => p.Id == c.ProjectId && p.ParentProjectId == projectId))).SumAsync(c => c.Amount);
+            var actual = actualCosts.Where(cost =>
+            {
+                if (cost.CostCenterId.HasValue) return cost.CostCenterId.Value == cc.Id;
+                var itemIds = new HashSet<long>();
+                if (cost.BoqItemId.HasValue) itemIds.Add(cost.BoqItemId.Value);
+                if (!string.IsNullOrWhiteSpace(cost.BoqItemIdsJson))
+                {
+                    try
+                    {
+                        foreach (var itemId in JsonSerializer.Deserialize<List<long>>(cost.BoqItemIdsJson) ?? new())
+                            itemIds.Add(itemId);
+                    }
+                    catch (JsonException) { }
+                }
+                var mappedCenters = itemIds.Where(boqCostCenters.ContainsKey)
+                    .Select(id => boqCostCenters[id]).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+                return mappedCenters.Count == 1 && mappedCenters[0] == cc.Id;
+            }).Sum(cost => cost.Amount);
             var forecast = purchase + actual;
             var actualVariance = allocated - actual;
             var forecastVariance = allocated - forecast;
@@ -162,26 +185,6 @@ public class CostRepository : ICostRepository
             });
         }
 
-        // Approved funding that has not been assigned to a cost center remains
-        // available to the project. Display it on the project's own center so the
-        // project and cost-center views reconcile without inflating child centers.
-        var ownCenter = result.FirstOrDefault(c => centers.Any(x => x.Id == c.CostCenterId && x.ProjectId == projectId));
-        if (ownCenter != null)
-        {
-            var ownApproved = await _db.Budgets.Where(b => b.ProjectId == projectId)
-                .SumAsync(b => (decimal?)b.ApprovedAmount) ?? 0;
-            var incomingTransfers = await _db.ProjectBudgetAllocations.Where(a => a.ToProjectId == projectId)
-                .SumAsync(a => (decimal?)a.Amount) ?? 0;
-            var projectFunding = ownApproved + incomingTransfers;
-            var unassigned = Math.Max(0, projectFunding - ownCenter.Budget);
-            ownCenter.Budget += unassigned;
-            ownCenter.Allocated += unassigned;
-            ownCenter.Variance += unassigned;
-            ownCenter.ForecastVariance += unassigned;
-            ownCenter.BudgetStatus = ownCenter.ActualSpend > ownCenter.Budget ? "Over Budget" : ownCenter.ActualSpend < ownCenter.Budget ? "Under Budget" : "On Budget";
-            var utilization = ownCenter.Budget == 0 ? 0 : ownCenter.Forecast / ownCenter.Budget * 100;
-            ownCenter.RagStatus = utilization >= red ? "Red" : utilization >= amber ? "Amber" : "Green";
-        }
         return result;
     }
 }

@@ -477,11 +477,14 @@ public class BOQService : IBOQService
         if (request.AdditionalConsumptionUnitPrice < 0) throw new InvalidOperationException("Price for additional consumption cannot be negative.");
         var item = await _repository.GetItemAsync(itemId);
         if (item == null || item.BoqVersionId != versionId) return null;
-        if (request.CostCenterId.HasValue && !await _db.CostCenters.AnyAsync(c => c.Id == request.CostCenterId && c.ProjectId == boq.ProjectId))
+        var costCenterId = request.CostCenterId ?? item.CostCenterId;
+        if (!costCenterId.HasValue)
+            costCenterId = (await GetOrCreateOtherCostCenterAsync(boq.ProjectId)).Id;
+        if (!await _db.CostCenters.AnyAsync(c => c.Id == costCenterId && c.ProjectId == boq.ProjectId))
             throw new InvalidOperationException("Cost Centre does not belong to this project.");
         if (adminBaselineEdit)
         {
-            item.CostCenterId = request.CostCenterId;
+            item.CostCenterId = costCenterId;
             await _repository.UpdateItemAsync(item);
             await _audit.LogAsync(userId, "UpdateCostCentre", "BOQ", boqId, $"Baseline line {itemId}");
             return item;
@@ -528,10 +531,28 @@ public class BOQService : IBOQService
         item.AdditionalConsumptionAmount = additionalAmount;
         item.AllTotal = allTotal;
         item.Remarks = remarks;
-        item.CostCenterId = request.CostCenterId ?? item.CostCenterId;
+        item.CostCenterId = costCenterId;
         await _repository.UpdateItemAsync(item);
         await _audit.LogAsync(userId, "UpdateRevisionLine", "BOQ", boqId, $"Version {latest.VersionNo}, line {itemId}");
         return item;
+    }
+
+    private async Task<CostCenter> GetOrCreateOtherCostCenterAsync(long projectId)
+    {
+        var other = await _db.CostCenters.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Name.ToLower() == "other");
+        if (other != null) return other;
+        var codes = await _db.CostCenters.Where(c => c.ProjectId == projectId).Select(c => c.Code).ToListAsync();
+        other = new CostCenter
+        {
+            ProjectId = projectId,
+            Code = EntityCodes.Next(codes, EntityCodes.CostCenter),
+            Name = "Other",
+            BudgetAmount = 0,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.CostCenters.Add(other);
+        await _db.SaveChangesAsync();
+        return other;
     }
 
     public async Task<List<BoqItem>> UpdateRevisionItemsAsync(long boqId, long versionId, List<UpdateBoqRevisionLineRequest> lines, long userId)

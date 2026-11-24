@@ -1,8 +1,10 @@
 using project_tracker_madhu.Common;
+using project_tracker_madhu.DatabaseLayer.Context;
 using project_tracker_madhu.DatabaseLayer.Costs;
 using project_tracker_madhu.Models.Entities;
 using project_tracker_madhu.Models.Requests;
 using project_tracker_madhu.Models.Responses;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace project_tracker_madhu.BusinessLayer.Costs;
@@ -26,12 +28,14 @@ public class CostService : ICostService
     private readonly ICostRepository _repository;
     private readonly IPermissionService _permissions;
     private readonly IAuditService _audit;
+    private readonly AppDbContext _db;
 
-    public CostService(ICostRepository repository, IPermissionService permissions, IAuditService audit)
+    public CostService(ICostRepository repository, IPermissionService permissions, IAuditService audit, AppDbContext db)
     {
         _repository = repository;
         _permissions = permissions;
         _audit = audit;
+        _db = db;
     }
 
     public async Task<PurchaseCost> AddPurchaseAsync(CreatePurchaseCostRequest request, long? userId)
@@ -198,21 +202,57 @@ public class CostService : ICostService
 
     private async Task<long> ResolveActualCostCenterIdAsync(CreateActualCostRequest request, List<long> boqItemIds)
     {
-        var boqCostCenterIds = boqItemIds.Count == 0
-            ? new List<long>()
-            : await _repository.GetCostCentersForBoqItemsAsync(request.ProjectId, boqItemIds);
+        var boqLineCenters = boqItemIds.Count == 0
+            ? new List<long?>()
+            : await _db.BoqItems.Where(i => boqItemIds.Contains(i.Id) && i.BoqVersion.Boq.ProjectId == request.ProjectId)
+                .Select(i => i.CostCenterId).ToListAsync();
+        var boqCostCenterIds = boqLineCenters.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        foreach (var centerId in boqCostCenterIds.ToList())
+            if (!await _repository.CostCenterBelongsToProjectAsync(request.ProjectId, centerId))
+                boqCostCenterIds.Remove(centerId);
+        var hasUnmappedCenter = boqLineCenters.Any(id => !id.HasValue || !boqCostCenterIds.Contains(id.Value));
+        if (hasUnmappedCenter)
+            boqCostCenterIds.Add((await GetOrCreateOtherCostCenterAsync(request.ProjectId)).Id);
+        boqCostCenterIds = boqCostCenterIds.Distinct().ToList();
         if (boqCostCenterIds.Count > 1)
             throw new InvalidOperationException("Selected BOQ lines belong to different Cost Centres. Add separate actual cost entries.");
 
         // Imports and the Actual Cost form may explicitly provide a Cost Centre.
         // Keep that selection; infer from the BOQ only when it was omitted.
         long? costCenterId = request.CostCenterId;
+        var inferredFromBoq = false;
         if (!costCenterId.HasValue && boqCostCenterIds.Count == 1)
+        {
             costCenterId = boqCostCenterIds[0];
+            inferredFromBoq = true;
+        }
+        if (!costCenterId.HasValue)
+            costCenterId = (await GetOrCreateOtherCostCenterAsync(request.ProjectId)).Id;
+        else if (inferredFromBoq && !await _repository.CostCenterBelongsToProjectAsync(request.ProjectId, costCenterId.Value))
+            costCenterId = (await GetOrCreateOtherCostCenterAsync(request.ProjectId)).Id;
         if (!costCenterId.HasValue || costCenterId.Value <= 0)
             throw new InvalidOperationException("Cost Centre is required.");
         await ValidateCostDimensionsAsync(request.ProjectId, null, costCenterId.Value);
         return costCenterId.Value;
+    }
+
+    private async Task<CostCenter> GetOrCreateOtherCostCenterAsync(long projectId)
+    {
+        var other = await _db.CostCenters.FirstOrDefaultAsync(c => c.ProjectId == projectId && c.Name.ToLower() == "other");
+        if (other != null) return other;
+
+        var codes = await _db.CostCenters.Where(c => c.ProjectId == projectId).Select(c => c.Code).ToListAsync();
+        other = new CostCenter
+        {
+            ProjectId = projectId,
+            Code = EntityCodes.Next(codes, EntityCodes.CostCenter),
+            Name = "Other",
+            BudgetAmount = 0,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.CostCenters.Add(other);
+        await _db.SaveChangesAsync();
+        return other;
     }
 
     public async Task<List<PurchaseCost>> GetPurchasesAsync(long userId, long projectId)

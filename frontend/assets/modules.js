@@ -3086,7 +3086,7 @@ WTPages.switchProjView = function(view) {
         <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>` : ''}`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
       + '<h3 style="margin:22px 0 10px">Actual Spent by CC</h3>'
-      + tableWrap(['CC Name', 'Actual Cost', 'Balance', 'Budget Status'], 'actualSpendByCcBody')
+      + tableWrap(['CC Name', 'Budget Amount', 'Actual Cost', 'Balance', 'Budget Status'], 'actualSpendByCcBody')
       + '<h3 style="margin:22px 0 10px">Actual Spend by Date</h3>'
       + tableWrap(['Date', 'Actual Spend', 'Balance (Remaining Budget - Actual)', 'Budget Status'], 'actualSpendByDateBody')
       + '<h3 style="margin:22px 0 10px">Actual Cost</h3>'
@@ -3094,14 +3094,14 @@ WTPages.switchProjView = function(view) {
     if (!pid) {
       $('#varianceBox').innerHTML = 'No project available.';
       $('#actualSpendByDateBody').innerHTML = emptyRow(4, 'No project available.');
-      $('#actualSpendByCcBody').innerHTML = emptyRow(4, 'No project available.');
+      $('#actualSpendByCcBody').innerHTML = emptyRow(5, 'No project available.');
       $('#costsBody').innerHTML = emptyRow(8, 'No project available.');
       return;
     }
     try {
-      const [purchases, actuals, variance, boqs] = await Promise.all([
+      const [purchases, actuals, variance, boqs, costCenters] = await Promise.all([
         WisetrackAPI.getPurchases(pid), WisetrackAPI.getActuals(pid), WisetrackAPI.getVariance(pid),
-        WisetrackAPI.getBoqs(pid).catch(() => [])
+        WisetrackAPI.getBoqs(pid).catch(() => []), WisetrackAPI.getCostCenters(pid).catch(() => [])
       ]);
       const boqItemNames = new Map();
       (boqs || []).forEach(boq => (boq.versions || boq.Versions || []).forEach(version =>
@@ -3116,12 +3116,18 @@ WTPages.switchProjView = function(view) {
       const money = amount => `${currency} ${Number(amount || 0).toLocaleString('en-US')}`;
       const ccRollups = variance.costCenters || variance.CostCenters || [];
       const ccMap = new Map(ccRollups.map(cc => [Number(cc.costCenterId ?? cc.CostCenterId), cc]));
+      const configuredCcBudgets = new Map((costCenters || []).map(cc => [
+        Number(cc.id ?? cc.Id), Number(cc.budgetAmount ?? cc.BudgetAmount ?? 0)
+      ]));
       $('#actualSpendByCcBody').innerHTML = ccRollups.length ? ccRollups.map(cc => {
         const ccId = Number(cc.costCenterId ?? cc.CostCenterId);
         const spent = Number(cc.actualSpend ?? cc.ActualSpend ?? 0);
-        const balance = Number(cc.budget ?? cc.Budget ?? 0) - spent;
-        return `<tr><td><button class="btn sm" onclick="WTPages.showActualsForCc(${ccId})">${esc(cc.name || cc.Name)}</button></td><td>${money(spent)}</td><td>${money(balance)}</td><td>${esc(cc.budgetStatus || cc.BudgetStatus || 'On Budget')}</td></tr>`;
-      }).join('') : emptyRow(4, 'No Cost Centre actuals.');
+        const rollupBudget = Number(cc.budget ?? cc.Budget ?? 0);
+        const budgetAmount = configuredCcBudgets.has(ccId) ? configuredCcBudgets.get(ccId) : rollupBudget;
+        const balance = budgetAmount - spent;
+        const budgetStatus = spent > budgetAmount ? 'Over Budget' : spent < budgetAmount ? 'Under Budget' : 'On Budget';
+        return `<tr><td><button class="btn sm" onclick="WTPages.showActualsForCc(${ccId})">${esc(cc.name || cc.Name)}</button></td><td>${money(budgetAmount)}</td><td>${money(spent)}</td><td>${money(balance)}</td><td>${esc(budgetStatus)}</td></tr>`;
+      }).join('') : emptyRow(5, 'No Cost Centre actuals.');
       const budget = Number(variance.budget ?? variance.approvedBudget ?? 0);
       const forecast = Number(variance.forecastTotal ?? (Number(variance.purchaseTotal || 0) + Number(variance.actualSpend ?? variance.actualTotal ?? 0)));
       $('#varianceBox').innerHTML = `
@@ -3520,7 +3526,8 @@ WTPages.switchProjView = function(view) {
       const label = itemName;
       return `<option value="${i.id || i.Id}" data-price="${Number(price) || 0}" data-cc="${i.costCenterId || i.CostCenterId || ''}">${esc(label)}</option>`;
     }).join('');
-    const ccOptions = costCenters.map(c => `<option value="${c.id}" ${Number(c.id) === Number(existing?.costCenterId) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    const ccOptions = costCenters.map(c => `<option value="${c.id || c.Id}" ${Number(c.id || c.Id) === Number(existing?.costCenterId || existing?.CostCenterId) ? 'selected' : ''}>${esc(c.name || c.Name)}</option>`).join('')
+      + (!costCenters.some(c => String(c.name || c.Name || '').trim().toLowerCase() === 'other') ? '<option value="__other__">Other</option>' : '');
     const today = new Date();
     const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const canChangeActualDate = typeof wtIsAdmin === 'function' && wtIsAdmin();
@@ -3559,8 +3566,20 @@ WTPages.switchProjView = function(view) {
       const totalPrice = selected.reduce((sum, option) => sum + Number(option.dataset.price || 0), 0);
       if (totalPrice > 0) $('#aAmt').value = totalPrice.toFixed(2);
       else if (selected.some(option => option.value === 'other')) $('#aAmt').value = '';
-      const centers = [...new Set(selected.map(option => option.dataset.cc).filter(Boolean))];
-      if (centers.length === 1) $('#aCC').value = centers[0];
+      const otherOption = [...$('#aCC').options].find(option => option.textContent.trim().toLowerCase() === 'other');
+      const centers = [...new Set(selected.map(option => {
+        if (option.value === 'other' || !option.dataset.cc) return otherOption?.value || '__other__';
+        const exists = [...$('#aCC').options].some(ccOption => ccOption.value === option.dataset.cc);
+        return exists ? option.dataset.cc : (otherOption?.value || '__other__');
+      }))];
+      const matchedCenter = centers.length === 1
+        ? [...$('#aCC').options].find(option => option.value === String(centers[0]))
+        : null;
+      if (matchedCenter) {
+        $('#aCC').value = matchedCenter.value;
+      } else if (centers.length === 1 && centers[0] === '__other__' && otherOption) {
+        $('#aCC').value = otherOption.value;
+      }
     });
   }
 
@@ -3578,7 +3597,7 @@ WTPages.switchProjView = function(view) {
         includesOther: isOther,
         amount: Number($('#aAmt').value),
         costDate: $('#aDate').value || null,
-        costCenterId: Number($('#aCC').value) || null,
+        costCenterId: $('#aCC').value === '__other__' ? null : (Number($('#aCC').value) || null),
         vendor: $('#aVendor').value.trim() || null,
         description: $('#aRem').value.trim()
       };
