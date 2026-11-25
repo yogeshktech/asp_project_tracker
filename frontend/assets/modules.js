@@ -2210,7 +2210,7 @@ WTPages.switchProjView = function(view) {
       </div>` : `<span style="color:var(--text-muted)">${can('Budgets') && can('Costs') ? 'Budget data is unavailable.' : 'Budget and cost data are hidden for your permissions.'}</span>`;
     const centers = rows(variance?.costCenters);
     const costCenterLabel = c => costCenterDisplayName(c.costCenterName || c.name || `#${c.costCenterId}`);
-    const costCenterPanel = variance ? (centers.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>CC Name</th><th>Budget</th><th>Status</th></tr></thead><tbody>${centers.map(c => { const status = c.budgetStatus || c.BudgetStatus || 'On Budget'; return `<tr><td>${esc(costCenterLabel(c))}</td><td>${money(c.budget ?? c.Budget ?? 0)}</td><td><span class="badge ${status === 'Over Budget' ? 'red' : status === 'Under Budget' ? 'green' : 'gray'}">${esc(status)}</span></td></tr>`; }).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No cost center rollups.</span>') : budgetPanel;
+    const costCenterPanel = variance ? (centers.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>CC Name</th><th>Status</th></tr></thead><tbody>${centers.map(c => { const status = c.budgetStatus || c.BudgetStatus || 'On Budget'; return `<tr><td>${esc(costCenterLabel(c))}</td><td><span class="badge ${status === 'Over Budget' ? 'red' : status === 'Under Budget' ? 'green' : 'amber'}">${esc(status)}</span></td></tr>`; }).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No cost center rollups.</span>') : budgetPanel;
     const boqPanel = boqRows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>BOQ</th><th>Status</th><th>Baseline</th><th>Lines</th></tr></thead><tbody>${boqRows.map(b => { const versions = rows(b.versions || b.Versions); const baseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline); const lines = rows(baseline?.items || baseline?.Items); return `<tr><td>${esc(b.title || b.Title || `BOQ #${b.id || b.Id}`)}</td><td>${esc(b.status || b.Status || '—')}</td><td>${baseline ? `v${baseline.versionNo || baseline.VersionNo}` : 'Not set'}</td><td>${lines.length || (b.itemCount ?? b.ItemCount ?? '—')}</td></tr>`; }).join('')}</tbody></table></div>` : '<span style="color:var(--text-muted)">No BOQ records available or permission is restricted.</span>';
     box.innerHTML = `<div class="card-header"><div><h2 class="card-title">${esc(project.name || project.title || 'Project')} · Project Dashboard</h2><div class="card-subtitle">Project dates, delivery progress, financial position, risks and actions</div></div></div>
       <div class="grid g2" style="margin-top:12px">
@@ -2494,7 +2494,7 @@ WTPages.switchProjView = function(view) {
         const balance = budgetAmount - used;
         const budgetStatus = used > budgetAmount ? 'Over Budget' : used < budgetAmount ? 'Under Budget' : 'On Budget';
         const ccActions = `${canEditCenter ? `<button class="btn sm" type="button" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i> Edit</button><button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetRevision(${c.id})"><i class="fa-solid fa-arrows-rotate"></i> Revise budget</button>` : ''}<button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetHistory(${c.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>${canDeleteCenter ? `<button class="btn sm danger" type="button" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}`;
-        return `<tr><td>${esc(costCenterDisplayName(c.name))}</td><td>${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${budgetAmount.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${used.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${balance.toLocaleString('en-US')}</td><td><span class="badge ${budgetStatus === 'Over Budget' ? 'red' : budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(budgetStatus)}</span></td><td class="table-actions">${taskRowActionMenu(ccActions)}</td></tr>`;
+        return `<tr><td>${esc(costCenterDisplayName(c.name))}</td><td>${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${budgetAmount.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${used.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${balance.toLocaleString('en-US')}</td><td><span class="badge ${budgetStatus === 'Over Budget' ? 'red' : budgetStatus === 'Under Budget' ? 'green' : 'amber'}">${esc(budgetStatus)}</span></td><td class="table-actions">${taskRowActionMenu(ccActions)}</td></tr>`;
       }).join('') || emptyRow(6, 'No cost centres. Add one to get started.');
     } catch (e) {
       $('#budgetBody').innerHTML = errRow(9, e);
@@ -3126,7 +3126,7 @@ WTPages.switchProjView = function(view) {
         const budgetAmount = configuredCcBudgets.has(ccId) ? configuredCcBudgets.get(ccId) : rollupBudget;
         const balance = budgetAmount - spent;
         const budgetStatus = spent > budgetAmount ? 'Over Budget' : spent < budgetAmount ? 'Under Budget' : 'On Budget';
-        return `<tr><td><button class="btn sm" onclick="WTPages.showActualsForCc(${ccId})">${esc(cc.name || cc.Name)}</button></td><td>${money(budgetAmount)}</td><td>${money(spent)}</td><td>${money(balance)}</td><td>${esc(budgetStatus)}</td></tr>`;
+        return `<tr><td><button class="btn sm" onclick="WTPages.showActualsForCc(${ccId})">${esc(cc.name || cc.Name)}</button></td><td>${money(budgetAmount)}</td><td>${money(spent)}</td><td>${money(balance)}</td><td><span class="badge ${budgetStatus === 'Over Budget' ? 'red' : budgetStatus === 'Under Budget' ? 'green' : 'amber'}">${esc(budgetStatus)}</span></td></tr>`;
       }).join('') : emptyRow(5, 'No Cost Centre actuals.');
       const budget = Number(variance.budget ?? variance.approvedBudget ?? 0);
       const forecast = Number(variance.forecastTotal ?? (Number(variance.purchaseTotal || 0) + Number(variance.actualSpend ?? variance.actualTotal ?? 0)));
@@ -3135,7 +3135,7 @@ WTPages.switchProjView = function(view) {
           <div><div class="kpi-label">Budget</div><strong>${money(variance.budget ?? variance.approvedBudget)}</strong></div>
           <div><div class="kpi-label">Actual Spend</div><strong>${money(variance.actualSpend ?? variance.actualTotal)}</strong></div>
           <div><div class="kpi-label">Variance (Budget - Actual)</div><strong>${money(variance.varianceAmount)}</strong></div>
-          <div><div class="kpi-label">Budget Status</div><span class="badge ${variance.budgetStatus === 'Over Budget' ? 'red' : variance.budgetStatus === 'Under Budget' ? 'green' : 'gray'}">${esc(variance.budgetStatus || 'On Budget')}</span></div>
+          <div><div class="kpi-label">Budget Status</div><span class="badge ${variance.budgetStatus === 'Over Budget' ? 'red' : variance.budgetStatus === 'Under Budget' ? 'green' : 'amber'}">${esc(variance.budgetStatus || 'On Budget')}</span></div>
         </div>
         <div style="margin-top:14px;border-top:1px solid var(--border-color);padding-top:12px;">
           <strong>Variance Explanations</strong>
@@ -3165,7 +3165,7 @@ WTPages.switchProjView = function(view) {
         const remaining = budget - cumulativeSpend;
         const status = cumulativeSpend > budget ? 'Over Budget' : cumulativeSpend < budget ? 'Under Budget' : 'On Budget';
         return `<tr data-actual-date="${esc(date)}"><td><button class="btn sm" onclick="WTPages.showActualsForDate('${esc(date)}')">${esc(date)}</button></td>
-          <td>${money(daySpend)}</td><td>${money(remaining)}</td><td><span class="badge ${status === 'Over Budget' ? 'red' : status === 'Under Budget' ? 'green' : 'gray'}">${esc(status)}</span></td></tr>`;
+          <td>${money(daySpend)}</td><td>${money(remaining)}</td><td><span class="badge ${status === 'Over Budget' ? 'red' : status === 'Under Budget' ? 'green' : 'amber'}">${esc(status)}</span></td></tr>`;
       }).join('') : emptyRow(4, 'No dated actual spend recorded.');
       const rows = [
         ...(purchases || []).map(x => ({ ...x, _t: 'Purchase' })),
@@ -3526,7 +3526,7 @@ WTPages.switchProjView = function(view) {
       const label = itemName;
       return `<option value="${i.id || i.Id}" data-price="${Number(price) || 0}" data-cc="${i.costCenterId || i.CostCenterId || ''}">${esc(label)}</option>`;
     }).join('');
-    const ccOptions = costCenters.map(c => `<option value="${c.id || c.Id}" ${Number(c.id || c.Id) === Number(existing?.costCenterId || existing?.CostCenterId) ? 'selected' : ''}>${esc(c.name || c.Name)}</option>`).join('')
+    const ccOptions = costCenters.map((c, index) => `<option value="${c.id || c.Id}" ${Number(c.id || c.Id) === Number(existing?.costCenterId || existing?.CostCenterId) || (!existing && (String(c.name || c.Name).trim().toLowerCase() === 'other' || (index === 0 && !costCenters.some(center => String(center.name || center.Name).trim().toLowerCase() === 'other')))) ? 'selected' : ''}>${esc(c.name || c.Name)}</option>`).join('')
       + (!costCenters.some(c => String(c.name || c.Name || '').trim().toLowerCase() === 'other') ? '<option value="__other__">Other</option>' : '');
     const today = new Date();
     const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -3540,7 +3540,7 @@ WTPages.switchProjView = function(view) {
           <div class="field"><label>Date</label><input id="aDate" type="date" value="${existing?.costDate?.slice(0, 10) || todayLocal}" ${canChangeActualDate ? '' : 'disabled'}>${canChangeActualDate ? '' : '<small>Only an Admin can change this date.</small>'}</div>
           <div class="field full"><label>BOQ Line *</label><select id="aBoq" multiple size="5" required style="min-height:130px">${lineOptions}<option value="other">Other</option></select><small>Use Ctrl (Windows) or Command (Mac) to select multiple BOQ lines.</small></div>
           <div class="field full"><label id="aRemLabel">Remarks</label><input id="aRem" value="${esc(existing?.description || '')}"></div>
-          <div class="field full"><label>Cost Centre *</label><select id="aCC" required>${ccOptions}</select></div>
+          <div class="field full"><label>Cost Centre *</label><select id="aCC" required disabled title="Cost Centre is set from the selected BOQ line(s).">${ccOptions}</select></div>
           <div class="field"><label>Vendor</label><input id="aVendor" value="${esc(existing?.vendor || '')}"></div>
         </div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Save</button></div>
@@ -3561,11 +3561,8 @@ WTPages.switchProjView = function(view) {
     };
     $('#aBoq').addEventListener('change', updateActualRemarksRequired);
     updateActualRemarksRequired();
-    $('#aBoq').addEventListener('change', () => {
+    const syncActualCostCenter = () => {
       const selected = [...$('#aBoq').selectedOptions];
-      const totalPrice = selected.reduce((sum, option) => sum + Number(option.dataset.price || 0), 0);
-      if (totalPrice > 0) $('#aAmt').value = totalPrice.toFixed(2);
-      else if (selected.some(option => option.value === 'other')) $('#aAmt').value = '';
       const otherOption = [...$('#aCC').options].find(option => option.textContent.trim().toLowerCase() === 'other');
       const centers = [...new Set(selected.map(option => {
         if (option.value === 'other' || !option.dataset.cc) return otherOption?.value || '__other__';
@@ -3580,7 +3577,15 @@ WTPages.switchProjView = function(view) {
       } else if (centers.length === 1 && centers[0] === '__other__' && otherOption) {
         $('#aCC').value = otherOption.value;
       }
+    };
+    $('#aBoq').addEventListener('change', () => {
+      const selected = [...$('#aBoq').selectedOptions];
+      const totalPrice = selected.reduce((sum, option) => sum + Number(option.dataset.price || 0), 0);
+      if (totalPrice > 0) $('#aAmt').value = totalPrice.toFixed(2);
+      else if (selected.some(option => option.value === 'other')) $('#aAmt').value = '';
+      syncActualCostCenter();
     });
+    syncActualCostCenter();
   }
 
   async function saveActual(e) {
@@ -4262,19 +4267,34 @@ WTPages.switchProjView = function(view) {
       const costCenters = await WisetrackAPI.getCostCenters(boq.projectId || boq.ProjectId).catch(() => []);
       const costCenterNames = new Map((costCenters || []).map(cc => [Number(cc.id || cc.Id), cc.name || cc.Name || '']));
       const label = boqVersionLabel(version, versions);
-      const rows = items.map((item, index) => `<tr>
-        <td>${index + 1}</td>
-        <td>${esc(item.itemName || item.ItemName || item.description || item.Description || '—')}</td>
-        <td>${esc(item.costCenterName || item.CostCenterName || costCenterNames.get(Number(item.costCenterId || item.CostCenterId)) || '—')}</td>
-        <td>${esc(item.unit || item.Unit || '—')}</td>
-        <td>${Number(item.quantity ?? item.Quantity ?? 0).toLocaleString('en-US')}</td>
-        <td>${Number(item.unitPrice ?? item.UnitPrice ?? 0).toLocaleString('en-US')}</td>
-        <td>${Number(item.amount ?? item.Amount ?? 0).toLocaleString('en-US')}</td>
-        <td>${Number(item.additionalConsumption ?? item.AdditionalConsumption ?? 0).toLocaleString('en-US')}</td>
-        <td>${Number(item.additionalConsumptionUnitPrice ?? item.AdditionalConsumptionUnitPrice ?? 0).toLocaleString('en-US')}</td>
-        <td>${(Number(item.additionalConsumptionAmount ?? item.AdditionalConsumptionAmount ?? 0) || Number(item.additionalConsumption ?? item.AdditionalConsumption ?? 0) * Number(item.additionalConsumptionUnitPrice ?? item.AdditionalConsumptionUnitPrice ?? 0)).toLocaleString('en-US')}</td>
-        <td>${(Number(item.allTotal ?? item.AllTotal ?? 0) || Number(item.amount ?? item.Amount ?? 0) + (Number(item.additionalConsumptionAmount ?? item.AdditionalConsumptionAmount ?? 0) || Number(item.additionalConsumption ?? item.AdditionalConsumption ?? 0) * Number(item.additionalConsumptionUnitPrice ?? item.AdditionalConsumptionUnitPrice ?? 0))).toLocaleString('en-US')}</td>
-        <td>${esc(item.description || item.Description || '—')}</td></tr>`).join('');
+      const rows = items.map((item, index) => {
+        const additionalQty = Number(item.additionalConsumption ?? item.AdditionalConsumption ?? 0);
+        const additionalPrice = Number(item.additionalConsumptionUnitPrice ?? item.AdditionalConsumptionUnitPrice ?? 0);
+        const amount = Number(item.amount ?? item.Amount ?? Number(item.quantity ?? item.Quantity ?? 0) * Number(item.unitPrice ?? item.UnitPrice ?? 0));
+        const additionalAmount = Number(item.additionalConsumptionAmount ?? item.AdditionalConsumptionAmount ?? additionalQty * additionalPrice);
+        const imageUrl = item.imageUrl || item.ImageUrl || item.item?.imageUrl || item.Item?.ImageUrl;
+        const attachmentPath = item.attachmentPath || item.AttachmentPath;
+        const attachmentName = item.attachmentName || item.AttachmentName || 'Download';
+        return `<tr>
+          <td>${index + 1}</td>
+          <td>${esc(item.itemName || item.ItemName || item.itemCode || item.ItemCode || item.description || item.Description || '—')}</td>
+          <td>${esc(item.costCenterName || item.CostCenterName || costCenterNames.get(Number(item.costCenterId || item.CostCenterId)) || 'Other')}</td>
+          <td>${esc(item.unit || item.Unit || item.item?.unit?.name || item.Item?.Unit?.Name || '—')}</td>
+          <td>${Number(item.unitPrice ?? item.UnitPrice ?? 0).toLocaleString('en-US')}</td>
+          <td>${Number(item.quantity ?? item.Quantity ?? 0).toLocaleString('en-US')}</td>
+          <td>${esc(item.description || item.Description || item.itemName || '—')}</td>
+          <td>${imageUrl ? `<a href="${esc(imageUrl)}" target="_blank" rel="noopener">View</a>` : '—'}</td>
+          <td><strong>${amount.toLocaleString('en-US')}</strong></td>
+          <td>${esc(item.brand || item.Brand || item.item?.brand?.name || item.Item?.Brand?.Name || '—')}</td>
+          <td>${esc(item.remarks || item.Remarks || '—')}</td>
+          <td>${attachmentPath ? `<button class="btn sm" onclick="WTPages.downloadBoqAttachment('${encodeURIComponent(attachmentPath)}','${encodeURIComponent(attachmentName)}')">${esc(attachmentName)}</button>` : '—'}</td>
+          <td>${additionalQty.toLocaleString('en-US')}</td>
+          <td>${additionalPrice.toLocaleString('en-US')}</td>
+          <td>${additionalAmount.toLocaleString('en-US')}</td>
+          <td>${Number(item.allTotal ?? item.AllTotal ?? amount + additionalAmount).toLocaleString('en-US')}</td>
+          <td>—</td>
+        </tr>`;
+      }).join('');
       openModal(`BOQ Version ${esc(label)} — ${esc(boq.title || boq.Title || 'BOQ')}`, `
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <span class="badge blue">Version ${esc(label)}</span>
@@ -4282,8 +4302,8 @@ WTPages.switchProjView = function(view) {
           ${version.isCurrentBaseline || version.IsCurrentBaseline ? '<span class="badge green">Current Baseline</span>' : ''}
           <span>${esc(version.remarks || version.Remarks || '')}</span>
         </div>
-        <div class="table-wrap boq-version-table-wrap"><table class="table"><thead><tr><th>#</th><th>Item name</th><th>CC Name</th><th>Unit</th><th>Quantity</th><th>Rate</th><th>Amount</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Description</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="12">No items in this version.</td></tr>'}</tbody></table></div>`);
+        <div class="table-wrap boq-version-table-wrap"><table class="table"><thead><tr><th>#</th><th>Item</th><th>CC</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Action</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="17">No items in this version.</td></tr>'}</tbody></table></div>`);
       document.getElementById('modal')?.classList.add('boq-fullscreen');
       if (typeof initAllTables === 'function') setTimeout(() => initAllTables(), 50);
     } catch (e) { showToast(e.message, 'danger'); }
@@ -5382,6 +5402,19 @@ WTPages.switchProjView = function(view) {
 
   async function openTaskHistory(taskId, subTaskId = null) {
     openModal('Task Update History', 'Loading update history…');
+    const historyModal = document.getElementById('modal');
+    const modalGeneration = window.__modalGeneration;
+    const historyModalIsCurrent = () => historyModal
+      && historyModal.isConnected
+      && historyModal.classList.contains('show')
+      && document.getElementById('modal') === historyModal
+      && window.__modalGeneration === modalGeneration;
+    const renderHistoryModal = html => {
+      if (!historyModalIsCurrent()) return;
+      historyModal.querySelector('#modalTitle').textContent = 'Task Update History';
+      historyModal.querySelector('#modalBody').innerHTML = html;
+      historyModal.querySelector('#modalFoot').style.display = 'none';
+    };
     try {
       const [updates, files, users] = await Promise.all([
         WisetrackAPI.getTaskHistory(taskId, subTaskId),
@@ -5394,7 +5427,7 @@ WTPages.switchProjView = function(view) {
       };
       const history = updates || [];
       const historyValue = (row, camel, pascal) => row?.[camel] ?? row?.[pascal];
-      openModal('Task Update History', `
+      renderHistoryModal(`
         <p style="margin:0 0 12px;color:var(--text-muted)">${history.length} saved update${history.length === 1 ? '' : 's'}</p>
         ${(files || []).length ? `<div style="margin-bottom:14px"><strong>Uploaded evidence</strong><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${files.map(file => `<button class="btn sm" onclick="WTPages.downloadTaskEvidence(${Number(file.id)})"><i class="fa-solid fa-paperclip"></i> ${esc(file.fileName || 'Evidence')}</button>`).join('')}</div></div>` : ''}
         <div class="table-wrap"><table class="table"><thead><tr><th>Date &amp; time</th><th>Task / Sub-task</th><th>Status</th><th>Progress</th><th>Remark</th><th>Created by</th><th>Creator email</th></tr></thead><tbody>
@@ -5409,7 +5442,7 @@ WTPages.switchProjView = function(view) {
           }).join('') : '<tr><td colspan="7">No previous updates recorded for this item.</td></tr>'}
         </tbody></table></div>`);
     } catch (err) {
-      openModal('Task Update History', `<p style="color:#dc2626">${esc(err.message || 'Could not load update history.')}</p>`);
+      renderHistoryModal(`<p style="color:#dc2626">${esc(err.message || 'Could not load update history.')}</p>`);
     }
   }
 
