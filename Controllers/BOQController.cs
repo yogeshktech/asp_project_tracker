@@ -361,6 +361,7 @@ internal static class BOQSpreadsheetReader
         if (qty < 0) throw new InvalidDataException("Could not identify a quantity column (for example Qty or Quantity).");
         if (price < 0) throw new InvalidDataException("Could not identify a price column (for example Rate or Unit Price).");
         if (unit < 0) throw new InvalidDataException("Could not identify a unit column (for example Unit or UOM).");
+        if (costCenter < 0) throw new InvalidDataException("Could not identify the required CC (Cost Centre) column.");
 
         string Cell(List<string> row, int index) => index >= 0 && index < row.Count ? row[index].Trim() : "";
         var result = new List<BOQImportLineDto>();

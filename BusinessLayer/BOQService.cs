@@ -278,6 +278,8 @@ public class BOQService : IBOQService
             if (line.AdditionalConsumption < 0) throw new InvalidOperationException($"Additional consumption cannot be negative for item {line.ItemId}.");
             if (line.AdditionalConsumptionUnitPrice < 0) throw new InvalidOperationException($"Additional consumption price cannot be negative for item {line.ItemId}.");
             var item = await _items.GetAsync(line.ItemId) ?? throw new InvalidOperationException($"Item {line.ItemId} was not found in Item Master.");
+            if (line.CostCenterId.HasValue && !await _db.CostCenters.AnyAsync(c => c.Id == line.CostCenterId.Value && c.ProjectId == projectId))
+                throw new InvalidOperationException($"Cost Centre does not belong to this project for item {line.ItemId}.");
             items.Add((line, item));
         }
         await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
@@ -333,7 +335,7 @@ public class BOQService : IBOQService
             {
                 BoqVersionId = version.Id,
                 ItemId = item.Id,
-                CostCenterId = otherCenter.Id,
+                CostCenterId = selection.Request.CostCenterId ?? otherCenter.Id,
                 ItemCode = item.ItemCode,
                 ItemName = item.Name,
                 LineNo = lineNo,
@@ -482,6 +484,8 @@ public class BOQService : IBOQService
             costCenterId = (await GetOrCreateOtherCostCenterAsync(boq.ProjectId)).Id;
         if (!await _db.CostCenters.AnyAsync(c => c.Id == costCenterId && c.ProjectId == boq.ProjectId))
             throw new InvalidOperationException("Cost Centre does not belong to this project.");
+        if (!superAdmin && request.CostCenterId.HasValue && request.CostCenterId.Value != item.CostCenterId)
+            throw new InvalidOperationException("Cost Centre is locked after the item is saved. Only Super Admin can change it.");
         if (adminBaselineEdit)
         {
             item.CostCenterId = costCenterId;

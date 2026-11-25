@@ -296,6 +296,7 @@ public class BOQImportLineDto
 public class BoqFromMasterLineRequest
 {
     public long ItemId { get; set; }
+    public long? CostCenterId { get; set; }
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal AdditionalConsumption { get; set; }

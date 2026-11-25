@@ -3748,6 +3748,7 @@ WTPages.switchProjView = function(view) {
     const targetBoq = targetBoqId ? await WisetrackAPI.getBoq(targetBoqId) : null;
     const pid = Number(targetBoq?.projectId || targetBoq?.ProjectId) || await selectedProjectId();
     const items = (await WisetrackAPI.getItems()).filter(i => i.isActive !== false);
+    const costCenters = await WisetrackAPI.getCostCenters(pid);
     if (!items.length) { showToast('Create reusable items in Item Master first', 'danger'); return; }
     openModal(targetBoqId ? 'Add Item Master items to new BOQ revision' : 'Reuse Item Master items', `
       <form onsubmit="WTPages.saveBoqFromMaster(event)">
@@ -3767,6 +3768,7 @@ WTPages.switchProjView = function(view) {
               <div class="field"><label>Purchase Price (Item Master)</label><input class="boq-master-price" type="number" value="${Number(i.unitPrice ?? 0)}" readonly title="From Item Master"></div>
               <div class="field"><label>Total</label><output class="boq-master-total">MVR ${Number(i.unitPrice ?? 0).toLocaleString('en-US')}</output></div>
               <div class="field"><label>Description (Item Master)</label><input class="boq-master-description" value="${esc(i.description || i.name)}" readonly title="From Item Master"></div>
+              <div class="field"><label>CC (Cost Centre)</label><select class="boq-master-cost-center">${costCenters.map(c => `<option value="${c.id || c.Id}" ${String(c.name || c.Name).toLowerCase() === 'other' ? 'selected' : ''}>${esc(c.name || c.Name)}</option>`).join('')}</select></div>
               <div class="field"><label>Additional Consumption</label><input class="boq-master-additional-qty" type="number" min="0" step="0.0001" value="0" oninput="WTPages.calcBoqMasterTotal(this)"></div>
               <div class="field"><label>Price for Additional Consumption</label><input class="boq-master-additional-price" type="number" min="0" step="0.01" value="0" oninput="WTPages.calcBoqMasterTotal(this)"></div>
               <div class="field"><label>Total Amount for Additional Qty</label><output class="boq-master-additional-total">MVR 0</output></div>
@@ -3776,7 +3778,7 @@ WTPages.switchProjView = function(view) {
             </div>
           </div>`).join('')}
         </div>
-        <p class="card-subtitle">Item, unit, purchase price, description, image, and brand come from Item Master and are read-only. Set quantity, additional consumption, its price, remark, and attachment.</p>
+        <p class="card-subtitle">Item, unit, purchase price, description, image, and brand come from Item Master. Choose a CC before saving; it defaults to Other.</p>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button type="button" class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" type="submit">Add selected items</button></div>
       </form>`, '', 'boq-master-modal');
   }
@@ -3825,6 +3827,7 @@ WTPages.switchProjView = function(view) {
         }
         lines.push({
           itemId: Number(checkbox.value),
+          costCenterId: Number(row.querySelector('.boq-master-cost-center')?.value) || null,
           quantity: Number(row.querySelector('.boq-master-qty').value),
           unitPrice: Number(row.querySelector('.boq-master-price').value),
           description: row.querySelector('.boq-master-description').value.trim(),
@@ -3871,7 +3874,7 @@ WTPages.switchProjView = function(view) {
 
   function downloadBoqImportTemplate() {
     const rows = [
-      ['Item Name', 'Unit', 'Quantity', 'Unit Price', 'Cost Centre', 'Additional Consumption', 'Price for Additional Consumption', 'Brand', 'Remarks'],
+      ['Item Name', 'Unit', 'Quantity', 'Unit Price', 'CC', 'Additional Consumption', 'Price for Additional Consumption', 'Brand', 'Remarks'],
       ['Example item - replace this row', 'Nos', '1', '0.00', 'Other', '0', '0.00', '', 'Replace with your item details']
     ];
     const csv = '\uFEFF' + rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -3900,12 +3903,12 @@ WTPages.switchProjView = function(view) {
         <div class="field"><label>Excel / CSV / TSV from 3rd party (flexible column names)</label>
           <input type="file" id="boqFile" accept=".xlsx,.csv,.txt,.tsv" onchange="WTPages.previewBoqImportFile(this)">
           <button type="button" class="btn sm" style="margin-top:8px" onclick="WTPages.downloadBoqImportTemplate()"><i class="fa-solid fa-download"></i> Download standard CSV template</button>
-          <small class="card-subtitle" style="display:block;margin-top:4px">Replace the sample row. Required: Item Name, Unit, Quantity, Unit Price. Additional consumption, brand, and remarks are optional.</small>
+          <small class="card-subtitle" style="display:block;margin-top:4px">Replace the sample row. Required columns: Item Name, Unit, Quantity, Unit Price, and CC (Cost Centre). Additional consumption, brand, and remarks are optional.</small>
         </div>
         <div class="field"><label>Worksheet name (optional for Excel)</label><input id="boqWorksheet" placeholder="For example: Civil. Leave blank to auto-detect the BOQ sheet." onchange="WTPages.previewBoqImportFile(document.getElementById('boqFile'))"></div>
         <div id="boqImportMapping" style="display:none;margin:12px 0;padding:14px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-card-hover)"></div>
         <div class="field"><label>Or paste rows</label>
-          <textarea id="boqJson" rows="8" placeholder="Description,Unit,Quantity,Unit Price&#10;Cable tray,Nos,10,1500"></textarea>
+          <textarea id="boqJson" rows="8" placeholder="Description,Unit,Quantity,Unit Price,CC&#10;Cable tray,Nos,10,1500,Other"></textarea>
         </div>
         <p style="font-size:12px;color:var(--text-muted)">File columns are previewed and mapped before validation. Validation errors can still be downloaded before import.</p>
         <div class="modalfoot" style="padding:0;margin-top:12px">
@@ -3925,7 +3928,7 @@ WTPages.switchProjView = function(view) {
     { key: 'TotalAmount', label: 'Line Total', aliases: ['total', 'amount', 'totalamount', 'lineamount', 'linetotal', 'extendedamount', 'totalprice'] },
     { key: 'AdditionalConsumption', label: 'Additional Consumption', aliases: ['additionalconsumption', 'additionalqty', 'additionalquantity', 'additionalconsumptionqty'] },
     { key: 'AdditionalConsumptionUnitPrice', label: 'Additional Consumption Price', aliases: ['priceforadditionalconsumption', 'additionalconsumptionprice', 'additionalunitprice'] },
-    { key: 'CostCenter', label: 'Cost Centre', aliases: ['costcentre', 'costcenter', 'ccname', 'cc'] },
+    { key: 'CostCenter', label: 'CC (Cost Centre)', required: true, aliases: ['costcentre', 'costcenter', 'ccname', 'cc'] },
     { key: 'Brand', label: 'Brand / Make', aliases: ['brand', 'make', 'manufacturer'] },
     { key: 'Remarks', label: 'Remarks', aliases: ['remark', 'remarks', 'notes', 'specification', 'specifications'] }
   ];
@@ -4034,6 +4037,7 @@ WTPages.switchProjView = function(view) {
           description: (typeof wtPick === 'function' ? wtPick(r, ['description', 'desc', 'particulars', 'name', 'itemdescription']) : r.description) || '',
           quantity: Number((typeof wtPick === 'function' ? wtPick(r, ['quantity', 'qty', 'qnty', 'nos']) : r.quantity) || 0),
           unitPrice: Number((typeof wtPick === 'function' ? wtPick(r, ['unitprice', 'price', 'rate', 'unitrate', 'purchaseprice']) : r.unitprice) || 0),
+          costCenterName: (typeof wtPick === 'function' ? wtPick(r, ['cc', 'costcentre', 'costcenter', 'ccname']) : r.cc) || null,
           additionalConsumption: Number((typeof wtPick === 'function' ? wtPick(r, ['additionalconsumption', 'additionalqty', 'additionalquantity']) : r.additionalconsumption) || 0),
           additionalConsumptionUnitPrice: Number((typeof wtPick === 'function' ? wtPick(r, ['priceforadditionalconsumption', 'additionalconsumptionprice', 'additionalunitprice']) : r.additionalconsumptionunitprice) || 0),
           unit: (typeof wtPick === 'function' ? wtPick(r, ['unit', 'uom']) : r.unit) || null,
@@ -4126,7 +4130,9 @@ WTPages.switchProjView = function(view) {
       const items = sortBoqItems(sourceVersion?.items || sourceVersion?.Items || b.items || b.Items || []);
       const sourceVersionIdForSave = sourceVersion?.id || sourceVersion?.Id;
       const canEditRevision = editMode && canUpdate;
-      const canEditCostCenter = canEditRevision || (!!currentBaseline && Number(currentBaseline.id || currentBaseline.Id) === Number(sourceVersionIdForSave) && typeof wtIsAdmin === 'function' && wtIsAdmin());
+      const isAdmin = typeof wtIsAdmin === 'function' && wtIsAdmin();
+      const isLatestVersion = Number(latest?.id || latest?.Id) === Number(sourceVersionIdForSave);
+      const canEditCostCenter = isAdmin && (isLatestVersion || (!!currentBaseline && Number(currentBaseline.id || currentBaseline.Id) === Number(sourceVersionIdForSave)));
       const latestLabel = boqVersionLabel(sourceVersion, versions);
       const firstLabel = boqVersionLabel(first, versions);
       const baselineLabel = boqVersionLabel(currentBaseline, versions);
@@ -4144,7 +4150,7 @@ WTPages.switchProjView = function(view) {
         ${canEditRevision ? `<h3 style="margin:18px 0 8px">Revision from ${esc(latestLabel)} (Editable)</h3>` : ''}
         ${canEditRevision || canEditCostCenter ? `<div style="display:flex;justify-content:flex-end;margin:8px 0"><button class="btn primary" onclick="WTPages.saveBoqRevisionItems(${id},${sourceVersionIdForSave},${canEditRevision})">Save all changes</button></div>` : ''}
         <div class="table-wrap"><table class="table" id="boqRevisionItemsTable">
-          <thead><tr><th>#</th><th>Item</th><th>Cost Centre</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Action</th></tr></thead>
+          <thead><tr><th>#</th><th>Item</th><th>CC</th><th>Unit</th><th>Purchase Price</th><th>Quantity</th><th>Description</th><th>Image</th><th>Total</th><th>Brand</th><th>Remark</th><th>Attachment</th><th>Additional Consumption</th><th>Price for Additional Consumption</th><th>Total Amount for Additional Qty</th><th>All Total</th><th>Action</th></tr></thead>
           <tbody>
             ${items.length ? items.map((it, index) => `
               <tr data-item-id="${it.id || it.Id}" data-line-no="${it.lineNo ?? it.LineNo ?? ''}" data-unit-price="${it.unitPrice ?? it.UnitPrice ?? 0}" data-quantity="${it.quantity ?? it.Quantity ?? 0}" data-description="${esc(it.description ?? it.Description ?? '')}">
