@@ -2780,8 +2780,9 @@ button.btn[disabled] {
   gap: 10px;
   margin-top: 10px;
 }
-.project-field-rights label { display: grid; gap: 4px; font-size: 12px; }
-.project-field-rights select { width: 100%; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--surface, #fff); color: var(--text-main); }
+.project-field-card { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--surface, #fff); }
+.project-field-card > strong { font-size: 12px; }
+.project-field-card label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 
 .perm-switch {
   appearance: none;

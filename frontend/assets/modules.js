@@ -564,11 +564,18 @@
     const st = getPermState();
     const box = document.getElementById('permChips');
     if (!box) return;
-    if (!st.assigned.length) {
-      box.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Choose only the projects you want to grant access to from the 50 available using Add project.</span>';
+    const query = (document.getElementById('permProjectSearch')?.value || '').trim().toLowerCase();
+    const assigned = st.assigned.filter(id => {
+      const p = st.catalog.find(x => Number(x.id) === Number(id));
+      return !query || projectLabel(p || { name: `Project #${id}` }).toLowerCase().includes(query);
+    });
+    if (!assigned.length) {
+      box.innerHTML = st.assigned.length && query
+        ? '<span style="color:var(--text-muted);font-size:12px">No assigned projects match this search.</span>'
+        : '<span style="color:var(--text-muted);font-size:12px">Choose projects from the selected resort using Add project.</span>';
       return;
     }
-    box.innerHTML = st.assigned.map(id => {
+    box.innerHTML = assigned.map(id => {
       const p = st.catalog.find(x => Number(x.id) === Number(id));
       const label = p ? projectLabel(p) : `Project #${id}`;
       return `<span class="perm-chip">${esc(label)} <button type="button" onclick="WTPages.removeUserPermProject(${id})" title="Remove">×</button></span>`;
@@ -633,9 +640,11 @@
       if (resortId) {
         const resort = (st.resortCatalog || []).find(r => Number(r.id) === resortId);
         rows.push({ projectId: 0, resortId, module: tab.id, name: `${resort?.name || `Resort #${resortId}`} · all projects` });
+        const query = (document.getElementById('permProjectSearch')?.value || '').trim().toLowerCase();
         rows.push(...st.assigned.filter(id => {
           const p = st.catalog.find(x => Number(x.id) === Number(id));
-          return Number(p?.resortId ?? p?.ResortId) === resortId;
+          return Number(p?.resortId ?? p?.ResortId) === resortId &&
+            (!query || projectLabel(p).toLowerCase().includes(query));
         }).map(id => {
           const p = st.catalog.find(x => Number(x.id) === Number(id));
           return { projectId: Number(id), module: tab.id, name: p ? projectLabel(p) : `Project #${id}` };
@@ -663,7 +672,12 @@
               ${PERM_RIGHTS.map(r => `<td class="center">
                 <input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-resortid="${row.resortId || ''}" data-module="${row.module}" data-right="${r.id}" ${cur[r.id] ? 'checked' : ''} onchange="WTPages.onUserPermToggle(this)">
               </td>`).join('')}
-            </tr>${row.module === 'Projects' && row.projectId ? `<tr><td colspan="${PERM_RIGHTS.length + 1}"><strong>Project field rights</strong><div class="project-field-rights">${PROJECT_FIELDS.map(f => `<label>${esc(f.label)}<select data-pid="${row.projectId}" data-field="${f.key}" onchange="WTPages.onProjectFieldPermToggle(this)"><option value="inherit" ${!cur.fields?.[f.key] ? 'selected' : ''}>Inherit</option><option value="view" ${cur.fields?.[f.key] === 'view' ? 'selected' : ''}>View only</option><option value="edit" ${cur.fields?.[f.key] === 'edit' ? 'selected' : ''}>View + edit</option><option value="hidden" ${cur.fields?.[f.key] === 'hidden' ? 'selected' : ''}>No access</option></select></label>`).join('')}</div></td></tr>` : ''}`;
+            </tr>${row.module === 'Projects' && row.projectId ? `<tr><td colspan="${PERM_RIGHTS.length + 1}"><strong>Project field access</strong><div class="project-field-rights">${PROJECT_FIELDS.map(f => {
+              const value = cur.fields?.[f.key];
+              const canView = value !== 'hidden';
+              const canEdit = value === 'edit' || (!value && cur.update);
+              return `<div class="project-field-card"><strong>${esc(f.label)}</strong><label><input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-field="${f.key}" data-field-right="view" ${canView ? 'checked' : ''} onchange="WTPages.onProjectFieldPermToggle(this)"> View</label><label><input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-field="${f.key}" data-field-right="edit" ${canEdit ? 'checked' : ''} onchange="WTPages.onProjectFieldPermToggle(this)"> Edit</label></div>`;
+            }).join('')}</div></td></tr>` : ''}`;
           }).join('')}
         </tbody>
       </table>`;
@@ -683,10 +697,16 @@
     const q = (document.getElementById('permProjectSearch')?.value || '').trim().toLowerCase();
     if (!sel) return;
     const resortId = Number(st.selectedResortId || 0);
-    const available = resortId ? st.catalog.filter(p => Number(p.resortId ?? p.ResortId) === resortId && !st.assigned.includes(Number(p.id))) : [];
+    const available = resortId ? st.catalog.filter(p => Number(p.resortId ?? p.ResortId) === resortId) : [];
     const filtered = q ? available.filter(p => projectLabel(p).toLowerCase().includes(q)) : available;
     sel.innerHTML = `<option value="">${filtered.length ? 'Select project…' : 'No matching project'}</option>` +
-      filtered.slice(0, 80).map(p => `<option value="${p.id}">${esc(projectLabel(p))}</option>`).join('');
+      filtered.slice(0, 80).map(p => `<option value="${p.id}" ${st.assigned.includes(Number(p.id)) ? 'disabled' : ''}>${esc(projectLabel(p))}${st.assigned.includes(Number(p.id)) ? ' (already added)' : ''}</option>`).join('');
+  }
+
+  function searchUserProjects() {
+    renderPermChips();
+    renderPermTable();
+    fillPermProjectSelect();
   }
 
   function switchUserPermTab(id) {
@@ -748,8 +768,12 @@
     const state = getPermState();
     if (!state.rights[key]) state.rights[key] = { view: true, edit: false, update: false, delete: false, fields: {} };
     if (!state.rights[key].fields) state.rights[key].fields = {};
-    if (el.value === 'inherit') delete state.rights[key].fields[el.dataset.field];
-    else state.rights[key].fields[el.dataset.field] = el.value;
+    const card = el.closest('.project-field-card');
+    const view = card?.querySelector('[data-field-right="view"]');
+    const edit = card?.querySelector('[data-field-right="edit"]');
+    if (el.dataset.fieldRight === 'view' && !el.checked && edit) edit.checked = false;
+    if (el.dataset.fieldRight === 'edit' && el.checked && view) view.checked = true;
+    state.rights[key].fields[el.dataset.field] = !view?.checked ? 'hidden' : edit?.checked ? 'edit' : 'view';
   }
 
   function toggleUserAdmin(on) {
@@ -823,7 +847,7 @@
           </div>
           <div id="permResortChips" class="perm-chips"></div>
           <div class="perm-project-bar">
-            <input id="permProjectSearch" type="search" placeholder="Search among all projects…" oninput="WTPages.fillPermProjectSelect()">
+            <input id="permProjectSearch" type="search" placeholder="Search selected resort projects" oninput="WTPages.searchUserProjects()">
             <select id="permProjectSelect"></select>
             <button type="button" class="btn primary" onclick="WTPages.addUserPermProject()"><i class="fa-solid fa-plus"></i> Add project</button>
           </div>
@@ -7078,7 +7102,7 @@ WTPages.switchProjView = function(view) {
     saveMyProfile, changeMyPassword, previewProfileImage,
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
-    openUserModal, saveUser, resetUserPassword, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, addUserPermResort, removeUserPermResort, setUserPermResort, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
+    openUserModal, saveUser, resetUserPassword, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, addUserPermResort, removeUserPermResort, setUserPermResort, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect, searchUserProjects,
     loadPermissionPageMatrix, savePermissionPageMatrix, onPermissionPageToggle,
     openPropertyModal, openEditPropertyModal, saveProperty, updateProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
     refreshResorts: refreshResortsTable,
