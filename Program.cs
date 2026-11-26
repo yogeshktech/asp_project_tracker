@@ -96,6 +96,7 @@ using (var scope = app.Services.CreateScope())
         await DatabaseBootstrap.EnsureActualCostBoqItemsSchemaAsync(db);
         await DatabaseBootstrap.EnsureCostCentreBoqSchemaAsync(db);
         await DatabaseBootstrap.EnsureTaskCompletionEvidenceSchemaAsync(db);
+        await DatabaseBootstrap.EnsureUserResortAccessSchemaAsync(db);
     }
     catch (Exception ex)
     {

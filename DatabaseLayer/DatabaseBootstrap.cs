@@ -204,7 +204,7 @@ public static class DatabaseBootstrap
         logger.LogInformation("Database seed completed.");
     }
 
-    private static async Task EnsureUserResortAccessSchemaAsync(AppDbContext db)
+    public static async Task EnsureUserResortAccessSchemaAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync(
             """

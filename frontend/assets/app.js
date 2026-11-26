@@ -2207,8 +2207,8 @@ class UniversalTableEngine {
     this.init();
   }
 
-  destroy() {
-    if (this.tbody && this.allRows.length) {
+  destroy(restoreRows = true) {
+    if (restoreRows && this.tbody && this.allRows.length) {
       this.tbody.innerHTML = '';
       this.allRows.forEach(r => this.tbody.appendChild(r));
     }
@@ -2473,10 +2473,10 @@ function isTableLoading(tbody) {
   return /loading/i.test((rows[0].textContent || '').trim());
 }
 
-function destroyTableEngine(table) {
+function destroyTableEngine(table, restoreRows = true) {
   const id = table?.dataset?.engineId;
   if (id && window.__tableEngines[id]) {
-    window.__tableEngines[id].destroy();
+    window.__tableEngines[id].destroy(restoreRows);
     delete window.__tableEngines[id];
   }
   if (table) {
@@ -2505,7 +2505,8 @@ function initAllTables() {
       const overlap = currentRows.filter(tr => existing.allRows.includes(tr)).length;
       if (overlap > 0) return;
       if (currentRows.length === 1 && /No matching records/i.test(currentRows[0].textContent || '')) return;
-      destroyTableEngine(t);
+      // The tbody was re-rendered with fresh data; don't put the stale cached rows back.
+      destroyTableEngine(t, false);
     }
 
     const rows = tbody.querySelectorAll('tr');
