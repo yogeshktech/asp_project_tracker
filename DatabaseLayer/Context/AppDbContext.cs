@@ -152,6 +152,13 @@ public class AppDbContext : DbContext
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<ProjectPermission>()
+            .HasOne(x => x.Resort)
+            .WithMany()
+            .HasForeignKey(x => x.ResortId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Cascade);
+
         foreach (var entity in modelBuilder.Model.GetEntityTypes())
         {
             foreach (var property in entity.GetProperties())

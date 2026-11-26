@@ -587,9 +587,6 @@ function initWisetrackStorage() {
   if (!localStorage.getItem('WISETRACK_ROLE')) {
     localStorage.setItem('WISETRACK_ROLE', WISETRACK_DATA.currentUser.role);
   }
-  if (!localStorage.getItem('WISETRACK_SELECTED_RESORT')) {
-    localStorage.setItem('WISETRACK_SELECTED_RESORT', 'RES-GOA-01');
-  }
 }
 
 initWisetrackStorage();

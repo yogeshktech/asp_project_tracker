@@ -56,6 +56,18 @@ public class UsersController : ControllerBase
         catch (UnauthorizedAccessException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    [HttpPut("{id:long}/password")]
+    public async Task<IActionResult> ResetPassword(long id, [FromBody] AdminResetPasswordRequest request)
+    {
+        try
+        {
+            return await _userService.ResetUserPasswordAsync(id, request, UserId)
+                ? Ok(new { message = "User password reset successfully." }) : NotFound();
+        }
+        catch (UnauthorizedAccessException ex) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
     {

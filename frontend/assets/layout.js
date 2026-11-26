@@ -31,7 +31,7 @@ const WT_NAV = [
 const WT_NAV_ACCESS = {
   'dashboard.html': '*',
   'resorts.html': 'Resorts',
-  'workflow.html': '*',
+  'workflow.html': 'WorkflowGuide',
   'projects.html': 'Projects',
   'project-detail.html': 'Projects',
   'planning.html': 'Tasks',
@@ -80,6 +80,14 @@ function wtCan(module, right, projectId) {
     if (projectId && Number(p.projectId || p.ProjectId || 0) !== Number(projectId)) return false;
     return keys.some(k => p[k]);
   });
+}
+
+function wtCanCreateProjectInResort(resortId) {
+  if (wtIsAdmin()) return true;
+  const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
+  return perms.some(p => String(p.module || p.Module) === 'Projects' &&
+    !(p.projectId ?? p.ProjectId) && Number(p.resortId ?? p.ResortId) === Number(resortId) &&
+    (p.canEdit || p.CanEdit));
 }
 
 function wtPageAllowed(href) {

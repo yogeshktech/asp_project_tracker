@@ -30,7 +30,7 @@ public class PermissionService : IPermissionService
 
     public static readonly string[] GlobalModules =
     {
-        "Dashboard", "Resorts", "Audit", "Module", "Notifications"
+        "Dashboard", "Resorts", "Audit", "Module", "Notifications", "WorkflowGuide"
     };
 
     public static readonly string[] Modules = ProjectModules;
@@ -51,11 +51,13 @@ public class PermissionService : IPermissionService
     public async Task<bool> CanViewProjectAsync(long userId, long projectId)
     {
         if (await IsAdminAsync(userId)) return true;
-        if (!await CanAccessResortAsync(userId, await _db.Projects.Where(p => p.Id == projectId).Select(p => p.ResortId).FirstOrDefaultAsync())) return false;
+        var resortId = await _db.Projects.Where(p => p.Id == projectId).Select(p => p.ResortId).FirstOrDefaultAsync();
+        if (resortId <= 0 || !await CanAccessResortAsync(userId, resortId)) return false;
         if (!await ExternalUserCanAccessProjectAsync(userId, projectId)) return false;
         var chain = await GetProjectAndAncestorIdsAsync(projectId);
         return await _db.ProjectPermissions.AnyAsync(p =>
-                   p.UserId == userId && p.ProjectId != null && chain.Contains(p.ProjectId.Value) && p.CanView)
+                   p.UserId == userId && p.Module == "Projects" && p.CanView &&
+                   ((p.ProjectId != null && chain.Contains(p.ProjectId.Value)) || (p.ProjectId == null && p.ResortId == resortId)))
                || await _db.ProjectUsers.AnyAsync(pu => pu.UserId == userId && pu.ProjectId == projectId)
                || await _db.Projects.AnyAsync(p => p.Id == projectId && p.OwnerId == userId);
     }
@@ -66,7 +68,13 @@ public class PermissionService : IPermissionService
         return await _db.UserResorts.AnyAsync(x => x.UserId == userId && x.ResortId == resortId);
     }
 
-    public Task<bool> CanCreateRootProjectAsync(long userId, long resortId) => IsAdminAsync(userId);
+    public async Task<bool> CanCreateRootProjectAsync(long userId, long resortId)
+    {
+        if (await IsAdminAsync(userId)) return true;
+        if (!await CanAccessResortAsync(userId, resortId)) return false;
+        return await _db.ProjectPermissions.AnyAsync(p => p.UserId == userId && p.ResortId == resortId &&
+            p.ProjectId == null && p.Module == "Projects" && p.CanEdit);
+    }
 
     public async Task<List<long>> GetAccessibleResortIdsAsync(long userId)
     {
@@ -113,6 +121,9 @@ public class PermissionService : IPermissionService
         var resortIds = await GetAccessibleResortIdsAsync(userId);
         if (resortIds.Count == 0) return new();
         var resortProjectIds = await _db.Projects.Where(p => resortIds.Contains(p.ResortId)).Select(p => p.Id).ToListAsync();
+        permitted.AddRange(await _db.Projects.Where(p => resortIds.Contains(p.ResortId) &&
+                _db.ProjectPermissions.Any(pp => pp.UserId == userId && pp.ProjectId == null && pp.ResortId == p.ResortId && pp.Module == "Projects" && pp.CanView))
+            .Select(p => p.Id).ToListAsync());
         permitted = permitted.Where(resortProjectIds.Contains).ToList();
         permitted.AddRange(await _db.ProjectUsers.Where(pu => pu.UserId == userId && resortProjectIds.Contains(pu.ProjectId)).Select(pu => pu.ProjectId).ToListAsync());
         permitted.AddRange(await _db.Projects.Where(p => p.OwnerId == userId && resortProjectIds.Contains(p.Id)).Select(p => p.Id).ToListAsync());
@@ -160,14 +171,17 @@ public class PermissionService : IPermissionService
         IQueryable<Models.Entities.ProjectPermission> q = _db.ProjectPermissions
             .Where(p => p.UserId == userId && p.Module == module);
 
-        if (IsGlobalModule(module) || projectId <= 0)
+        if (IsGlobalModule(module))
         {
-            q = q.Where(p => p.ProjectId == null);
+            q = q.Where(p => p.ProjectId == null && p.ResortId == null);
         }
+        else if (projectId <= 0) q = q.Where(p => false);
         else
         {
             var chain = await GetProjectAndAncestorIdsAsync(projectId);
-            q = q.Where(p => p.ProjectId != null && chain.Contains(p.ProjectId.Value));
+            var resortId = await _db.Projects.Where(p => p.Id == projectId).Select(p => p.ResortId).FirstOrDefaultAsync();
+            q = q.Where(p => (p.ProjectId != null && chain.Contains(p.ProjectId.Value)) ||
+                (p.ProjectId == null && p.ResortId == resortId));
         }
 
         return right.ToLowerInvariant() switch

@@ -65,11 +65,13 @@ public class UserRepository : IUserRepository
     public async Task SetProjectPermissionAsync(ProjectPermission permission)
     {
         var existing = await _db.ProjectPermissions.FirstOrDefaultAsync(p =>
-            p.ProjectId == permission.ProjectId && p.UserId == permission.UserId && p.Module == permission.Module);
+            p.ProjectId == permission.ProjectId && p.ResortId == permission.ResortId && p.UserId == permission.UserId && p.Module == permission.Module);
         if (existing == null)
             _db.ProjectPermissions.Add(permission);
         else
         {
+            existing.ProjectId = permission.ProjectId;
+            existing.ResortId = permission.ResortId;
             existing.CanView = permission.CanView;
             existing.CanEdit = permission.CanEdit;
             existing.CanUpdate = permission.CanUpdate;

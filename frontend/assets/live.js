@@ -56,20 +56,17 @@ async function fillResortSelector() {
       selected = '';
       localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
     }
-    if (!selected && resorts?.length) {
-      selected = String(resorts[0].id);
-      localStorage.setItem('WISETRACK_SELECTED_RESORT', selected);
-    }
-    sel.innerHTML = (resorts || []).map(r =>
+    sel.innerHTML = `<option value="">Select resort</option>` + (resorts || []).map(r =>
       `<option value="${r.id}" ${String(r.id) === String(selected) ? 'selected' : ''}>${esc(r.name)}</option>`
-    ).join('') || '<option value="">No resorts</option>';
+    ).join('');
   } catch (err) {
     sel.innerHTML = `<option value="">API error: ${esc(err.message)}</option>`;
   }
 }
 
 function setSelectedResortId(id) {
-  localStorage.setItem('WISETRACK_SELECTED_RESORT', String(id));
+  if (id) localStorage.setItem('WISETRACK_SELECTED_RESORT', String(id));
+  else localStorage.removeItem('WISETRACK_SELECTED_RESORT');
   localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
   if (typeof showToast === 'function') showToast('Resort switched', 'info');
   setTimeout(() => location.reload(), 200);
@@ -121,6 +118,12 @@ async function fillProjectSelector() {
   if (!button || !menu) return;
   try {
     const resortId = localStorage.getItem('WISETRACK_SELECTED_RESORT') || undefined;
+    if (!resortId) {
+      localStorage.removeItem('WISETRACK_SELECTED_PROJECT');
+      button.innerHTML = `Select a resort first <i class="fa-solid fa-chevron-down"></i>`;
+      menu.innerHTML = '<div class="project-tree-empty">Select a resort to view its projects.</div>';
+      return;
+    }
     const projects = await WisetrackAPI.getProjects(resortId || undefined).catch(() => []);
     const tree = typeof wtProjectsAsTree === 'function' ? wtProjectsAsTree(projects) : (projects || []);
     let cur = localStorage.getItem('WISETRACK_SELECTED_PROJECT') || '';
@@ -664,8 +667,8 @@ async function openCreateProjectModal(preselectedParentId = null) {
 
   const creatableResorts = typeof wtIsAdmin === 'function' && wtIsAdmin()
     ? resorts
-    : resorts.filter(r => projects.some(p =>
-        String(p.resortId || p.ResortId) === String(r.id) && canCreateUnder(p.id || p.Id)));
+    : resorts.filter(r => (typeof wtCanCreateProjectInResort === 'function' && wtCanCreateProjectInResort(r.id)) ||
+        projects.some(p => String(p.resortId || p.ResortId) === String(r.id) && canCreateUnder(p.id || p.Id)));
   const savedResort = localStorage.getItem('WISETRACK_SELECTED_RESORT');
   const selectedResort = creatableResorts.some(r => String(r.id) === String(savedResort))
     ? String(savedResort)

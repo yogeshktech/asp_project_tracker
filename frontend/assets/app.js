@@ -157,11 +157,12 @@ function getUsers() {
 }
 
 function getSelectedResortId() {
-  return localStorage.getItem('WISETRACK_SELECTED_RESORT') || 'RES-GOA-01';
+  return localStorage.getItem('WISETRACK_SELECTED_RESORT') || '';
 }
 
 function setSelectedResortId(resortId) {
-  localStorage.setItem('WISETRACK_SELECTED_RESORT', resortId);
+  if (resortId) localStorage.setItem('WISETRACK_SELECTED_RESORT', resortId);
+  else localStorage.removeItem('WISETRACK_SELECTED_RESORT');
   showToast(`Resort property switched to: ${getResortName(resortId)}`, 'info');
   // Refresh current page if dynamic rendering is active
   if (typeof renderPageContent === 'function') {

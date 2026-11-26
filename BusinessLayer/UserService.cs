@@ -12,6 +12,7 @@ public interface IUserService
     Task<UserResponseDto?> GetByIdAsync(long id);
     Task<UserResponseDto?> UpdateMyProfileAsync(long id, UpdateMyProfileRequest request);
     Task<bool> ChangeMyPasswordAsync(long id, ChangeMyPasswordRequest request);
+    Task<bool> ResetUserPasswordAsync(long id, AdminResetPasswordRequest request, long actorId);
     Task<UserResponseDto> CreateAsync(CreateUserRequest request, long actorId);
     Task<UserResponseDto?> UpdateAsync(long id, UpdateUserRequest request, long actorId);
     Task<List<Role>> GetRolesAsync();
@@ -81,6 +82,20 @@ public class UserService : IUserService
         return true;
     }
 
+    public async Task<bool> ResetUserPasswordAsync(long id, AdminResetPasswordRequest request, long actorId)
+    {
+        await EnsureAdminActorAsync(actorId);
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
+            throw new InvalidOperationException("Password must be at least 8 characters long.");
+        var user = await _repository.GetByIdAsync(id);
+        if (user == null) return false;
+        user.PasswordHash = PasswordUtility.Hash(request.NewPassword);
+        user.UpdatedAt = DateTime.UtcNow;
+        await _repository.UpdateAsync(user, null);
+        await _audit.LogAsync(actorId, "ResetPassword", "User", id);
+        return true;
+    }
+
     public async Task<UserResponseDto> CreateAsync(CreateUserRequest request, long actorId)
     {
         await EnsureAdminActorAsync(actorId);
@@ -128,7 +143,7 @@ public class UserService : IUserService
     public async Task<List<UserProjectPermissionDto>> GetProjectPermissionsAsync(long userId) =>
         (await _repository.GetProjectPermissionsAsync(userId)).Select(p => new UserProjectPermissionDto
         {
-            UserId = p.UserId, ProjectId = p.ProjectId, Module = p.Module, CanView = p.CanView,
+            UserId = p.UserId, ProjectId = p.ProjectId, ResortId = p.ResortId, Module = p.Module, CanView = p.CanView,
             CanEdit = p.CanEdit, CanUpdate = p.CanUpdate, CanDelete = p.CanDelete,
             FieldPermissions = string.IsNullOrWhiteSpace(p.FieldPermissionsJson) ? new() : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(p.FieldPermissionsJson) ?? new()
         }).ToList();
@@ -141,6 +156,7 @@ public class UserService : IUserService
             {
                 UserId = p.UserId,
                 ProjectId = p.ProjectId,
+                ResortId = p.ResortId,
                 Module = p.Module,
                 CanView = p.CanView,
                 CanEdit = p.CanEdit,
@@ -185,7 +201,7 @@ public class UserService : IUserService
 
         var rows = (permissions ?? new())
             .Where(HasAnyRight)
-            .Where(p => PermissionService.IsGlobalModule(p.Module) || (p.ProjectId.HasValue && p.ProjectId.Value > 0))
+            .Where(p => p.ResortId.HasValue || PermissionService.IsGlobalModule(p.Module) || (p.ProjectId.HasValue && p.ProjectId.Value > 0))
             .Select(p => ToPermission(userId, p))
             .ToList();
         await _repository.ReplaceProjectPermissionsAsync(userId, rows);
@@ -211,11 +227,13 @@ public class UserService : IUserService
     private static ProjectPermission ToPermission(long userId, UserProjectPermissionDto dto)
     {
         var write = dto.CanEdit || dto.CanUpdate || dto.CanDelete;
+        var resortScoped = dto.ResortId.HasValue && !PermissionService.IsGlobalModule(dto.Module);
         var global = PermissionService.IsGlobalModule(dto.Module);
         return new ProjectPermission
         {
             UserId = userId,
-            ProjectId = global ? null : dto.ProjectId,
+            ProjectId = global || resortScoped ? null : dto.ProjectId,
+            ResortId = resortScoped ? dto.ResortId : null,
             Module = dto.Module,
             CanView = dto.CanView || write,
             CanEdit = dto.CanEdit,

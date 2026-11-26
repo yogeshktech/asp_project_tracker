@@ -198,6 +198,7 @@ const WisetrackAPI = {
   getUser(id) { return this.get(`/users/${id}`); },
   createUser(data) { return this.post('/users', data); },
   updateUser(id, data) { return this.put(`/users/${id}`, data); },
+  resetUserPassword(id, newPassword) { return this.put(`/users/${id}/password`, { newPassword }); },
   setProjectPermission(data) { return this.post('/users/project-permissions', data); },
   getUserProjectPermissions(userId) { return this.get(`/users/${userId}/project-permissions`); },
   getUserAccess(userId) { return this.get(`/users/${userId}/access`); },

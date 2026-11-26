@@ -101,3 +101,9 @@ INSERT INTO project_types (name, description) VALUES
     ('Major Renovation', 'Major renovation project')
 ON CONFLICT (name) DO NOTHING;
 ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS field_permissions_json TEXT NULL;
+ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS resort_id BIGINT NULL REFERENCES resorts(id) ON DELETE CASCADE;
+DROP INDEX IF EXISTS ux_project_permissions_global;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_project_permissions_global
+    ON project_permissions (user_id, module) WHERE project_id IS NULL AND resort_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_project_permissions_resort
+    ON project_permissions (resort_id, user_id, module) WHERE project_id IS NULL AND resort_id IS NOT NULL;

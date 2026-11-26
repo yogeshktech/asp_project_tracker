@@ -444,7 +444,8 @@
     { id: 'Closure', label: 'Project Closure', global: false },
     { id: 'Audit', label: 'Audit', global: true, rows: [{ key: 'Audit', name: 'Audit logs' }] },
     { id: 'Module', label: 'Item Master', global: true, rows: [{ key: 'Module', name: 'Item master' }] },
-    { id: 'Notifications', label: 'Notifications', global: true, rows: [{ key: 'Notifications', name: 'Notifications' }] }
+    { id: 'Notifications', label: 'Notifications', global: true, rows: [{ key: 'Notifications', name: 'Notifications' }] },
+    { id: 'WorkflowGuide', label: 'Workflow Guide', global: true, rows: [{ key: 'WorkflowGuide', name: 'Workflow Guide' }] }
   ];
   const GLOBAL_PERM_MODULES = PERM_TABS.filter(t => t.global).map(t => t.id);
   const PERM_RIGHTS = [
@@ -462,6 +463,10 @@
 
   function permKey(projectId, module) {
     return `${Number(projectId) || 0}|${module}`;
+  }
+
+  function resortPermKey(resortId, module) {
+    return `r${Number(resortId)}|${module}`;
   }
 
   function permFlag(row, right) {
@@ -494,7 +499,7 @@
     }
     el.innerHTML = pageHead('Users & Access', 'Admin = full access. Other users = selected projects + View / Create / Edit / Delete.',
       `<button class="btn primary" onclick="WTPages.openUserModal()"><i class="fa-solid fa-plus"></i> New User</button>`)
-      + tableWrap(['ID', 'Name', 'Email', 'Access', 'Internal', 'Status', 'Permissions'], 'usersBody');
+      + tableWrap(['ID', 'Name', 'Email', 'Access', 'Internal', 'Status', 'Actions'], 'usersBody');
     await refreshUsers();
   }
 
@@ -512,10 +517,24 @@
           <td>${admin ? '<span class="badge blue">Admin</span>' : '<span class="badge gray">User</span>'}</td>
           <td>${u.isInternal ? 'Yes' : 'No'}</td>
           <td><span class="badge ${u.isActive ? 'green' : 'red'}">${u.isActive ? 'Active' : 'Inactive'}</span></td>
-          <td><button class="btn sm" title="Permissions" onclick="WTPages.openUserModal(${u.id})"><i class="fa-solid fa-key"></i></button></td>
+          <td><button class="btn sm" title="Permissions" onclick="WTPages.openUserModal(${u.id})"><i class="fa-solid fa-key"></i></button>
+            <button class="btn sm" title="Reset password" onclick="WTPages.resetUserPassword(${u.id})"><i class="fa-solid fa-lock"></i> Reset password</button></td>
         </tr>`;
       }).join('') : emptyRow(7, 'No users');
     } catch (e) { body.innerHTML = errRow(7, e); }
+  }
+
+  async function resetUserPassword(userId) {
+    const password = window.prompt(`Enter a new password for user #${userId} (at least 8 characters):`);
+    if (password === null) return;
+    if (password.length < 8) { showToast('Password must be at least 8 characters long.', 'danger'); return; }
+    const confirmation = window.prompt('Re-enter the new password to confirm:');
+    if (confirmation === null) return;
+    if (password !== confirmation) { showToast('Passwords do not match.', 'danger'); return; }
+    try {
+      await WisetrackAPI.resetUserPassword(userId, password);
+      showToast(`Password reset for user #${userId}.`);
+    } catch (e) { showToast(e.message || 'Could not reset password.', 'danger'); }
   }
 
   function collectUserPermissions() {
@@ -523,11 +542,14 @@
     return Object.entries(st.rights).map(([key, r]) => {
       if (!r || !(r.view || r.edit || r.update || r.delete)) return null;
       const sep = key.indexOf('|');
-      const pid = Number(key.slice(0, sep));
+      const scope = key.slice(0, sep);
+      const resortId = scope.startsWith('r') ? Number(scope.slice(1)) : null;
+      const pid = resortId ? 0 : Number(scope);
       const module = key.slice(sep + 1);
-      const global = GLOBAL_PERM_MODULES.includes(module);
+      const global = !resortId && pid === 0 && GLOBAL_PERM_MODULES.includes(module);
       return {
-        projectId: global ? null : pid,
+        projectId: global ? null : (pid || null),
+        resortId,
         module,
         canView: !!(r.view || r.edit || r.update || r.delete),
         canEdit: !!r.edit,
@@ -535,7 +557,7 @@
         canDelete: !!r.delete,
         fieldPermissions: r.fields || {}
       };
-    }).filter(p => p && (GLOBAL_PERM_MODULES.includes(p.module) || p.projectId));
+    }).filter(p => p && (GLOBAL_PERM_MODULES.includes(p.module) || p.projectId || p.resortId));
   }
 
   function renderPermChips() {
@@ -563,9 +585,17 @@
       const resort = (st.resortCatalog || []).find(r => Number(r.id) === Number(id));
       return `<span class="perm-chip">${esc(resort?.name || `Resort #${id}`)} <button type="button" onclick="WTPages.removeUserPermResort(${id})" title="Remove">&times;</button></span>`;
     }).join('') || '<span style="color:var(--text-muted);font-size:12px">No resorts assigned.</span>';
-    const available = (st.resortCatalog || []).filter(r => !selected.includes(Number(r.id)));
-    select.innerHTML = `<option value="">${available.length ? 'Select resort' : 'All available resorts assigned'}</option>` +
-      available.map(r => `<option value="${r.id}">${esc(r.name || `Resort ${r.id}`)}</option>`).join('');
+    const current = Number(st.selectedResortId || 0);
+    select.innerHTML = `<option value="">Select resort to see its projects</option>` +
+      (st.resortCatalog || []).map(r => `<option value="${r.id}" ${Number(r.id) === current ? 'selected' : ''}>${esc(r.name || `Resort ${r.id}`)}${selected.includes(Number(r.id)) ? ' · access assigned' : ''}</option>`).join('');
+  }
+
+  function setUserPermResort(resortId) {
+    const st = getPermState();
+    st.selectedResortId = Number(resortId || 0) || null;
+    renderResortPermChips();
+    renderPermTable();
+    fillPermProjectSelect();
   }
 
   function addUserPermResort() {
@@ -599,13 +629,21 @@
     if (tab.global) {
       rows = tab.rows.map(r => ({ projectId: 0, module: r.key, name: r.name }));
     } else {
-      rows = st.assigned.map(id => {
-        const p = st.catalog.find(x => Number(x.id) === Number(id));
-        return { projectId: Number(id), module: tab.id, name: p ? projectLabel(p) : `Project #${id}` };
-      });
+      const resortId = Number(st.selectedResortId || 0);
+      if (resortId) {
+        const resort = (st.resortCatalog || []).find(r => Number(r.id) === resortId);
+        rows.push({ projectId: 0, resortId, module: tab.id, name: `${resort?.name || `Resort #${resortId}`} · all projects` });
+        rows.push(...st.assigned.filter(id => {
+          const p = st.catalog.find(x => Number(x.id) === Number(id));
+          return Number(p?.resortId ?? p?.ResortId) === resortId;
+        }).map(id => {
+          const p = st.catalog.find(x => Number(x.id) === Number(id));
+          return { projectId: Number(id), module: tab.id, name: p ? projectLabel(p) : `Project #${id}` };
+        }));
+      }
     }
     if (!rows.length) {
-      box.innerHTML = `<div style="padding:24px;color:var(--text-muted);text-align:center">Add one or two projects above to use this tab.</div>`;
+      box.innerHTML = `<div style="padding:24px;color:var(--text-muted);text-align:center">Select a resort above to configure module access.</div>`;
       return;
     }
     box.innerHTML = `
@@ -618,12 +656,12 @@
         </thead>
         <tbody>
           ${rows.map(row => {
-            const key = permKey(row.projectId, row.module);
+            const key = row.resortId ? resortPermKey(row.resortId, row.module) : permKey(row.projectId, row.module);
             const cur = st.rights[key] || { view: false, edit: false, update: false, delete: false, fields: {} };
             return `<tr>
               <td>${esc(row.name)}</td>
               ${PERM_RIGHTS.map(r => `<td class="center">
-                <input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-module="${row.module}" data-right="${r.id}" ${cur[r.id] ? 'checked' : ''} onchange="WTPages.onUserPermToggle(this)">
+                <input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-resortid="${row.resortId || ''}" data-module="${row.module}" data-right="${r.id}" ${cur[r.id] ? 'checked' : ''} onchange="WTPages.onUserPermToggle(this)">
               </td>`).join('')}
             </tr>${row.module === 'Projects' && row.projectId ? `<tr><td colspan="${PERM_RIGHTS.length + 1}"><strong>Project field rights</strong><div class="project-field-rights">${PROJECT_FIELDS.map(f => `<label>${esc(f.label)}<select data-pid="${row.projectId}" data-field="${f.key}" onchange="WTPages.onProjectFieldPermToggle(this)"><option value="inherit" ${!cur.fields?.[f.key] ? 'selected' : ''}>Inherit</option><option value="view" ${cur.fields?.[f.key] === 'view' ? 'selected' : ''}>View only</option><option value="edit" ${cur.fields?.[f.key] === 'edit' ? 'selected' : ''}>View + edit</option><option value="hidden" ${cur.fields?.[f.key] === 'hidden' ? 'selected' : ''}>No access</option></select></label>`).join('')}</div></td></tr>` : ''}`;
           }).join('')}
@@ -644,7 +682,8 @@
     const sel = document.getElementById('permProjectSelect');
     const q = (document.getElementById('permProjectSearch')?.value || '').trim().toLowerCase();
     if (!sel) return;
-    const available = st.catalog.filter(p => !st.assigned.includes(Number(p.id)));
+    const resortId = Number(st.selectedResortId || 0);
+    const available = resortId ? st.catalog.filter(p => Number(p.resortId ?? p.ResortId) === resortId && !st.assigned.includes(Number(p.id))) : [];
     const filtered = q ? available.filter(p => projectLabel(p).toLowerCase().includes(q)) : available;
     sel.innerHTML = `<option value="">${filtered.length ? 'Select project…' : 'No matching project'}</option>` +
       filtered.slice(0, 80).map(p => `<option value="${p.id}">${esc(projectLabel(p))}</option>`).join('');
@@ -662,6 +701,9 @@
     const id = Number(sel?.value || 0);
     if (!id || st.assigned.includes(id)) return;
     st.assigned.push(id);
+    const project = st.catalog.find(p => Number(p.id) === id);
+    const resortId = Number(project?.resortId ?? project?.ResortId ?? 0);
+    if (resortId && !st.assignedResorts.includes(resortId)) st.assignedResorts.push(resortId);
     const key = permKey(id, 'Projects');
     if (!st.rights[key]) st.rights[key] = { view: true, edit: false, update: false, delete: false };
     else st.rights[key].view = true;
@@ -682,9 +724,14 @@
   function onUserPermToggle(el) {
     const st = getPermState();
     const pid = Number(el.dataset.pid || 0);
+    const resortId = Number(el.dataset.resortid || 0);
     const module = el.dataset.module;
     const right = el.dataset.right;
-    const key = permKey(pid, module);
+    const key = resortId ? resortPermKey(resortId, module) : permKey(pid, module);
+    if (resortId && el.checked && !st.assignedResorts.includes(resortId)) {
+      st.assignedResorts.push(resortId);
+      renderResortPermChips();
+    }
     if (!st.rights[key]) st.rights[key] = { view: false, edit: false, update: false, delete: false };
     st.rights[key][right] = !!el.checked;
     if (right !== 'view' && el.checked) st.rights[key].view = true;
@@ -737,7 +784,8 @@
     (perms || []).forEach(p => {
       const module = p.module || p.Module;
       const pid = Number(p.projectId ?? p.ProjectId ?? 0);
-      const key = permKey(GLOBAL_PERM_MODULES.includes(module) ? 0 : pid, module);
+      const resortId = Number(p.resortId ?? p.ResortId ?? 0);
+      const key = resortId ? resortPermKey(resortId, module) : permKey(GLOBAL_PERM_MODULES.includes(module) ? 0 : pid, module);
       rights[key] = {
         view: permFlag(p, 'view'),
         edit: permFlag(p, 'edit'),
@@ -747,7 +795,8 @@
       };
       if (pid && !GLOBAL_PERM_MODULES.includes(module) && !assigned.includes(pid)) assigned.push(pid);
     });
-    window._wtPerm = { tab: 'Projects', catalog: projects || [], assigned, rights, resortCatalog, assignedResorts };
+    window._wtPerm = { tab: 'Projects', catalog: projects || [], assigned, rights, resortCatalog, assignedResorts,
+      selectedResortId: assignedResorts[0] || null };
 
     openModal('User Permissions Manager', `
       <p class="perm-manager-intro">Easily review and modify each user’s detailed access permissions across key system modules. Ensure every team member has the appropriate rights.</p>
@@ -769,7 +818,7 @@
         <div id="userPermMatrix" style="${isAdmin ? 'display:none' : ''}">
           <div class="perm-project-bar">
             <strong>Resort access</strong>
-            <select id="permResortSelect"></select>
+            <select id="permResortSelect" onchange="WTPages.setUserPermResort(this.value)"></select>
             <button type="button" class="btn primary" onclick="WTPages.addUserPermResort()"><i class="fa-solid fa-plus"></i> Add resort</button>
           </div>
           <div id="permResortChips" class="perm-chips"></div>
@@ -951,7 +1000,8 @@
   // ---------- DASHBOARD ----------
   async function pageDashboard() {
     const el = root();
-    const canCreateProject = typeof wtIsAdmin === 'function' && wtIsAdmin();
+    const canCreateProject = typeof wtCanCreateProjectInResort === 'function' &&
+      wtCanCreateProjectInResort(localStorage.getItem('WISETRACK_SELECTED_RESORT'));
     el.innerHTML = pageHead('Resort Portfolio & All-Projects Progress Control', 'Live cross-resort progress tracking, package status counts, 80% CapEx threshold alerts, and real-time field telemetry',
       `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
        ${canCreateProject ? `<button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>` : ''}`)
@@ -1650,7 +1700,8 @@ WTPages.switchProjView = function(view) {
       // Filter by resort
       const filteredProjects = filterVal === 'all' ? projects : projects.filter(p => String(p.resortId) === String(filterVal) || String(p.resortId) === `RES-${filterVal}`);
       const createRootButton = document.getElementById('createRootProjectBtn');
-      const canCreateRootProject = typeof wtIsAdmin === 'function' && wtIsAdmin();
+      const canCreateRootProject = typeof wtCanCreateProjectInResort === 'function' &&
+        wtCanCreateProjectInResort(localStorage.getItem('WISETRACK_SELECTED_RESORT'));
       if (createRootButton) createRootButton.style.display = canCreateRootProject ? '' : 'none';
       const matchedResort = allResortsRaw.find(r => String(r.id) === String(filterVal)) || { name: 'Grand Oasis Resort & Spa, Goa', code: 'RES-GOA-01' };
       filteredProjects.forEach(p => { p.projectBudgetDisplay = projectBudgetLabel(p); });
@@ -6822,7 +6873,7 @@ WTPages.switchProjView = function(view) {
   async function pageDashboard() {
     const el = root();
     el.innerHTML = pageHead('Portfolio Dashboard', 'Authorized projects · status, milestone, schedule risk, budget position, and active alerts',
-      `<a class="btn" href="reports.html">Reports</a> ${typeof wtIsAdmin === 'function' && wtIsAdmin() ? `<button class="btn primary" onclick="openCreateProjectModal()">+ Create Project</button>` : ''}`)
+      `<a class="btn" href="reports.html">Reports</a> ${typeof wtCanCreateProjectInResort === 'function' && wtCanCreateProjectInResort(localStorage.getItem('WISETRACK_SELECTED_RESORT')) ? `<button class="btn primary" onclick="openCreateProjectModal()">+ Create Project</button>` : ''}`)
       + `<div class="kpis">
           <div class="kpi"><span class="kpi-label">Authorized Projects</span><span class="kpi-value" id="pm25ProjectCount">…</span></div>
           <div class="kpi success"><span class="kpi-label">On Track</span><span class="kpi-value" id="pm25OnTrack">…</span></div>
@@ -7027,7 +7078,7 @@ WTPages.switchProjView = function(view) {
     saveMyProfile, changeMyPassword, previewProfileImage,
     showRoleTab, openRoleModal, saveRole, deleteRole,
     openPermissionModal, savePermission, deletePermission, saveUserRoles,
-    openUserModal, saveUser, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, addUserPermResort, removeUserPermResort, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
+    openUserModal, saveUser, resetUserPassword, toggleUserAdmin, switchUserPermTab, addUserPermProject, removeUserPermProject, addUserPermResort, removeUserPermResort, setUserPermResort, onUserPermToggle, onProjectFieldPermToggle, fillPermProjectSelect,
     loadPermissionPageMatrix, savePermissionPageMatrix, onPermissionPageToggle,
     openPropertyModal, openEditPropertyModal, saveProperty, updateProperty, deleteProperty, openTypeModal, openEditTypeModal, saveType, updateType, deleteType,
     refreshResorts: refreshResortsTable,

@@ -23,6 +23,13 @@ public class ChangeMyPasswordRequest
     public string NewPassword { get; set; } = string.Empty;
 }
 
+public class AdminResetPasswordRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.MinLength(8)]
+    public string NewPassword { get; set; } = string.Empty;
+}
+
 public class CreateRoleRequest
 {
     public string Name { get; set; } = string.Empty;
@@ -160,6 +167,7 @@ public class AssignProjectUserRequest
 public class UserProjectPermissionDto
 {
     public long? ProjectId { get; set; }
+    public long? ResortId { get; set; }
     public long UserId { get; set; }
     public string Module { get; set; } = string.Empty;
     public bool CanView { get; set; } = true;

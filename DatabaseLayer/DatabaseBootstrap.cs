@@ -194,6 +194,7 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS description TEXT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS completion_evidence TEXT NULL""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE sub_tasks ADD COLUMN IF NOT EXISTS start_date DATE NULL""");
+        await EnsureProjectPermissionResortScopeSchemaAsync(db);
         await EnsureDrawingUploadSchemaAsync(db);
         await EnsureActualCostBoqItemsSchemaAsync(db);
         await EnsureCostCentreBoqSchemaAsync(db);
@@ -345,22 +346,17 @@ public static class DatabaseBootstrap
             logger.LogInformation("Added can_update / can_delete on project_permissions.");
         }
 
-        await db.Database.ExecuteSqlRawAsync(
-            """ALTER TABLE project_permissions ALTER COLUMN project_id DROP NOT NULL""");
-        await db.Database.ExecuteSqlRawAsync(
-            """ALTER TABLE project_permissions DROP CONSTRAINT IF EXISTS project_permissions_project_id_user_id_module_key""");
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_project_permissions_scoped
-                ON project_permissions (project_id, user_id, module)
-                WHERE project_id IS NOT NULL
-            """);
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_project_permissions_global
-                ON project_permissions (user_id, module)
-                WHERE project_id IS NULL
-            """);
+    }
+
+    public static async Task EnsureProjectPermissionResortScopeSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions ALTER COLUMN project_id DROP NOT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions ADD COLUMN IF NOT EXISTS resort_id BIGINT NULL REFERENCES resorts(id) ON DELETE CASCADE""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE project_permissions DROP CONSTRAINT IF EXISTS project_permissions_project_id_user_id_module_key""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS ux_project_permissions_scoped ON project_permissions (project_id, user_id, module) WHERE project_id IS NOT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""DROP INDEX IF EXISTS ux_project_permissions_global""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX ux_project_permissions_global ON project_permissions (user_id, module) WHERE project_id IS NULL AND resort_id IS NULL""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS ux_project_permissions_resort ON project_permissions (resort_id, user_id, module) WHERE project_id IS NULL AND resort_id IS NOT NULL""");
     }
 
     private static async Task EnsureSubTaskNestingColumnAsync(AppDbContext db, ILogger logger)
