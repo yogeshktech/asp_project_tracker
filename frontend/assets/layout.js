@@ -84,10 +84,16 @@ function wtCan(module, right, projectId) {
 
 function wtCanCreateProjectInResort(resortId) {
   if (wtIsAdmin()) return true;
+  const accessibleResorts = JSON.parse(localStorage.getItem('WISETRACK_RESORT_IDS') || '[]').map(Number);
+  if (!resortId || !accessibleResorts.includes(Number(resortId))) return false;
   const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
   return perms.some(p => String(p.module || p.Module) === 'Projects' &&
     !(p.projectId ?? p.ProjectId) && Number(p.resortId ?? p.ResortId) === Number(resortId) &&
     (p.canEdit || p.CanEdit));
+}
+
+function wtCanCreateResort() {
+  return wtCan('Resorts', 'edit');
 }
 
 function wtPageAllowed(href) {

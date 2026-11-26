@@ -1003,7 +1003,7 @@
     const canCreateProject = typeof wtCanCreateProjectInResort === 'function' &&
       wtCanCreateProjectInResort(localStorage.getItem('WISETRACK_SELECTED_RESORT'));
     el.innerHTML = pageHead('Resort Portfolio & All-Projects Progress Control', 'Live cross-resort progress tracking, package status counts, 80% CapEx threshold alerts, and real-time field telemetry',
-      `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
+      `${typeof wtCanCreateResort === 'function' && wtCanCreateResort() ? `<button class="btn" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>` : ''}
        ${canCreateProject ? `<button class="btn primary" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>` : ''}`)
       + `
         <!-- Global Project Counts & Financial Metrics -->
@@ -1383,7 +1383,7 @@
   // ---------- RESORTS + PROPERTIES + TYPES ----------
   async function pageResorts() {
     const el = root();
-    const canCreate = !window.wtCan || window.wtCan('Resorts', 'edit');
+    const canCreate = typeof window.wtCan === 'function' && window.wtCan('Resorts', 'edit');
     el.innerHTML = pageHead('', '',
       `${canCreate ? `<button class="btn" onclick="WTPages.openPropertyModal()"><i class="fa-solid fa-building"></i>  Add Property</button>
        <button class="btn" onclick="WTPages.openTypeModal()"><i class="fa-solid fa-tags"></i>  Add Project Type</button>
@@ -1619,7 +1619,7 @@
             </div>
               <span id="projectSelectionCount" style="font-size:12px;color:var(--text-muted)">0 selected</span>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;">
-                <button class="btn sm" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>
+                ${typeof wtCanCreateResort === 'function' && wtCanCreateResort() ? `<button class="btn sm" onclick="openCreateResortModal()"><i class="fa-solid fa-hotel"></i> + New Resort</button>` : ''}
                 <button class="btn sm primary" id="createRootProjectBtn" style="display:none" onclick="openCreateProjectModal()"><i class="fa-solid fa-plus"></i> + Create Project</button>
                 <button class="btn sm danger" id="deleteSelectedProjectsBtn" style="display:none" disabled onclick="WTPages.deleteSelectedProjects()"><i class="fa-solid fa-trash"></i> Delete selected</button>
               </div>

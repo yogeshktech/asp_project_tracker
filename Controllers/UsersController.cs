@@ -64,7 +64,7 @@ public class UsersController : ControllerBase
             return await _userService.ResetUserPasswordAsync(id, request, UserId)
                 ? Ok(new { message = "User password reset successfully." }) : NotFound();
         }
-        catch (UnauthorizedAccessException ex) { return Forbid(); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
         catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
     }
 

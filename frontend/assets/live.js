@@ -20,6 +20,7 @@ async function applyLoggedInUser() {
       const access = await WisetrackAPI.getMyAccess();
       localStorage.setItem('WISETRACK_IS_ADMIN', access.isAdmin ? 'true' : 'false');
       localStorage.setItem('WISETRACK_PERMISSIONS', JSON.stringify(access.permissions || []));
+      localStorage.setItem('WISETRACK_RESORT_IDS', JSON.stringify(access.resortIds || []));
     }
   } catch (_) { /* keep cached flags */ }
   const initials = name.split(/\s+/).map(p => p[0]).join('').substring(0, 2).toUpperCase() || 'U';
@@ -757,6 +758,10 @@ async function openCreateProjectModal(preselectedParentId = null) {
 }
 
 async function openCreateResortModal() {
+  if (typeof wtCan !== 'function' || !wtCan('Resorts', 'edit')) {
+    showToast('You do not have permission to create resorts.', 'danger');
+    return;
+  }
   const html = `
     <form id="createResortForm" onsubmit="handleCreateResort(event)">
       <div class="form-grid">

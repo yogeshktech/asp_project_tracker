@@ -302,21 +302,29 @@ public class ProjectService : IProjectService
         entity.Code = string.IsNullOrWhiteSpace(dto.Code) ? await NextProjectCodeAsync(dto.ParentProjectId) : dto.Code.Trim();
         var project = await _repository.AddProjectAsync(entity);
         var initialTeam = (dto.TeamUserIds ?? new()).Append(userId).Append(entity.OwnerId.Value).Distinct();
-        foreach (var memberId in initialTeam)
+        var projectTeam = initialTeam.ToList();
+        foreach (var memberId in projectTeam)
             await _repository.AssignUserAsync(new ProjectUser
             {
                 ProjectId = project.Id,
                 UserId = memberId,
                 TeamRole = memberId == entity.OwnerId ? "Owner" : "Member"
             });
-        if (!await _permissions.IsAdminAsync(userId))
+        var defaultModules = new[] { "Projects", "Tasks", "BOQ", "Budgets", "Costs", "Drawings", "Inventory", "Closure" };
+        foreach (var memberId in projectTeam)
         {
-            foreach (var module in PermissionService.ProjectModules)
+            if (await _permissions.IsAdminAsync(memberId)) continue;
+            if (!await _db.UserResorts.AnyAsync(x => x.UserId == memberId && x.ResortId == project.ResortId))
+            {
+                _db.UserResorts.Add(new UserResort { UserId = memberId, ResortId = project.ResortId });
+                await _db.SaveChangesAsync();
+            }
+            foreach (var module in defaultModules)
             {
                 await _users.SetProjectPermissionAsync(new ProjectPermission
                 {
                     ProjectId = project.Id,
-                    UserId = userId,
+                    UserId = memberId,
                     Module = module,
                     CanView = true,
                     CanEdit = true,
