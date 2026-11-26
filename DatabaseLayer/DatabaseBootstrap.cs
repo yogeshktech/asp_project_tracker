@@ -80,7 +80,7 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_project_budget_allocations_to ON project_budget_allocations(to_project_id)""");
     }
 
-    public static async Task EnsureSchemaAndSeedAsync(AppDbContext db, IHostEnvironment env, ILogger logger)
+    public static async Task EnsureSchemaAndSeedAsync(AppDbContext db, IHostEnvironment env, ILogger logger, bool seedDemoData = true)
     {
         if (!await UsersTableExistsAsync(db))
         {
@@ -197,7 +197,7 @@ public static class DatabaseBootstrap
         await EnsureDrawingUploadSchemaAsync(db);
         await EnsureActualCostBoqItemsSchemaAsync(db);
         await EnsureCostCentreBoqSchemaAsync(db);
-        await DbSeeder.SeedAsync(db);
+        await DbSeeder.SeedAsync(db, seedDemoData);
         await DbSeeder.EnsureUserBasedAccessAsync(db);
         await EnsureUserResortAccessSchemaAsync(db);
         logger.LogInformation("Database seed completed.");

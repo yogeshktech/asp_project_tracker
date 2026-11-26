@@ -110,7 +110,9 @@ if (builder.Configuration.GetValue<bool?>("Database:BootstrapOnStartup") ?? true
         try
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await DatabaseBootstrap.EnsureSchemaAndSeedAsync(db, app.Environment, logger);
+            await DatabaseBootstrap.EnsureSchemaAndSeedAsync(
+                db, app.Environment, logger,
+                builder.Configuration.GetValue<bool>("Database:SeedDemoData"));
         }
         catch (Exception ex)
         {

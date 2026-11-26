@@ -12,7 +12,7 @@ public static class DbSeeder
 {
     private const string DemoPassword = "July@1234";
 
-    public static async Task SeedAsync(AppDbContext db)
+    public static async Task SeedAsync(AppDbContext db, bool seedDemoData = true)
     {
         var now = DateTime.UtcNow;
 
@@ -79,6 +79,7 @@ public static class DbSeeder
         await EnsureRolePermsAsync(db, externalRole.Id, allPerms.Where(p =>
             p.Code is "projects.view" or "tasks.view" or "reports.view").Select(p => p.Id));
         await db.SaveChangesAsync();
+        if (!seedDemoData) return;
 
         // ── Issue priorities ───────────────────────────────────────────────
         if (!await db.IssuePriorities.AnyAsync())

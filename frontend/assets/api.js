@@ -4,10 +4,9 @@ const API_BASE = (function () {
   const customBase = localStorage.getItem('WISETRACK_API_BASE');
   const isAppPath = location.pathname === '/app' || location.pathname.startsWith('/app/');
 
-  // Local frontend pages use the shared live API, so local UI changes can be
-  // checked against live data without connecting the local backend to PostgreSQL.
+  // When served locally by ASP.NET Core, use the API on the same local origin.
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'https://demo-project-tracker.workarya.com/api';
+    return `${origin}/api`;
   }
 
   // The deployed app and API share an origin. Prefer it over a stale browser
@@ -15,6 +14,7 @@ const API_BASE = (function () {
   if (protocol === 'http:' || protocol === 'https:') {
     if (
       hostname === 'demo-project-tracker.workarya.com' ||
+      hostname === 'demo-project-tracker.rikaenterprises.com' ||
       isAppPath
     ) {
       return `${origin}/api`;
@@ -23,7 +23,7 @@ const API_BASE = (function () {
 
   if (customBase) return customBase.replace(/\/+$/, '');
 
-  return 'https://demo-project-tracker.workarya.com/api';
+  return 'https://demo-project-tracker.rikaenterprises.com/api';
 })();
 
 const WisetrackAPI = {
