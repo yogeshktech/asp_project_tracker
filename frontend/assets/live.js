@@ -657,7 +657,7 @@ async function openCreateProjectModal(preselectedParentId = null) {
     resorts = await WisetrackAPI.getResorts();
     // All projects (roots + nested) so any node can be chosen as parent → N-level WBS
     projects = await WisetrackAPI.getProjects();
-    users = await WisetrackAPI.getUsers();
+    users = await WisetrackAPI.getUserLookup();
   } catch (err) {
     showToast(err.message, 'danger');
     return;

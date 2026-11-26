@@ -24,6 +24,13 @@ public class UsersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll() => await IsAdminAsync() ? Ok(await _userService.GetAllAsync()) : Forbid();
 
+    // Minimal user directory (no roles/permissions) for owner/team pickers; available to any signed-in user.
+    [HttpGet("lookup")]
+    public async Task<IActionResult> Lookup() =>
+        Ok((await _userService.GetAllAsync())
+            .Where(u => u.IsActive)
+            .Select(u => new { u.Id, u.FullName, u.Email, u.IsActive }));
+
     [HttpGet("me/access")]
     public async Task<IActionResult> MyAccess() => Ok(await _userService.GetAccessAsync(UserId));
 

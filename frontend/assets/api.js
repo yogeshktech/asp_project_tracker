@@ -195,6 +195,8 @@ const WisetrackAPI = {
 
   // Users
   getUsers() { return this.get('/users'); },
+  // Lightweight list (id, fullName, email) usable by non-admin users for owner/team pickers.
+  getUserLookup() { return this.get('/users/lookup'); },
   getUser(id) { return this.get(`/users/${id}`); },
   createUser(data) { return this.post('/users', data); },
   updateUser(id, data) { return this.put(`/users/${id}`, data); },
