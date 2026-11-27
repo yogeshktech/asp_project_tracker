@@ -25,6 +25,7 @@ const WT_NAV = [
   { href: 'notifications.html', icon: 'fa-bell', label: 'Notifications' },
   { href: 'audit-logs.html', icon: 'fa-scroll', label: 'Audit Logs' },
   { href: 'reports.html', icon: 'fa-file-lines', label: 'Reports' },
+  { href: 'reports.html#master', icon: 'fa-layer-group', label: 'Master Report' },
   { href: 'settings.html', icon: 'fa-gear', label: 'Settings' },
 ];
 
@@ -133,6 +134,7 @@ function wtCanCreateResort() {
 }
 
 function wtPageAllowed(href) {
+  if (href === 'reports.html#master') return wtIsAdmin() || wtCan('MasterReport', 'view');
   if (href === 'dashboard.html') return wtIsAdmin() || wtCanViewModule('*') || wtCanViewModule('Dashboard');
   if (href === 'items.html') return wtCanViewModule('Module');
   if (href === 'resorts.html') return wtCanViewModule('Resorts') || wtCanViewModule('Projects');
@@ -193,7 +195,10 @@ function wtBuildSidebar() {
       continue;
     }
     if (typeof wtPageAllowed === 'function' && !wtPageAllowed(item.href)) continue;
-    const active = page === item.href ? ' active' : '';
+    const onMaster = page === 'reports.html' && location.hash === '#master';
+    const active = item.href === 'reports.html#master'
+      ? (onMaster ? ' active' : '')
+      : (item.href === 'reports.html' ? (page === 'reports.html' && !onMaster ? ' active' : '') : (page === item.href ? ' active' : ''));
     html += `<a class="nav-link${active}" href="${item.href}" title="${item.label}"><span class="nav-icon"><i class="fa-solid ${item.icon}"></i></span><span>${item.label}</span></a>`;
   }
   html += `</div>`;
