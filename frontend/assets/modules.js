@@ -441,6 +441,7 @@
     { id: 'Drawings', label: 'Drawings', global: false },
     { id: 'Inventory', label: 'Inventory', global: false },
     { id: 'Reports', label: 'Reports', global: false },
+    { id: 'MasterReport', label: 'Master Report', global: true, rows: [{ key: 'MasterReport', name: 'Master report' }] },
     { id: 'Closure', label: 'Project Closure', global: false },
     { id: 'Audit', label: 'Audit', global: true, rows: [{ key: 'Audit', name: 'Audit logs' }] },
     { id: 'Module', label: 'Item Master', global: true, rows: [{ key: 'Module', name: 'Item master' }] },
@@ -448,6 +449,11 @@
     { id: 'WorkflowGuide', label: 'Workflow Guide', global: true, rows: [{ key: 'WorkflowGuide', name: 'Workflow Guide' }] }
   ];
   const GLOBAL_PERM_MODULES = PERM_TABS.filter(t => t.global).map(t => t.id);
+
+  function canUseMasterReport() {
+    if (typeof wtIsAdmin === 'function' && wtIsAdmin()) return true;
+    return typeof wtCan === 'function' && wtCan('MasterReport', 'view');
+  }
   const PERM_RIGHTS = [
     { id: 'view', label: 'View' },
     { id: 'edit', label: 'Create' },
@@ -948,7 +954,7 @@
         + '<div class="card"><p>You do not have access to permission management.</p></div>';
       return;
     }
-    el.innerHTML = pageHead('Permissions', 'Manage each user’s module rights, including Import, Export, Allocate, Revise, and Send in addition to view, create, edit, and delete.')
+    el.innerHTML = pageHead('Permissions', 'Manage each user’s module rights. Master Report is a separate permission: turn on View for the people who should open it. Admin already has full access.')
       + `<div class="card" style="margin-bottom:16px"><div class="form-grid">
           <div class="field"><label>User *</label><select id="permissionPageUser" onchange="WTPages.loadPermissionPageMatrix()"></select></div>
           <div class="field"><label>Project *</label><select id="permissionPageProject" onchange="WTPages.loadPermissionPageMatrix()"></select></div>
@@ -2129,7 +2135,8 @@ WTPages.switchProjView = function(view) {
     const el = root();
     let pid = await selectedProjectId();
 
-    el.innerHTML = pageHead('Project Dashboard', '')
+    el.innerHTML = pageHead('Project Dashboard', '',
+      `${canUseMasterReport() ? '<a class="btn primary" href="reports.html#master"><i class="fa-solid fa-file-lines"></i> Master Report</a>' : ''}`)
       + `<div class="grid g2">
           <div class="card" id="projDetailBox">Loading project workspace...</div>
           <div class="card">
@@ -6196,19 +6203,446 @@ WTPages.switchProjView = function(view) {
   }
 
   // ---------- REPORTS ----------
+  const MASTER_SECTIONS = [
+    ['running', 'What is running'],
+    ['overview', 'Overview'], ['budget', 'Budget'], ['drawings', 'Drawing Upload'], ['boq', 'BOQ'],
+    ['milestones', 'Milestones'], ['tasks', 'Tasks'], ['costs', 'Costs'], ['issues', 'Risk/Issue'],
+    ['daily', 'Daily Reports'], ['inventory', 'Inventory'], ['closure', 'Project Closure']
+  ];
+
+  function masterField(row, ...keys) {
+    for (const key of keys) {
+      const value = row?.[key];
+      if (value != null && value !== '') return value;
+    }
+    return '';
+  }
+
+  function masterDay(value) {
+    if (!value) return null;
+    const text = String(value);
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+    if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    const parsed = new Date(text);
+    return Number.isFinite(parsed.getTime()) ? new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) : null;
+  }
+
+  function masterInRange(value, from, to) {
+    if (!from && !to) return true;
+    const day = masterDay(value);
+    if (!day) return false;
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    return true;
+  }
+
+  function masterAnyDate(row, keys, from, to) {
+    if (!from && !to) return true;
+    return keys.some(key => masterInRange(row?.[key], from, to));
+  }
+
+  function masterRows(value) {
+    return Array.isArray(value) ? value : (value?.items || value?.Items || value?.data || value?.Data || []);
+  }
+
+  function masterDateText(value) {
+    const day = masterDay(value);
+    if (!day) return value ? String(value).slice(0, 10) : '';
+    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  }
+
+  function masterMoney(value) {
+    const number = Number(value || 0);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function masterFinished(row) {
+    return /complete|closed|done|resolved/i.test(String(masterField(row, 'status', 'Status'))) || Number(masterField(row, 'completionPercent', 'CompletionPercent') || 0) >= 100;
+  }
+
+  function masterBudgetParts(row) {
+    const amount = masterMoney(masterField(row, 'approvedAmount', 'ApprovedAmount'));
+    const status = String(masterField(row, 'status', 'Status') || 'Draft');
+    const approved = /approv/i.test(status);
+    const allocated = masterRows(row.allocations || row.Allocations).reduce((sum, item) => sum + masterMoney(masterField(item, 'allocatedAmount', 'AllocatedAmount')), 0);
+    return {
+      status: status || (approved ? 'Approved' : 'Not approved'),
+      approved: approved ? amount : 0,
+      notApproved: approved ? 0 : amount,
+      allocated,
+      notAllocated: Math.max(0, (approved ? amount : 0) - allocated)
+    };
+  }
+
+  async function mapPool(items, limit, worker) {
+    const output = new Array(items.length);
+    let cursor = 0;
+    const run = async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        output[index] = await worker(items[index], index);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+    return output;
+  }
+
+  function flattenMasterTasks(tasks, level, parent, acc) {
+    masterRows(tasks).forEach(task => {
+      acc.push({ task, level, parent });
+      flattenMasterTasks(task.subTasks || task.SubTasks, level + 1, masterField(task, 'title', 'Title') || parent, acc);
+    });
+    return acc;
+  }
+
+  function masterSheetTable(sheet, hideTitle) {
+    const title = hideTitle ? '' : `<h3>${esc(sheet.name)}${sheet.rows.length ? ` <span style="font-weight:500;opacity:.8">(${sheet.rows.length})</span>` : ''}</h3>`;
+    if (!sheet.rows.length) return `<div class="master-sheet">${title}<p style="padding:14px;color:var(--text-muted);margin:0">No records in this date range.</p></div>`;
+    return `<div class="master-sheet">${title}<div class="table-wrap"><table class="table"><thead><tr>${sheet.headers.map(header => `<th>${esc(header)}</th>`).join('')}</tr></thead><tbody>${sheet.rows.map(row => `<tr>${row.map(cell => `<td>${esc(cell == null || cell === '' ? '—' : cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+  }
+
+  async function openMasterReport() {
+    const box = $('#reportOut');
+    if (!box) return;
+    if (!canUseMasterReport()) { box.innerHTML = '<p>You do not have access to the Master Report. An Admin can grant it from Permissions.</p>'; return; }
+    box.innerHTML = '<p style="color:var(--text-muted)">Loading resorts and projects…</p>';
+    const [resorts, projects] = await Promise.all([
+      WisetrackAPI.getResorts().catch(() => []),
+      WisetrackAPI.getProjects().catch(() => [])
+    ]);
+    const today = new Date();
+    const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthEnd = masterDateText(today);
+    box.innerHTML = `<div id="masterReport">
+      <h3 class="card-title">Master Report</h3>
+      <p class="card-subtitle">Select one or more resorts. Leave every resort unchecked to include all projects. The report follows Overview, Budget, Drawing Upload, BOQ, Milestones, Tasks, Costs, Risk/Issue, Daily Reports, Inventory, and Project Closure.</p>
+      <form onsubmit="WTPages.generateMasterReport(event)" style="margin-top:14px">
+        <div class="field"><label>Resorts</label>
+          <div style="display:flex;gap:8px;margin-bottom:8px"><button type="button" class="btn sm" onclick="document.querySelectorAll('.master-resort').forEach(box => box.checked = true)">Select all</button><button type="button" class="btn sm" onclick="document.querySelectorAll('.master-resort').forEach(box => box.checked = false)">Clear</button></div>
+          <div class="master-resort-list">${(resorts || []).map(resort => `<label class="master-chip"><input class="master-resort" type="checkbox" value="${resort.id}"> ${esc(resort.name || resort.Name || 'Resort')}</label>`).join('') || '<span style="color:var(--text-muted)">No resorts available.</span>'}</div>
+          <small class="card-subtitle">${(projects || []).length} authorized project(s). None selected means all of them.</small>
+        </div>
+        <div class="form-grid" style="margin-top:12px">
+          <div class="field"><label>From</label><input id="masterFrom" type="date" value="${monthStart}"></div>
+          <div class="field"><label>To</label><input id="masterTo" type="date" value="${monthEnd}"></div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Sections</label>
+          <div class="master-section-list">${MASTER_SECTIONS.map(([id, label]) => `<label class="master-chip"><input class="master-section" type="checkbox" value="${id}" checked> ${esc(label)}</label>`).join('')}</div>
+        </div>
+        <div class="master-actions"><button class="btn primary" type="submit"><i class="fa-solid fa-file-lines"></i> Generate report</button></div>
+      </form>
+      <div id="masterReportStatus" style="margin-top:12px"></div>
+      <div id="masterReportResult"></div>
+    </div>`;
+    if (location.hash === '#master') document.getElementById('masterReport')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function generateMasterReport(event) {
+    event?.preventDefault();
+    if (!canUseMasterReport()) { showToast('You do not have access to the Master Report.', 'danger'); return; }
+    const status = $('#masterReportStatus');
+    const result = $('#masterReportResult');
+    const fromText = $('#masterFrom')?.value || '';
+    const toText = $('#masterTo')?.value || '';
+    const from = masterDay(fromText);
+    const to = masterDay(toText);
+    if (from && to && from > to) { showToast('The From date must be on or before the To date.', 'danger'); return; }
+    const selectedResorts = [...document.querySelectorAll('.master-resort:checked')].map(box => Number(box.value));
+    const sections = new Set([...document.querySelectorAll('.master-section:checked')].map(box => box.value));
+    if (!sections.size) { showToast('Select at least one section.', 'danger'); return; }
+    status.textContent = 'Loading projects…';
+    result.innerHTML = '';
+    try {
+      const [resorts, projects] = await Promise.all([WisetrackAPI.getResorts().catch(() => []), WisetrackAPI.getProjects().catch(() => [])]);
+      const resortName = new Map((resorts || []).map(resort => [Number(resort.id), resort.name || resort.Name || `Resort ${resort.id}`]));
+      const chosen = (projects || []).filter(project => {
+        const resortId = Number(project.resortId ?? project.ResortId ?? 0);
+        return !selectedResorts.length || selectedResorts.includes(resortId);
+      });
+      if (!chosen.length) { status.textContent = ''; result.innerHTML = '<p>No projects match the selected resorts.</p>'; return; }
+      const can = (module, projectId) => typeof wtCan !== 'function' || wtCan(module, 'view', Number(projectId));
+      let done = 0;
+      const packs = await mapPool(chosen, 4, async project => {
+        const projectId = Number(project.id ?? project.Id);
+        const pack = { project, projectId };
+        const jobs = [];
+        if ((sections.has('budget') || sections.has('running')) && can('Budgets', projectId)) jobs.push(WisetrackAPI.getBudgets(projectId).then(rows => { pack.budgets = rows; }).catch(() => { pack.budgets = []; }));
+        if (sections.has('drawings') && can('Drawings', projectId)) jobs.push(WisetrackAPI.getDrawings(projectId).then(rows => { pack.drawings = rows; }).catch(() => { pack.drawings = []; }));
+        if ((sections.has('boq') || sections.has('inventory')) && can('BOQ', projectId)) jobs.push(WisetrackAPI.getBoqs(projectId).then(rows => { pack.boqs = rows; }).catch(() => { pack.boqs = []; }));
+        if ((sections.has('milestones') || sections.has('tasks') || sections.has('daily') || sections.has('running')) && can('Tasks', projectId)) {
+          jobs.push(WisetrackAPI.getMilestones(projectId).then(rows => { pack.milestones = rows; }).catch(() => { pack.milestones = []; }));
+          jobs.push(WisetrackAPI.getTasks(projectId).then(rows => { pack.tasks = rows; }).catch(() => { pack.tasks = []; }));
+        }
+        if ((sections.has('costs') || sections.has('running')) && can('Costs', projectId)) {
+          jobs.push(WisetrackAPI.getPurchases(projectId).then(rows => { pack.purchases = rows; }).catch(() => { pack.purchases = []; }));
+          jobs.push(WisetrackAPI.getActuals(projectId).then(rows => { pack.actuals = rows; }).catch(() => { pack.actuals = []; }));
+        }
+        if (sections.has('issues') && can('Issues', projectId)) jobs.push(WisetrackAPI.getIssues(projectId).then(rows => { pack.issues = rows; }).catch(() => { pack.issues = []; }));
+        if ((sections.has('inventory') || sections.has('closure')) && can('Inventory', projectId)) jobs.push(WisetrackAPI.getInventory(projectId).then(rows => { pack.inventory = rows; }).catch(() => { pack.inventory = []; }));
+        await Promise.all(jobs);
+        done += 1;
+        status.textContent = `Loading project data… ${done} of ${chosen.length}`;
+        return pack;
+      });
+      const rangeDays = from && to ? Math.round((to - from) / 86400000) + 1 : 0;
+      if (sections.has('daily') && rangeDays > 0 && rangeDays <= 31) {
+        status.textContent = 'Loading daily reports…';
+        await mapPool(packs, 3, async pack => {
+          if (typeof wtCan === 'function' && !wtCan('Tasks', 'view', pack.projectId)) return;
+          const days = [];
+          const cursor = new Date(from);
+          while (cursor <= to && days.length < 31) {
+            days.push(masterDateText(cursor));
+            cursor.setDate(cursor.getDate() + 1);
+          }
+          const reports = await mapPool(days, 4, day => WisetrackAPI.getDailyReport(pack.projectId, day).catch(() => null));
+          pack.daily = reports.filter(Boolean);
+        });
+      }
+      const sheets = [];
+      const overviewRows = [];
+      const budgetRows = [];
+      const drawingRows = [];
+      const boqRows = [];
+      const milestoneRows = [];
+      const taskRows = [];
+      const costRows = [];
+      const issueRows = [];
+      const dailyRows = [];
+      const inventoryRows = [];
+      const closureRows = [];
+      const runningBlocks = [];
+      packs.forEach(pack => {
+        const mark = {
+          budget: budgetRows.length, drawing: drawingRows.length, boq: boqRows.length, milestone: milestoneRows.length,
+          task: taskRows.length, cost: costRows.length, issue: issueRows.length, daily: dailyRows.length, inventory: inventoryRows.length
+        };
+        const project = pack.project;
+        const resort = resortName.get(Number(project.resortId ?? project.ResortId)) || masterField(project, 'resortName', 'ResortName') || '';
+        const projectName = masterField(project, 'name', 'Name') || `Project ${pack.projectId}`;
+        const code = masterField(project, 'code', 'Code');
+        const overlaps = !from && !to || masterAnyDate(project, ['startDate', 'StartDate', 'endDate', 'EndDate', 'createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to);
+        const push = (list, row, dated) => { if (dated) list.push([resort, projectName, code, ...row]); };
+        masterRows(pack.budgets).forEach(row => {
+          const parts = masterBudgetParts(row);
+          push(budgetRows, [
+            masterField(row, 'name', 'Name'), parts.status, parts.approved, parts.notApproved, parts.allocated, parts.notAllocated, masterField(row, 'currency', 'Currency') || masterField(project, 'currency', 'Currency') || 'USD', masterDateText(masterField(row, 'createdAt', 'CreatedAt'))
+          ], masterAnyDate(row, ['createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to));
+        });
+        masterRows(pack.drawings).filter(row => Number(row.projectId ?? row.ProjectId ?? pack.projectId) === pack.projectId).forEach(row => push(drawingRows, [
+          masterField(row, 'name', 'Name'), masterField(row, 'description', 'Description'), (row.files || row.Files || []).map(file => file.fileName || file.FileName).filter(Boolean).join(', ') || masterField(row, 'fileName', 'FileName'), masterDateText(masterField(row, 'createdAt', 'CreatedAt'))
+        ], masterAnyDate(row, ['createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to)));
+        masterRows(pack.boqs).forEach(boq => {
+          const versions = masterRows(boq.versions || boq.Versions);
+          const baseline = versions.find(version => version.isCurrentBaseline || version.IsCurrentBaseline) || versions[versions.length - 1];
+          const lines = masterRows(baseline?.items || baseline?.Items);
+          const dated = masterAnyDate(boq, ['createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to);
+          push(boqRows, [masterField(boq, 'title', 'Title'), masterField(boq, 'status', 'Status'), baseline ? `v${masterField(baseline, 'versionNo', 'VersionNo') || 1}` : '', lines.length, masterDateText(masterField(boq, 'createdAt', 'CreatedAt'))], dated);
+        });
+        masterRows(pack.milestones).forEach(row => push(milestoneRows, [
+          masterField(row, 'name', 'Name'), masterField(row, 'status', 'Status'), masterDateText(masterField(row, 'startDate', 'StartDate')), masterDateText(masterField(row, 'dueDate', 'DueDate')), Number(masterField(row, 'completionPercent', 'CompletionPercent') || 0)
+        ], masterAnyDate(row, ['startDate', 'StartDate', 'dueDate', 'DueDate', 'createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to)));
+        const flatTasks = flattenMasterTasks(pack.tasks, 0, '', []);
+        const levelName = ['Task', 'Sub-task', 'Nested sub-task', 'Further nested task'];
+        flatTasks.forEach(({ task, level, parent }) => push(taskRows, [
+          levelName[Math.min(level, 3)], masterField(task, 'title', 'Title'), parent, masterField(task, 'assignedToName', 'AssignedToName') || task.assignedTo?.fullName || task.AssignedTo?.FullName || '', masterDateText(masterField(task, 'startDate', 'StartDate')), masterDateText(masterField(task, 'dueDate', 'DueDate')), masterField(task, 'status', 'Status'), Number(masterField(task, 'completionPercent', 'CompletionPercent') || 0)
+        ], masterAnyDate(task, ['startDate', 'StartDate', 'dueDate', 'DueDate', 'createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to)));
+        masterRows(pack.purchases).forEach(row => push(costRows, [
+          'Purchase', masterMoney(masterField(row, 'amount', 'Amount')), masterDateText(masterField(row, 'purchaseDate', 'PurchaseDate', 'costDate', 'CostDate')), masterField(row, 'vendor', 'Vendor'), masterField(row, 'description', 'Description', 'remarks', 'Remarks')
+        ], masterAnyDate(row, ['purchaseDate', 'PurchaseDate', 'costDate', 'CostDate', 'createdAt', 'CreatedAt'], from, to)));
+        masterRows(pack.actuals).forEach(row => push(costRows, [
+          'Actual', masterMoney(masterField(row, 'amount', 'Amount')), masterDateText(masterField(row, 'costDate', 'CostDate', 'purchaseDate', 'PurchaseDate')), masterField(row, 'vendor', 'Vendor'), masterField(row, 'description', 'Description', 'remarks', 'Remarks')
+        ], masterAnyDate(row, ['costDate', 'CostDate', 'purchaseDate', 'PurchaseDate', 'createdAt', 'CreatedAt'], from, to)));
+        masterRows(pack.issues).forEach(row => push(issueRows, [
+          masterField(row, 'logType', 'LogType') || 'Issue', masterField(row, 'title', 'Title'), masterField(row, 'status', 'Status'), row.priority?.name || row.Priority?.Name || '', masterField(row, 'impact', 'Impact'), masterField(row, 'location', 'Location'), masterDateText(masterField(row, 'occurredAt', 'OccurredAt', 'createdAt', 'CreatedAt'))
+        ], masterAnyDate(row, ['occurredAt', 'OccurredAt', 'createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to)));
+        masterRows(pack.daily).forEach(report => {
+          const reportDate = masterDateText(masterField(report, 'reportDate', 'ReportDate'));
+          masterRows(report.taskUpdates || report.TaskUpdates).forEach(row => dailyRows.push([
+            resort, projectName, code, reportDate, masterField(row, 'title', 'Title'), masterField(row, 'subTaskTitle', 'SubTaskTitle'), masterField(row, 'status', 'Status'), Number(masterField(row, 'completionPercent', 'CompletionPercent') || 0), masterField(row, 'remarks', 'Remarks')
+          ]));
+        });
+        if (!masterRows(pack.daily).length) {
+          flatTasks.forEach(({ task, level }) => {
+            if (!masterAnyDate(task, ['updatedAt', 'UpdatedAt', 'createdAt', 'CreatedAt'], from, to)) return;
+            dailyRows.push([resort, projectName, code, masterDateText(masterField(task, 'updatedAt', 'UpdatedAt', 'createdAt', 'CreatedAt')), masterField(task, 'title', 'Title'), levelName[Math.min(level, 3)], masterField(task, 'status', 'Status'), Number(masterField(task, 'completionPercent', 'CompletionPercent') || 0), masterField(task, 'description', 'Description')]);
+          });
+        }
+        masterRows(pack.inventory).forEach(row => push(inventoryRows, [
+          masterField(row, 'description', 'Description') || row.item?.name || row.Item?.Name || '', Number(masterField(row, 'quantity', 'Quantity') || 0), masterField(row, 'remarks', 'Remarks'), masterDateText(masterField(row, 'updatedAt', 'UpdatedAt', 'createdAt', 'CreatedAt'))
+        ], masterAnyDate(row, ['updatedAt', 'UpdatedAt', 'createdAt', 'CreatedAt'], from, to)));
+        const projectTaskCount = taskRows.length - mark.task;
+        const projectIssueCount = issueRows.length - mark.issue;
+        const levelNameRunning = ['Task', 'Sub-task', 'Nested sub-task', 'Further nested task'];
+        const datedTasks = flatTasks.filter(({ task }) => masterAnyDate(task, ['startDate', 'StartDate', 'dueDate', 'DueDate', 'createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to));
+        const runningTasks = datedTasks.filter(({ task }) => !masterFinished(task));
+        const datedMilestones = masterRows(pack.milestones).filter(row => masterAnyDate(row, ['startDate', 'StartDate', 'dueDate', 'DueDate', 'createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to));
+        const datedBudgets = masterRows(pack.budgets).filter(row => masterAnyDate(row, ['createdAt', 'CreatedAt', 'updatedAt', 'UpdatedAt'], from, to));
+        const budgetTotals = datedBudgets.reduce((sum, row) => {
+          const parts = masterBudgetParts(row);
+          sum.approved += parts.approved;
+          sum.notApproved += parts.notApproved;
+          sum.allocated += parts.allocated;
+          sum.notAllocated += parts.notAllocated;
+          sum.currency = sum.currency || masterField(row, 'currency', 'Currency') || masterField(project, 'currency', 'Currency') || 'USD';
+          return sum;
+        }, { approved: 0, notApproved: 0, allocated: 0, notAllocated: 0, currency: masterField(project, 'currency', 'Currency') || 'USD' });
+        const spent = masterRows(pack.actuals).filter(row => masterAnyDate(row, ['costDate', 'CostDate', 'createdAt', 'CreatedAt'], from, to)).reduce((sum, row) => sum + masterMoney(masterField(row, 'amount', 'Amount')), 0)
+          + masterRows(pack.purchases).filter(row => masterAnyDate(row, ['purchaseDate', 'PurchaseDate', 'createdAt', 'CreatedAt'], from, to)).reduce((sum, row) => sum + masterMoney(masterField(row, 'amount', 'Amount')), 0);
+        const hasActivity = budgetRows.length > mark.budget || drawingRows.length > mark.drawing || boqRows.length > mark.boq || milestoneRows.length > mark.milestone || taskRows.length > mark.task || costRows.length > mark.cost || issueRows.length > mark.issue || dailyRows.length > mark.daily || inventoryRows.length > mark.inventory;
+        if (overlaps || hasActivity || (!from && !to)) {
+          overviewRows.push([resort, projectName, code, masterField(project, 'status', 'Status'), masterDateText(masterField(project, 'startDate', 'StartDate')), masterDateText(masterField(project, 'endDate', 'EndDate')), project.ownerName || project.OwnerName || project.owner?.fullName || project.Owner?.FullName || '', runningTasks.length, datedMilestones.filter(row => !masterFinished(row)).length, budgetTotals.approved, budgetTotals.notApproved, projectTaskCount, projectIssueCount]);
+          runningBlocks.push({
+            resort, projectName, code, status: masterField(project, 'status', 'Status'),
+            currency: budgetTotals.currency,
+            approved: budgetTotals.approved,
+            notApproved: budgetTotals.notApproved,
+            allocated: budgetTotals.allocated,
+            notAllocated: budgetTotals.notAllocated,
+            spent,
+            notSpent: Math.max(0, budgetTotals.approved - spent),
+            tasks: runningTasks.map(({ task, level, parent }) => [levelNameRunning[Math.min(level, 3)], masterField(task, 'title', 'Title'), parent, masterField(task, 'assignedToName', 'AssignedToName') || task.assignedTo?.fullName || task.AssignedTo?.FullName || '', masterField(task, 'status', 'Status') || 'Not started', Number(masterField(task, 'completionPercent', 'CompletionPercent') || 0), masterDateText(masterField(task, 'dueDate', 'DueDate'))]),
+            milestones: datedMilestones.map(row => [masterField(row, 'name', 'Name'), masterField(row, 'status', 'Status') || 'Not started', masterFinished(row) ? 'Done' : 'Open', Number(masterField(row, 'completionPercent', 'CompletionPercent') || 0), masterDateText(masterField(row, 'dueDate', 'DueDate'))]),
+            budgets: datedBudgets.map(row => {
+              const parts = masterBudgetParts(row);
+              return [masterField(row, 'name', 'Name'), parts.status, parts.approved, parts.notApproved, parts.allocated, parts.notAllocated];
+            })
+          });
+          const projectInventory = inventoryRows.slice(mark.inventory);
+          closureRows.push([resort, projectName, code, masterField(project, 'status', 'Status'), /closed|complete/i.test(String(masterField(project, 'status', 'Status'))) ? 'Closed' : 'Open', projectInventory.length, projectInventory.reduce((sum, row) => sum + Number(row[4] || 0), 0)]);
+        }
+      });
+      const sheetDefs = [
+        ['overview', 'Overview', ['Resort', 'Project', 'Code', 'Status', 'Start', 'End', 'Owner', 'Tasks running', 'Milestones open', 'Approved', 'Not approved', 'Tasks in range', 'Risk/Issue in range'], overviewRows],
+        ['budget', 'Budget', ['Resort', 'Project', 'Code', 'Budget', 'Status', 'Approved', 'Not approved', 'Allocated', 'Not allocated', 'Currency', 'Created'], budgetRows],
+        ['drawings', 'Drawing Upload', ['Resort', 'Project', 'Code', 'Name', 'Description', 'Files', 'Uploaded'], drawingRows],
+        ['boq', 'BOQ', ['Resort', 'Project', 'Code', 'Title', 'Status', 'Baseline', 'Lines', 'Created'], boqRows],
+        ['milestones', 'Milestones', ['Resort', 'Project', 'Code', 'Milestone', 'Status', 'Start', 'Due', 'Progress %'], milestoneRows],
+        ['tasks', 'Tasks', ['Resort', 'Project', 'Code', 'Level', 'Title', 'Parent', 'Assigned to', 'Start', 'End', 'Status', 'Progress %'], taskRows],
+        ['costs', 'Costs', ['Resort', 'Project', 'Code', 'Type', 'Amount', 'Date', 'Vendor', 'Remarks'], costRows],
+        ['issues', 'Risk-Issue', ['Resort', 'Project', 'Code', 'Log type', 'Title', 'Status', 'Priority', 'Impact', 'Where', 'When'], issueRows],
+        ['daily', 'Daily Reports', ['Resort', 'Project', 'Code', 'Date', 'Task', 'Sub-task', 'Status', 'Progress %', 'Remarks'], dailyRows],
+        ['inventory', 'Inventory', ['Resort', 'Project', 'Code', 'Item', 'Quantity', 'Remarks', 'Updated'], inventoryRows],
+        ['closure', 'Project Closure', ['Resort', 'Project', 'Code', 'Project status', 'Closure', 'Inventory records', 'Leftover quantity'], closureRows]
+      ].filter(([id]) => sections.has(id)).map(([, name, headers, rows]) => ({ name, headers, rows }));
+      if (sections.has('running')) {
+        const runningRows = [];
+        runningBlocks.forEach(block => {
+          runningRows.push([block.resort, block.projectName, block.code, 'Project', block.status, '', '', '', '', block.approved, block.notApproved, block.allocated, block.notAllocated, block.spent, block.notSpent, block.currency]);
+          block.tasks.forEach(row => runningRows.push([block.resort, block.projectName, block.code, 'Task running', row[4], row[0], row[1], row[3], row[6], '', '', '', '', '', '', '']));
+          block.milestones.forEach(row => runningRows.push([block.resort, block.projectName, block.code, 'Milestone', row[1], row[2], row[0], '', row[4], '', '', '', '', '', '', '']));
+          block.budgets.forEach(row => runningRows.push([block.resort, block.projectName, block.code, 'Budget', row[1], '', row[0], '', '', row[2], row[3], row[4], row[5], '', '', block.currency]));
+          if (!block.tasks.length && !block.milestones.length && !block.budgets.length) runningRows.push([block.resort, block.projectName, block.code, 'Note', 'Nothing open in this date range', '', '', '', '', block.approved, block.notApproved, '', '', '', '', block.currency]);
+        });
+        sheetDefs.unshift({
+          name: 'What is running',
+          headers: ['Resort', 'Project', 'Code', 'Section', 'Status', 'Level', 'Item', 'Assigned to', 'Due', 'Approved', 'Not approved', 'Allocated', 'Not allocated', 'Spent', 'Not spent', 'Currency'],
+          rows: runningRows
+        });
+      }
+      const resortLabel = selectedResorts.length ? selectedResorts.map(id => resortName.get(id) || `Resort ${id}`).join(', ') : 'All resorts';
+      const periodLabel = `${fromText || 'Beginning'} to ${toText || 'Today'}`;
+      window._wtMasterReport = { sheets: sheetDefs, blocks: runningBlocks, resortLabel, periodLabel, generatedAt: new Date().toLocaleString() };
+      const canExport = canUseMasterReport();
+      const taskCount = taskRows.length;
+      const openIssues = issueRows.filter(row => !/closed|resolved/i.test(String(row[6] || ''))).length;
+      status.textContent = '';
+      result.innerHTML = `<div id="masterReportPrint">
+        <div class="master-cover">
+          <h2>Master Report</h2>
+          <p>${esc(resortLabel)} · ${esc(periodLabel)}</p>
+          <p style="margin-top:4px">Generated ${esc(window._wtMasterReport.generatedAt)} · ${overviewRows.length} project(s)</p>
+          <div class="master-kpis">
+            <div class="master-kpi"><b>${overviewRows.length}</b><span>Projects</span></div>
+            <div class="master-kpi"><b>${taskCount}</b><span>Tasks</span></div>
+            <div class="master-kpi"><b>${issueRows.length}</b><span>Risk / Issue</span></div>
+            <div class="master-kpi"><b>${openIssues}</b><span>Still open</span></div>
+            <div class="master-kpi"><b>${runningBlocks.reduce((sum, block) => sum + block.tasks.length, 0)}</b><span>Tasks running</span></div>
+            <div class="master-kpi"><b>${runningBlocks.reduce((sum, block) => sum + block.approved, 0).toLocaleString('en-US')}</b><span>Approved</span></div>
+            <div class="master-kpi"><b>${runningBlocks.reduce((sum, block) => sum + block.notApproved, 0).toLocaleString('en-US')}</b><span>Not approved</span></div>
+          </div>
+        </div>
+        ${canExport ? `<div class="master-actions"><button type="button" class="btn primary" onclick="WTPages.downloadMasterReport()"><i class="fa-solid fa-file-excel"></i> Download Excel</button><button type="button" class="btn" onclick="WTPages.printMasterReport()"><i class="fa-solid fa-print"></i> Print / PDF</button></div>` : ''}
+        ${sections.has('running') ? runningBlocks.map(block => `<article class="master-project">
+          <header><div><h3>${esc(block.projectName)}${block.code ? ` · ${esc(block.code)}` : ''}</h3><div class="card-subtitle">${esc(block.resort || 'Resort')} · ${esc(block.status || 'Draft')}</div></div></header>
+          <div class="master-mini">
+            <span><b>${block.tasks.length}</b>Tasks running</span>
+            <span><b>${block.milestones.filter(row => row[2] === 'Open').length}</b>Milestones open</span>
+            <span><b>${esc(block.currency)} ${Number(block.approved).toLocaleString('en-US')}</b>Approved</span>
+            <span><b>${esc(block.currency)} ${Number(block.notApproved).toLocaleString('en-US')}</b>Not approved</span>
+            <span><b>${esc(block.currency)} ${Number(block.notAllocated).toLocaleString('en-US')}</b>Not allocated</span>
+            <span><b>${esc(block.currency)} ${Number(block.notSpent).toLocaleString('en-US')}</b>Not spent</span>
+          </div>
+          <h4>Tasks running</h4>
+          ${masterSheetTable({ name: 'Tasks running', headers: ['Level', 'Task', 'Parent', 'Assigned to', 'Status', 'Progress %', 'Due'], rows: block.tasks }, true)}
+          <h4>Milestones</h4>
+          ${masterSheetTable({ name: 'Milestones', headers: ['Milestone', 'Status', 'Open / done', 'Progress %', 'Due'], rows: block.milestones }, true)}
+          <h4>Budget — approved and not approved</h4>
+          ${masterSheetTable({ name: 'Budget', headers: ['Budget', 'Status', 'Approved', 'Not approved', 'Allocated', 'Not allocated'], rows: block.budgets }, true)}
+        </article>`).join('') : ''}
+        ${sheetDefs.filter(sheet => sheet.name !== 'What is running').map(masterSheetTable).join('')}
+      </div>`;
+      showToast('Master report ready.');
+    } catch (error) {
+      status.textContent = '';
+      result.innerHTML = `<p style="color:var(--danger,#b91c1c)">Could not build the master report: ${esc(error.message || 'Request failed')}</p>`;
+    }
+  }
+
+  async function downloadMasterReport() {
+    const report = window._wtMasterReport;
+    if (!report?.sheets?.length) { showToast('Generate the master report first.', 'danger'); return; }
+    if (!canUseMasterReport()) { showToast('You do not have access to the Master Report.', 'danger'); return; }
+    if (!window.XLSX) await loadMilestoneImportScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+    const book = window.XLSX.utils.book_new();
+    report.sheets.forEach(sheet => {
+      const worksheet = window.XLSX.utils.aoa_to_sheet([sheet.headers, ...sheet.rows]);
+      worksheet['!cols'] = sheet.headers.map((header, index) => ({ wch: Math.min(42, Math.max(header.length + 2, ...sheet.rows.map(row => String(row[index] ?? '').length).concat([12]))) }));
+      window.XLSX.utils.book_append_sheet(book, worksheet, sheet.name.slice(0, 31));
+    });
+    window.XLSX.writeFile(book, `WiseTrack-Master-Report.xlsx`);
+    showToast('Excel downloaded.');
+  }
+
+  function printMasterReport() {
+    if (!canUseMasterReport()) { showToast('You do not have access to the Master Report.', 'danger'); return; }
+    const content = document.getElementById('masterReportPrint')?.innerHTML;
+    if (!content) { showToast('Generate the master report first.', 'danger'); return; }
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) { showToast('Allow pop-ups to print or save the report as PDF.', 'danger'); return; }
+    printWindow.document.write(`<!doctype html><html><head><title>Master Report</title><meta charset="utf-8"><style>
+      body{font:13px "Segoe UI",Arial,sans-serif;color:#102033;margin:28px;background:#fff}
+      h2{margin:0 0 6px;font-size:28px} h3{margin:0;padding:10px 12px;background:#123d67;color:#fff;font-size:14px}
+      table{width:100%;border-collapse:collapse;margin-bottom:8px} th,td{border:1px solid #d7e0ea;padding:7px 8px;text-align:left;vertical-align:top}
+      th{background:#f3f7fb;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+      tr:nth-child(even) td{background:#f8fbfe} .master-cover{background:#0f2744;color:#fff;border-radius:12px;padding:22px;margin-bottom:16px}
+      .master-cover p{color:rgba(255,255,255,.85)} .master-kpis{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+      .master-kpi{background:rgba(255,255,255,.12);border-radius:8px;padding:8px 12px;min-width:110px} .master-kpi b{display:block;font-size:20px}
+      .master-sheet{border:1px solid #d7e0ea;border-radius:10px;overflow:hidden;margin:8px 16px 14px;page-break-inside:avoid}
+      .master-project{border:1px solid #d7e0ea;border-radius:12px;margin-top:16px;overflow:hidden;page-break-inside:avoid}
+      .master-project>header{padding:12px 16px;background:#f4f7fb} .master-project h3,.master-project h4{margin:12px 16px 6px}
+      .master-mini{display:flex;flex-wrap:wrap;gap:8px;padding:8px 16px} .master-mini span{background:#eef4fb;border-radius:8px;padding:6px 10px} .master-mini b{display:block}
+      button,.master-actions{display:none} @media print{body{margin:12mm}}
+    </style></head><body>${content}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
   async function pageReports() {
     const el = root();
     const canViewReports = typeof wtCan !== 'function' || wtCan('Reports', 'view');
     const canCreateReports = typeof wtCan !== 'function' || wtCan('Reports', 'edit');
     const canExportReports = typeof wtCanAction !== 'function' || wtCanAction('Reports', 'export');
     el.innerHTML = pageHead('Executive Reports & Exports (PM-28)', '/api/reports',
-      `${canExportReports ? `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>` : ''}
-       ${canViewReports ? `<button class="btn primary" onclick="WTPages.openMonthlyReport()"><i class="fa-solid fa-calendar-days"></i> Monthly Project Report</button>
+      `${canUseMasterReport() ? `<button class="btn primary" onclick="WTPages.openMasterReport()"><i class="fa-solid fa-layer-group"></i> Master Report</button>` : ''}
+       ${canExportReports ? `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>` : ''}
+       ${canViewReports ? `<button class="btn" onclick="WTPages.openMonthlyReport()"><i class="fa-solid fa-calendar-days"></i> Monthly Project Report</button>
        <button class="btn" onclick="WTPages.loadPortfolio()"><i class="fa-solid fa-chart-pie"></i> View Portfolio</button>
        <button class="btn" onclick="WTPages.loadComparable()">Comparable projects</button>` : ''}
        ${canCreateReports ? `<button class="btn primary" onclick="WTPages.openReportModal()">+ Report Config</button>` : ''}`)
       + tableWrap(['ID', 'Name', 'Type', 'Actions'], 'reportsBody')
-      + `<div class="card" id="reportOut" style="margin-top:12px"><em>Generate a Monthly Project Report, customize an export, or view the live portfolio status.</em></div>`;
+      + `<div class="card" id="reportOut" style="margin-top:12px"><em>Open Master Report to choose resorts, a date range, and export every project section.</em></div>`;
     try {
       const list = await WisetrackAPI.getReports();
       const rows = Array.isArray(list) ? list : (list?.items || list?.data || []);
@@ -6217,6 +6651,7 @@ WTPages.switchProjView = function(view) {
         <td>${canExportReports ? `<button class="btn sm primary" onclick="openReportExportModal('${esc(r.reportType || 'portfolio').toLowerCase()}')">Export ➔</button>` : '—'}</td></tr>`
       ).join('') : emptyRow(4, 'No saved report configs');
     } catch (e) { $('#reportsBody').innerHTML = errRow(4, e); }
+    if (canUseMasterReport() && location.hash === '#master') await openMasterReport();
   }
 
   async function openMonthlyReport() {
@@ -7353,6 +7788,7 @@ WTPages.switchProjView = function(view) {
     refreshNotifications: () => pageNotifications(),
     loadPortfolio, loadComparable, runComparable, openReportModal, saveReport,
     openMonthlyReport, generateMonthlyReport, printMonthlyReport,
+    openMasterReport, generateMasterReport, downloadMasterReport, printMasterReport,
     openReportExportModal: (t) => typeof openReportExportModal === 'function' && openReportExportModal(t),
     openAddDailyReportModal: (s) => typeof openAddDailyReportModal === 'function' && openAddDailyReportModal(s),
     openInventoryModal, saveInventory, viewInventoryAttachment, generateHandoverReport, closeProject, saveCloseProject,

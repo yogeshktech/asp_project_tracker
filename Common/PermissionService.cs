@@ -32,7 +32,7 @@ public class PermissionService : IPermissionService
 
     public static readonly string[] GlobalModules =
     {
-        "Dashboard", "Resorts", "Audit", "Module", "Notifications", "WorkflowGuide"
+        "Dashboard", "Resorts", "Audit", "Module", "Notifications", "WorkflowGuide", "MasterReport"
     };
 
     public static readonly string[] Modules = ProjectModules;
