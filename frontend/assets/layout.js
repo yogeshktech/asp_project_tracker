@@ -11,7 +11,7 @@ const WT_NAV = [
   { href: 'planning.html', icon: 'fa-calendar-days', label: 'Tasks' },
   { href: 'milestones.html', icon: 'fa-bullseye', label: 'Milestones' },
   { href: 'daily-report.html', icon: 'fa-clipboard-list', label: 'Daily Report' },
-  { href: 'issues.html', icon: 'fa-triangle-exclamation', label: 'Issues' },
+  { href: 'issues.html', icon: 'fa-triangle-exclamation', label: 'Risk/Issue' },
   { group: 'Commercial & Cost' },
   { href: 'boq.html', icon: 'fa-list-check', label: 'BOQ' },
   { href: 'budget.html', icon: 'fa-coins', label: 'Budgets & Cost Centers' },

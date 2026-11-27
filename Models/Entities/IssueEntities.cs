@@ -23,6 +23,7 @@ public class Issue
     public long? ReportedBy { get; set; }
     public string? Impact { get; set; }
     public long? PriorityId { get; set; }
+    public string LogType { get; set; } = "Issue";
     public string Status { get; set; } = "Open";
     public bool IsEscalated { get; set; }
     public DateTime CreatedAt { get; set; }

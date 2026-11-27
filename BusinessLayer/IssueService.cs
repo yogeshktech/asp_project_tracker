@@ -67,6 +67,7 @@ public class IssueService : IIssueService
             OccurredAt = request.OccurredAt,
             Impact = request.Impact,
             PriorityId = request.PriorityId,
+            LogType = NormalizeLogType(request.LogType),
             ReportedBy = userId,
             Status = "Open",
             CreatedAt = DateTime.UtcNow
@@ -95,6 +96,7 @@ public class IssueService : IIssueService
         issue.OccurredAt = request.OccurredAt;
         issue.Impact = request.Impact;
         issue.PriorityId = request.PriorityId;
+        issue.LogType = NormalizeLogType(request.LogType);
         if (!string.IsNullOrWhiteSpace(request.Status)) issue.Status = request.Status.Trim();
         issue.UpdatedAt = DateTime.UtcNow;
         await _repository.UpdateAsync(issue);
@@ -135,6 +137,14 @@ public class IssueService : IIssueService
     }
 
     public Task<List<IssuePriority>> GetPrioritiesAsync() => _repository.GetPrioritiesAsync();
+
+    private static string NormalizeLogType(string? value)
+    {
+        var text = value?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Equals("Issue", StringComparison.OrdinalIgnoreCase)) return "Issue";
+        if (text.Equals("Risk", StringComparison.OrdinalIgnoreCase)) return "Risk";
+        throw new InvalidOperationException("Log type must be Risk or Issue.");
+    }
 
     private async Task NotifyHighPriorityAsync(Issue issue, string priorityName)
     {

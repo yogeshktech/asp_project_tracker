@@ -474,6 +474,7 @@ CREATE TABLE issues (
     reported_by   BIGINT REFERENCES users(id),
     impact        TEXT,
     priority_id   BIGINT REFERENCES issue_priorities(id),
+    log_type      VARCHAR(20) NOT NULL DEFAULT 'Issue',
     status        VARCHAR(50) NOT NULL DEFAULT 'Open',
     is_escalated  BOOLEAN NOT NULL DEFAULT FALSE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),

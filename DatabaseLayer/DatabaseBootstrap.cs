@@ -44,6 +44,51 @@ public static class DatabaseBootstrap
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE actual_costs ADD COLUMN IF NOT EXISTS vendor TEXT NULL""");
     }
 
+    public static async Task EnsureBudgetRecordAttachmentsSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS budget_record_attachments (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                budget_id BIGINT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+                cost_center_id BIGINT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                file_path TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                uploaded_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL,
+                uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CHECK ((budget_id IS NOT NULL)::INT + (cost_center_id IS NOT NULL)::INT = 1)
+            )
+            """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_budget_record_attachments_budget ON budget_record_attachments(budget_id, uploaded_at DESC)""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_budget_record_attachments_cost_center ON budget_record_attachments(cost_center_id, uploaded_at DESC)""");
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO budget_record_attachments (budget_id, file_path, file_name, uploaded_at)
+            SELECT b.id, b.attachment_path, COALESCE(NULLIF(b.attachment_name, ''), 'budget-attachment'), COALESCE(b.updated_at, b.created_at)
+            FROM budgets b
+            WHERE b.attachment_path IS NOT NULL AND b.attachment_path <> ''
+              AND NOT EXISTS (SELECT 1 FROM budget_record_attachments a WHERE a.budget_id = b.id AND a.file_path = b.attachment_path)
+            """);
+        await db.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO budget_record_attachments (cost_center_id, file_path, file_name, uploaded_at)
+            SELECT c.id, c.attachment_path, COALESCE(NULLIF(c.attachment_name, ''), 'cost-center-attachment'), c.created_at
+            FROM cost_centers c
+            WHERE c.attachment_path IS NOT NULL AND c.attachment_path <> ''
+              AND NOT EXISTS (SELECT 1 FROM budget_record_attachments a WHERE a.cost_center_id = c.id AND a.file_path = c.attachment_path)
+            """);
+    }
+
+    public static async Task EnsureIssueLogTypeSchemaAsync(AppDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE issues ADD COLUMN IF NOT EXISTS log_type VARCHAR(20) NOT NULL DEFAULT 'Issue'""");
+        await db.Database.ExecuteSqlRawAsync("""UPDATE issues SET log_type = 'Issue' WHERE log_type IS NULL OR log_type NOT IN ('Risk', 'Issue')""");
+    }
+
     public static async Task EnsureCostCentreBoqSchemaAsync(AppDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS budget_amount NUMERIC(18,2) NOT NULL DEFAULT 0""");
@@ -131,41 +176,7 @@ public static class DatabaseBootstrap
             """);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE projects ALTER COLUMN currency SET DEFAULT 'USD'""");
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ALTER COLUMN currency SET DEFAULT 'USD'""");
-        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL""");
-        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budgets ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL""");
-        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_path TEXT NULL""");
-        await db.Database.ExecuteSqlRawAsync("""ALTER TABLE cost_centers ADD COLUMN IF NOT EXISTS attachment_name TEXT NULL""");
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            CREATE TABLE IF NOT EXISTS budget_record_attachments (
-                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                budget_id BIGINT NULL REFERENCES budgets(id) ON DELETE CASCADE,
-                cost_center_id BIGINT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
-                file_path TEXT NOT NULL,
-                file_name TEXT NOT NULL,
-                uploaded_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL,
-                uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                CHECK ((budget_id IS NOT NULL)::INT + (cost_center_id IS NOT NULL)::INT = 1)
-            )
-            """);
-        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_budget_record_attachments_budget ON budget_record_attachments(budget_id, uploaded_at DESC)""");
-        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS ix_budget_record_attachments_cost_center ON budget_record_attachments(cost_center_id, uploaded_at DESC)""");
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            INSERT INTO budget_record_attachments (budget_id, file_path, file_name, uploaded_at)
-            SELECT b.id, b.attachment_path, COALESCE(NULLIF(b.attachment_name, ''), 'budget-attachment'), COALESCE(b.updated_at, b.created_at)
-            FROM budgets b
-            WHERE b.attachment_path IS NOT NULL AND b.attachment_path <> ''
-              AND NOT EXISTS (SELECT 1 FROM budget_record_attachments a WHERE a.budget_id = b.id AND a.file_path = b.attachment_path)
-            """);
-        await db.Database.ExecuteSqlRawAsync(
-            """
-            INSERT INTO budget_record_attachments (cost_center_id, file_path, file_name, uploaded_at)
-            SELECT c.id, c.attachment_path, COALESCE(NULLIF(c.attachment_name, ''), 'cost-center-attachment'), c.created_at
-            FROM cost_centers c
-            WHERE c.attachment_path IS NOT NULL AND c.attachment_path <> ''
-              AND NOT EXISTS (SELECT 1 FROM budget_record_attachments a WHERE a.cost_center_id = c.id AND a.file_path = c.attachment_path)
-            """);
+        await EnsureBudgetRecordAttachmentsSchemaAsync(db);
         await db.Database.ExecuteSqlRawAsync("""ALTER TABLE budget_versions ALTER COLUMN currency SET DEFAULT 'USD'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE projects SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");
         await db.Database.ExecuteSqlRawAsync("""UPDATE budgets SET currency = 'MVR' WHERE UPPER(currency) = 'INR'""");

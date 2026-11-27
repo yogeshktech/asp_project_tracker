@@ -155,7 +155,7 @@
     ['Overview', 'project-detail.html'], ['Budget', 'budget.html'],
     ['Drawing Upload', 'drawing-upload.html'], ['BOQ', 'boq.html'],
     ['Milestones', 'milestones.html'], ['Tasks', 'planning.html'],
-    ['Costs', 'costs.html'], ['Issues', 'issues.html'], ['Daily Reports', 'daily-report.html'],
+    ['Costs', 'costs.html'], ['Risk/Issue', 'issues.html'], ['Daily Reports', 'daily-report.html'],
     ['Inventory', 'inventory.html'], ['Project Closure', 'closure.html']
   ];
   const PROJECT_CONTEXT_PAGES = new Set(PROJECT_CONTEXT_TABS.map(([, href]) => href));
@@ -2296,7 +2296,7 @@ WTPages.switchProjView = function(view) {
         ${card('BOQ Status', boqPanel)}
         ${card('Recent Activity', listOrEmpty(activities.map(a => `<li>${esc(a.label)} <small style="color:var(--text-muted)">${date(a.at)}</small></li>`), 'No recent project activity is available.'))}
         ${riskItems.length ? card('Automatic Task Alerts', `<small class="card-subtitle">Generated for overdue tasks or no progress update in 7 days. Update or complete the task to clear an alert.</small>${listOrEmpty(riskItems.map(x => `<li><span class="badge ${/overdue/i.test(x.type || x.Type || '') ? 'red' : 'amber'}">${esc(x.type || x.Type || 'Task alert')}</span> ${esc(x.title || x.Title || x.message || x.Message || 'Task alert')}</li>`), '')}`) : ''}
-        ${card('Risks & Issues', listOrEmpty(openIssues.map(i => `<li><span class="badge ${i.isEscalated || i.IsEscalated ? 'red' : 'amber'}">${i.isEscalated || i.IsEscalated ? 'Escalated' : 'Open issue'}</span> ${esc(i.title || i.Title || 'Issue')}</li>`), 'No open issues.'))}
+        ${card('Risk / Issue', (() => { const logTypeOf = i => /risk/i.test(String(i.logType || i.LogType || '')) ? 'Risk' : 'Issue'; const riskCount = issueRows.filter(i => logTypeOf(i) === 'Risk').length; const issueCount = issueRows.length - riskCount; return `<div class="grid g2" style="margin-bottom:10px"><div><span class="kpi-label">Risk</span><div class="kpi-value">${riskCount}</div></div><div><span class="kpi-label">Issue</span><div class="kpi-value">${issueCount}</div></div></div>${listOrEmpty(openIssues.map(i => `<li><span class="badge ${logTypeOf(i) === 'Risk' ? 'red' : 'amber'}">${logTypeOf(i)}</span> ${esc(i.title || i.Title || 'Issue')}</li>`), 'No open risks or issues.')}`; })())}
         ${card('Outstanding Actions', listOrEmpty(pendingTasks.slice(0,12).map(t => `<li>${esc(t.title || t.Title || 'Task')} · ${esc(t.status || t.Status || 'Not started')} · due ${date(t.dueDate || t.DueDate)}</li>`), 'No outstanding tasks.'))}
       </div>`;
   }
@@ -5578,11 +5578,11 @@ WTPages.switchProjView = function(view) {
     const el = root();
     const pid = await selectedProjectId();
     const canCreateIssue = !wtCan || wtCan('Issues', 'edit', Number(pid));
-    el.innerHTML = pageHead('Issues & Escalation', '',
-      ` ${canCreateIssue ? `<button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Issue</button>` : ''}`)
-      + tableWrap(['ID', 'What', 'Where', 'When', 'Impact', 'Reported By', 'Priority', 'Status', 'Actions'], 'issuesBody');
+    el.innerHTML = pageHead('Risk/Issue', '',
+      ` ${canCreateIssue ? `<button class="btn primary" onclick="WTPages.openIssueModal()">+ Log Risk/Issue</button>` : ''}`)
+      + tableWrap(['ID', 'Log Type', 'What', 'Where', 'When', 'Impact', 'Reported By', 'Priority', 'Status', 'Actions'], 'issuesBody');
     if (!pid) {
-      $('#issuesBody').innerHTML = emptyRow(9, 'No project available. Create / open a project first.');
+      $('#issuesBody').innerHTML = emptyRow(10, 'No project available. Create / open a project first.');
       return;
     }
     try {
@@ -5594,6 +5594,7 @@ WTPages.switchProjView = function(view) {
       $('#issuesBody').innerHTML = issues.length ? issues.map(i => `
         <tr>
           <td>${i.id}</td>
+          <td>${esc(i.logType || i.LogType || 'Issue')}</td>
           <td>${esc(i.what || i.title || i.description || '—')}</td>
           <td>${esc(i.location || '—')}</td>
           <td>${esc((i.occurredAt || '').toString().slice(0, 16) || '—')}</td>
@@ -5607,8 +5608,8 @@ WTPages.switchProjView = function(view) {
             ${canUpdateIssues ? `<button class="btn sm" title="Edit issue" onclick="WTPages.openIssueModal(${i.id})"><i class="fa-solid fa-pen"></i> Edit</button>` : ''}
             ${canDeleteIssues ? `<button class="btn sm danger" title="Delete issue" onclick="WTPages.deleteIssue(${i.id}, '${esc(i.title || i.what)}')"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
           `)}</td>
-        </tr>`).join('') : emptyRow(9, 'No issues');
-    } catch (e) { $('#issuesBody').innerHTML = errRow(9, e); }
+        </tr>`).join('') : emptyRow(10, 'No records');
+    } catch (e) { $('#issuesBody').innerHTML = errRow(10, e); }
   }
 
   async function openIssueModal(id = null) {
@@ -5618,11 +5619,13 @@ WTPages.switchProjView = function(view) {
     let priorities = [];
     try { priorities = await WisetrackAPI.getIssuePriorities(); } catch { /* optional */ }
     const local = wtMaldivesDateTimeInput();
-    openModal(existing ? 'Edit Issue / Incident' : 'Log Issue / Incident', `
+    const currentLogType = /risk/i.test(String(existing?.logType || existing?.LogType || '')) ? 'Risk' : 'Issue';
+    openModal(existing ? 'Edit Risk / Issue' : 'Log Risk / Issue', `
       <form onsubmit="WTPages.saveIssue(event)">
         <input type="hidden" id="iProj" value="${pid}">
         <input type="hidden" id="iId" value="${existing?.id || ''}">
         <div class="form-grid">
+          <div class="field"><label>Log Type *</label><select id="iLogType" required><option value="Risk" ${currentLogType === 'Risk' ? 'selected' : ''}>Risk</option><option value="Issue" ${currentLogType === 'Issue' ? 'selected' : ''}>Issue</option></select></div>
           <div class="field full"><label>What is the issue *</label><input id="iWhat" value="${esc(existing?.what || existing?.title || '')}" required placeholder="Short description of the incident"></div>
           <div class="field"><label>Where is the issue *</label><input id="iWhere" value="${esc(existing?.location || '')}" required placeholder="Location / area"></div>
           <div class="field"><label>When it happened (Maldives time) *</label><input id="iWhen" type="datetime-local" value="${existing?.occurredAt ? wtMaldivesDateTimeInput(existing.occurredAt) : local}" required></div>
@@ -5650,10 +5653,11 @@ WTPages.switchProjView = function(view) {
         occurredAt: wtMaldivesInputToIso($('#iWhen').value),
         impact: $('#iImpact').value.trim(),
         priorityId: Number($('#iPri').value) || null,
+        logType: $('#iLogType').value,
         status: $('#iStatus')?.value || 'Open'
       };
       if (id) await WisetrackAPI.updateIssue(id, data); else await WisetrackAPI.createIssue(data);
-      closeModal(); showToast(id ? 'Issue updated' : 'Issue logged. High-priority mail is sent when applicable.'); await pageIssues();
+      closeModal(); showToast(id ? 'Record updated' : 'Record logged. High-priority mail is sent when applicable.'); await pageIssues();
     } catch (err) { showToast(err.message, 'danger'); }
   }
 
@@ -6903,6 +6907,7 @@ WTPages.switchProjView = function(view) {
           <div class="kpi success"><span class="kpi-label">On Track</span><span class="kpi-value" id="pm25OnTrack">…</span></div>
           <div class="kpi warning"><span class="kpi-label">Schedule Risk</span><span class="kpi-value" id="pm25Risk">…</span></div>
           <div class="kpi danger"><span class="kpi-label">Active Alerts</span><span class="kpi-value" id="pm25Exceptions">…</span></div>
+          <div class="kpi warning"><span class="kpi-label">Risk / Issue</span><span class="kpi-value" id="pm25LogTypes">…</span><span class="kpi-sub" id="pm25LogTypesSub">Risk · Issue</span></div>
         </div>
         <section class="card" style="margin-top:18px">
           <div class="card-header"><div><h3 class="card-title">Portfolio totals &amp; reports</h3><div class="card-subtitle">Summary across all projects you are authorized to view.</div></div><a class="btn sm" href="reports.html">Open Reports</a></div>
@@ -6971,6 +6976,13 @@ WTPages.switchProjView = function(view) {
       const allTaskCount = taskRows.reduce((count, task) => count + 1 + countSubtasks(task), 0);
       const completeTaskCount = taskRows.reduce((count, task) => count + (isDone(task) ? 1 : 0) + countCompletedSubtasks(task), 0);
       const openIssues = issueRows.filter(row => !/closed|resolved|complete/i.test(row.status || row.Status || ''));
+      const isRiskLog = row => /^risk$/i.test(String(row.logType || row.LogType || ''));
+      const riskLogCount = issueRows.filter(isRiskLog).length;
+      const issueLogCount = issueRows.length - riskLogCount;
+      const logTypesNode = $('#pm25LogTypes');
+      const logTypesSub = $('#pm25LogTypesSub');
+      if (logTypesNode) logTypesNode.textContent = `${riskLogCount} / ${issueLogCount}`;
+      if (logTypesSub) logTypesSub.textContent = `${riskLogCount} Risk · ${issueLogCount} Issue`;
       let baselineItems = [];
       boqRows.forEach(boq => {
         const versions = rows(boq.versions || boq.Versions);
@@ -7029,7 +7041,7 @@ WTPages.switchProjView = function(view) {
     } catch (err) {
       $('#pm25Portfolio').innerHTML = `<p style="padding:16px;color:var(--danger,#b91c1c)">Portfolio could not be loaded: ${esc(err.message || 'Request failed')}</p>`;
       $('#pm25AttentionCards').innerHTML = '<p style="padding:12px;color:var(--text-muted)">Attention summary is unavailable.</p>';
-      ['pm25ProjectCount','pm25OnTrack','pm25Risk','pm25Exceptions'].forEach(id => { const node = document.getElementById(id); if (node) node.textContent = '—'; });
+      ['pm25ProjectCount','pm25OnTrack','pm25Risk','pm25Exceptions','pm25LogTypes'].forEach(id => { const node = document.getElementById(id); if (node) node.textContent = '—'; });
     }
   }
 

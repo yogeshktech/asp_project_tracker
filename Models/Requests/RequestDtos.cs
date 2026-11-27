@@ -476,6 +476,7 @@ public class CreateIssueRequest
     public DateTime? OccurredAt { get; set; }
     public string? Impact { get; set; }
     public long? PriorityId { get; set; }
+    public string? LogType { get; set; }
     public string? Status { get; set; }
 }
 
