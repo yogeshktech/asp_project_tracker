@@ -394,3 +394,9 @@ public class TaskBulkImportResultDto
     public int Skipped { get; set; }
     public List<string> Errors { get; set; } = new();
 }
+
+public class ImportTasksResultDto
+{
+    public int Tasks { get; set; }
+    public int SubTasks { get; set; }
+}

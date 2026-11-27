@@ -348,6 +348,7 @@ const WisetrackAPI = {
   getTasks(projectId) { return this.get(`/tasks/project/${projectId}`); },
   getTaskHistory(taskId, subTaskId) { return this.get(`/tasks/history/${taskId}${subTaskId ? `?subTaskId=${subTaskId}` : ''}`); },
   createTask(data) { return this.post('/tasks', data); },
+  importTasks(data) { return this.post('/tasks/import', data); },
   updateTask(id, data) { return this.put(`/tasks/${id}`, data); },
   deleteTask(id) { return this.del(`/tasks/${id}`); },
   setTaskDependency(id, data) { return this.put(`/tasks/${id}/dependency`, data); },

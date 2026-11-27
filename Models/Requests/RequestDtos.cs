@@ -419,6 +419,29 @@ public class TaskBulkImportRequest
     public List<CreateTaskUpdateRequest> Updates { get; set; } = new();
 }
 
+public class ImportTasksRequest
+{
+    public long ProjectId { get; set; }
+    public List<ImportTaskRowRequest> Rows { get; set; } = new();
+}
+
+public class ImportTaskRowRequest
+{
+    public string? Task { get; set; }
+    public string? SubTask { get; set; }
+    public string? NestedSubTask { get; set; }
+    public string? FurtherNestedTask { get; set; }
+    public string? AssignedTo { get; set; }
+    public string? StartDate { get; set; }
+    public string? EndDate { get; set; }
+    public string? Status { get; set; }
+    public string? Progress { get; set; }
+    public string? Dependency { get; set; }
+    public string? Milestone { get; set; }
+    public string? Description { get; set; }
+    public string? Remarks { get; set; }
+}
+
 public class CreatePurchaseCostRequest
 {
     public long ProjectId { get; set; }

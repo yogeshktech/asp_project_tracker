@@ -121,6 +121,14 @@ public class TasksController : ControllerBase
     public async Task<IActionResult> BulkImport([FromBody] TaskBulkImportRequest request) =>
         Ok(await _taskService.BulkImportUpdatesAsync(request, UserId));
 
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] ImportTasksRequest request)
+    {
+        try { return Ok(await _taskService.ImportTasksAsync(request, UserId)); }
+        catch (InvalidOperationException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
     [HttpGet("exceptions/{projectId:long}")]
     public async Task<IActionResult> Exceptions(long projectId) =>
         Ok(await _taskService.GetExceptionsAsync(projectId, UserId));

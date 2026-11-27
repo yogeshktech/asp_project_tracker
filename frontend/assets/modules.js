@@ -4528,7 +4528,7 @@ WTPages.switchProjView = function(view) {
             <button class="btn" onclick="WTPages.loadDailyTaskReport()">Load report</button>
             <button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>
             <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
-        : ` ${canCreateTask ? `<button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}`))
+        : ` ${canCreateTask ? `<button class="btn" onclick="WTPages.openTaskImportModal()"><i class="fa-solid fa-file-import"></i> Import</button><button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
       + (kind === 'daily' ? `<div class="card" style="margin-bottom:16px"><h3 class="card-title">Daily progress report</h3><div id="dailyReportContent">Loading report...</div></div>` : '')
       + tableWrap(kind === 'milestones'
@@ -5070,6 +5070,139 @@ WTPages.switchProjView = function(view) {
       }
       closeModal(); showToast(pasted.length ? 'Project milestones added' : 'Template milestones added'); await pageTasks('milestones');
     } catch (err) { showToast(err.message, 'danger'); }
+  }
+
+  function taskImportTemplate() {
+    return [
+      'SR No,Task,Sub-task,Nested sub-task,Further nested task,Assigned To,Start Date,End Date,Status,Progress,Issues,Dependency',
+      '1,Site preparation,,,,System Admin,2026-12-01,2026-12-15,Not Started,0,0,',
+      '2,,Excavation,,,System Admin,2026-12-01,2026-12-10,Not Started,0,0,Site preparation',
+      '3,,,Set out levels,,System Admin,2026-12-02,2026-12-04,Not Started,0,0,Excavation',
+      '4,,,,Confirm soil,System Admin,2026-12-03,2026-12-04,Not Started,0,0,Set out levels',
+      '5,MEP rough-in,,,,System Admin,2026-12-16,2027-01-15,In Progress,10,0,'
+    ].join('\n');
+  }
+
+  function parseTaskImportCsv(text) {
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    const src = String(text || '').replace(/^\uFEFF/, '');
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (quoted) {
+        if (ch === '"' && src[i + 1] === '"') { cell += '"'; i++; }
+        else if (ch === '"') quoted = false;
+        else cell += ch;
+      } else if (ch === '"') quoted = true;
+      else if (ch === ',') { row.push(cell.trim()); cell = ''; }
+      else if (ch === '\n') { row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
+      else if (ch !== '\r') cell += ch;
+    }
+    if (cell.length || row.length) { row.push(cell.trim()); rows.push(row); }
+    return rows.filter(item => item.some(value => value));
+  }
+
+  function mapTaskImportRows(grid) {
+    if (!grid.length) throw new Error('The file is empty.');
+    const headers = grid[0].map(value => String(value || '').trim().toLowerCase());
+    const indexOf = (...names) => headers.findIndex(header => names.includes(header));
+    const columns = {
+      task: indexOf('task', 'title'),
+      subTask: indexOf('sub-task', 'subtask', 'sub task'),
+      nestedSubTask: indexOf('nested sub-task', 'nested subtask', 'nested sub task', 'nested'),
+      furtherNestedTask: indexOf('further nested task', 'further nested tasks', 'further nested', 'further'),
+      assignedTo: indexOf('assigned to', 'assignee', 'owner'),
+      startDate: indexOf('start date', 'start'),
+      endDate: indexOf('end date', 'due date', 'end', 'target date'),
+      status: indexOf('status'),
+      progress: indexOf('progress', 'completion', '% complete'),
+      dependency: indexOf('dependency', 'depends on'),
+      milestone: indexOf('milestone'),
+      description: indexOf('description'),
+      remarks: indexOf('remarks', 'notes')
+    };
+    if (columns.task < 0) throw new Error('The file needs a Task column.');
+    const cell = (row, index) => index < 0 ? '' : String(row[index] ?? '').trim();
+    const rows = grid.slice(1).map(row => ({
+      task: cell(row, columns.task),
+      subTask: cell(row, columns.subTask),
+      nestedSubTask: cell(row, columns.nestedSubTask),
+      furtherNestedTask: cell(row, columns.furtherNestedTask),
+      assignedTo: cell(row, columns.assignedTo),
+      startDate: cell(row, columns.startDate),
+      endDate: cell(row, columns.endDate),
+      status: cell(row, columns.status),
+      progress: cell(row, columns.progress),
+      dependency: cell(row, columns.dependency),
+      milestone: cell(row, columns.milestone),
+      description: cell(row, columns.description),
+      remarks: cell(row, columns.remarks)
+    })).filter(row => row.task || row.subTask || row.nestedSubTask || row.furtherNestedTask);
+    if (!rows.length) throw new Error('The file has headers but no task rows.');
+    return rows;
+  }
+
+  async function readTaskImportGrid(file) {
+    const name = (file.name || '').toLowerCase();
+    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      if (!window.XLSX) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('Excel reader could not be loaded.'));
+          document.head.appendChild(script);
+        });
+      }
+      const book = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const sheet = book.Sheets[book.SheetNames[0]];
+      return window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, dateNF: 'yyyy-mm-dd', defval: '' });
+    }
+    return parseTaskImportCsv(await file.text());
+  }
+
+  async function openTaskImportModal() {
+    const pid = await selectedProjectId();
+    if (!pid) { showToast('Select a project first.', 'danger'); return; }
+    if (typeof wtCan === 'function' && !wtCan('Tasks', 'edit', Number(pid))) {
+      showToast('You do not have permission to create tasks in this project.', 'danger');
+      return;
+    }
+    openModal('Import tasks', `
+      <form onsubmit="WTPages.saveTaskImport(event)">
+        <input type="hidden" id="taskImportProject" value="${pid}">
+        <p style="margin:0 0 10px;color:var(--text-muted);font-size:13px">Import tasks for the selected project. A filled Task cell starts a new task. Leave Task blank and fill Sub-task, Nested sub-task, or Further nested task to add it under the row above.</p>
+        <div class="field"><label>CSV or Excel file *</label><input id="taskImportFile" type="file" accept=".csv,.xlsx,.xls" required></div>
+        <ul style="margin:8px 0 0;padding-left:18px;color:var(--text-muted);font-size:12.5px;line-height:1.55">
+          <li>Required: Task on the first row of each task. Sub-tasks belong to the task above them.</li>
+          <li>Assigned To is the user's full name or email. Leave it blank to assign the row to you.</li>
+          <li>Dates use YYYY-MM-DD. End Date is the due date and cannot be before Start Date.</li>
+          <li>Columns match the table: SR No, Task, Sub-task, Nested sub-task, Further nested task, Assigned To, Start Date, End Date, Status, Progress, Issues, Dependency.</li>
+          <li>Status: Not Started, In Progress, Delayed, or Completed. Blank means Not Started.</li>
+          <li>Progress is 0 to 100. Dependency is the title of another task or sub-task in this file. Issues is left blank; the table shows the project's open issue count.</li>
+        </ul>
+        <div style="margin-top:10px"><button class="btn sm" type="button" onclick="WTPages.downloadTaskImportTemplate()">Download CSV template</button></div>
+        <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Import tasks</button></div>
+      </form>`);
+  }
+
+  function downloadTaskImportTemplate() {
+    wtDownloadText('task-import-template.csv', taskImportTemplate(), 'text/csv;charset=utf-8');
+  }
+
+  async function saveTaskImport(e) {
+    e.preventDefault();
+    const file = $('#taskImportFile')?.files?.[0];
+    if (!file) { showToast('Select a CSV or Excel file.', 'danger'); return; }
+    try {
+      const rows = mapTaskImportRows(await readTaskImportGrid(file));
+      const result = await WisetrackAPI.importTasks({ projectId: Number($('#taskImportProject').value), rows });
+      closeModal();
+      showToast(`Imported ${result.tasks || result.Tasks || 0} task(s) and ${result.subTasks || result.SubTasks || 0} sub-task(s).`);
+      await pageTasks('planning');
+    } catch (err) { showToast(err.message || 'Task import failed.', 'danger'); }
   }
 
   async function openTaskModal(taskId = null) {
@@ -7128,7 +7261,7 @@ WTPages.switchProjView = function(view) {
     openPurchaseModal, savePurchase, openActualModal, saveActual, deleteCost, showActualsForDate, showActualsForCc, saveVarianceExplanation, editVarianceExplanation, saveVarianceExplanationEdit, deleteVarianceExplanation,
     boqFromMaster, saveBoqFromMaster, filterBoqMasterItems, calcBoqMasterTotal, calcBoqRevisionTotals, toggleBoqMasterLine, downloadBoqAttachment, boqImport, previewBoqImportFile, changeBoqImportMapping, saveBoqImport, downloadBoqImportTemplate, viewBoq, viewBoqVersion, editBoq, saveBoqEdit, editBoqVersionRemarks, saveBoqVersionRemarks, deleteBoqVersion, deleteBoq, createBoqRevision, saveBoqRevisionItem, saveBoqRevisionItems, removeBoqRevisionItem, markBoqRevisionItemRemoved, setBoqBaseline, downloadReport,
     openMilestoneModal, saveMilestone, deleteMilestone, previewMilestoneEvidenceFiles, removeMilestoneEvidenceFile, openMilestoneTemplateModal, saveMilestoneTemplate, saveCurrentMilestonesAsTemplate, importMilestoneTemplateFile, cloneMilestoneTemplate,
-    openTaskModal, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, previewTaskUpdateFiles, removeTaskUpdateFile, downloadTaskEvidence, openTaskHistory, openTaskDetails, loadDailyTaskReport,
+    openTaskModal, openTaskImportModal, downloadTaskImportTemplate, saveTaskImport, saveTask, deleteTask, deleteSubTask, openTaskUpdateModal, onUpdateTaskChange, saveTaskUpdate, previewTaskUpdateFiles, removeTaskUpdateFile, downloadTaskEvidence, openTaskHistory, openTaskDetails, loadDailyTaskReport,
     openDependencyModal, saveDependency, focusDependency,
     openCreateSubTaskModal: (p, s, editId) => openCreateSubTaskModal(p, s, editId),
     saveSubTask: (e) => handleCreateSubTask(e),

@@ -1,3 +1,4 @@
+using System.Globalization;
 using project_tracker_madhu.Common;
 using project_tracker_madhu.DatabaseLayer.Tasks;
 using project_tracker_madhu.DatabaseLayer.Users;
@@ -23,6 +24,7 @@ public interface ITaskService
     Task DeleteSubTaskAsync(long subTaskId, long userId);
     Task<TaskUpdate> AddDailyUpdateAsync(CreateTaskUpdateRequest request, long? userId);
     Task<TaskBulkImportResultDto> BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId);
+    Task<ImportTasksResultDto> ImportTasksAsync(ImportTasksRequest request, long userId);
     Task<List<ExceptionItemDto>> GetExceptionsAsync(long projectId, long userId);
     Task<DailySiteReportDto> GetDailyReportAsync(long projectId, DateOnly? date, long userId);
     Task SetTaskDependencyAsync(long taskId, SetTaskDependencyRequest request, long userId);
@@ -394,7 +396,10 @@ public class TaskService : ITaskService
             DependsOnTaskId = request.DependsOnTaskId,
             DependsOnSubTaskId = request.DependsOnSubTaskId,
             Title = request.Title,
+            Description = request.Description,
+            CompletionEvidence = request.CompletionEvidence,
             AssignedTo = request.AssignedTo ?? parent.AssignedTo ?? userId,
+            StartDate = request.StartDate,
             DueDate = request.DueDate,
             Remarks = request.Remarks,
             Status = status,
@@ -539,6 +544,238 @@ public class TaskService : ITaskService
             Remarks = request.Remarks,
             CreatedAt = DateTime.UtcNow
         });
+    }
+
+    public async Task<ImportTasksResultDto> ImportTasksAsync(ImportTasksRequest request, long userId)
+    {
+        if (request.ProjectId <= 0) throw new InvalidOperationException("Select a project before importing tasks.");
+        await _permissions.EnsureModuleAsync(userId, request.ProjectId, "Tasks", "edit");
+        var rows = request.Rows ?? new List<ImportTaskRowRequest>();
+        if (rows.Count == 0) throw new InvalidOperationException("The import file has no task rows.");
+        if (rows.Count > 2000) throw new InvalidOperationException("Import up to 2000 rows at a time.");
+
+        var milestones = await _repository.GetMilestonesAsync(request.ProjectId);
+        var users = (await _users.GetAllAsync()).Where(u => u.IsActive).ToList();
+        var planned = new List<ImportNode>();
+        var hasTask = false;
+        var hasSub = false;
+        var hasNested = false;
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var row = rows[index];
+            var rowNo = index + 1;
+            var taskTitle = Clean(row.Task);
+            var subTitle = Clean(row.SubTask);
+            var nestedTitle = Clean(row.NestedSubTask);
+            var furtherTitle = Clean(row.FurtherNestedTask);
+            if (taskTitle == null && subTitle == null && nestedTitle == null && furtherTitle == null)
+                continue;
+
+            var assignedTo = ResolveImportUser(row.AssignedTo, users, userId, rowNo);
+            var startDate = ParseImportDate(row.StartDate, rowNo, "Start Date");
+            var endDate = ParseImportDate(row.EndDate, rowNo, "End Date");
+            if (startDate.HasValue && endDate.HasValue && startDate.Value > endDate.Value)
+                throw new InvalidOperationException($"Row {rowNo}: start date must be on or before the end date.");
+            var status = NormalizeMilestoneStatus(row.Status);
+            var progress = ParseImportProgress(row.Progress, rowNo);
+            var dependency = Clean(row.Dependency);
+            var description = Clean(row.Description);
+            var remarks = Clean(row.Remarks);
+            long? milestoneId = null;
+            var milestoneName = Clean(row.Milestone);
+            if (taskTitle != null && milestoneName != null)
+            {
+                var milestone = milestones.FirstOrDefault(m => m.Name.Equals(milestoneName, StringComparison.OrdinalIgnoreCase));
+                if (milestone == null)
+                    throw new InvalidOperationException($"Row {rowNo}: milestone \"{milestoneName}\" was not found on this project.");
+                milestoneId = milestone.Id;
+            }
+
+            if (taskTitle != null)
+            {
+                planned.Add(new ImportNode(0, taskTitle, assignedTo, startDate, endDate, status, milestoneId,
+                    subTitle == null ? description : null, subTitle == null ? remarks : null, progress, subTitle == null ? dependency : null, rowNo));
+                hasTask = true;
+                hasSub = false;
+                hasNested = false;
+            }
+            if (subTitle != null || nestedTitle != null || furtherTitle != null)
+            {
+                if (!hasTask) throw new InvalidOperationException($"Row {rowNo}: add a Task before a sub-task.");
+            }
+            if (subTitle != null)
+            {
+                planned.Add(new ImportNode(1, subTitle, assignedTo, startDate, endDate, status, null,
+                    nestedTitle == null ? description : null, nestedTitle == null ? remarks : null, progress, nestedTitle == null ? dependency : null, rowNo));
+                hasSub = true;
+                hasNested = false;
+            }
+            if (nestedTitle != null)
+            {
+                if (!hasSub) throw new InvalidOperationException($"Row {rowNo}: add a Sub-task before a nested sub-task.");
+                planned.Add(new ImportNode(2, nestedTitle, assignedTo, startDate, endDate, status, null,
+                    furtherTitle == null ? description : null, furtherTitle == null ? remarks : null, progress, furtherTitle == null ? dependency : null, rowNo));
+                hasNested = true;
+            }
+            if (furtherTitle != null)
+            {
+                if (!hasNested) throw new InvalidOperationException($"Row {rowNo}: add a nested sub-task before a further nested task.");
+                planned.Add(new ImportNode(3, furtherTitle, assignedTo, startDate, endDate, status, null, description, remarks, progress, dependency, rowNo));
+            }
+        }
+
+        if (planned.Count == 0) throw new InvalidOperationException("The import file has no task titles.");
+        if (planned.Any(node => node.Dependency != null) && !await _permissions.IsAdminAsync(userId))
+            throw new InvalidOperationException("Only Admin can set a dependency.");
+
+        var result = new ImportTasksResultDto();
+        ProjectTask? lastTask = null;
+        SubTask? lastSub = null;
+        SubTask? lastNested = null;
+        foreach (var node in planned)
+        {
+            if (node.Level == 0)
+            {
+                lastTask = await _repository.AddTaskAsync(new ProjectTask
+                {
+                    ProjectId = request.ProjectId,
+                    MilestoneId = node.MilestoneId,
+                    Title = node.Title,
+                    Description = node.Description,
+                    AssignedTo = node.AssignedTo,
+                    StartDate = node.StartDate,
+                    DueDate = node.EndDate,
+                    Remarks = node.Remarks,
+                    Status = node.Status,
+                    CompletionPercent = node.Progress,
+                    CreatedAt = DateTime.UtcNow
+                });
+                lastSub = null;
+                lastNested = null;
+                result.Tasks++;
+                node.CreatedTaskId = lastTask.Id;
+                await _audit.LogAsync(userId, "Import", "Task", lastTask.Id);
+                continue;
+            }
+
+            var parentSubTaskId = node.Level == 1 ? null : node.Level == 2 ? lastSub?.Id : lastNested?.Id;
+            var created = await AddImportedSubTask(lastTask!, parentSubTaskId, node.Title, node.AssignedTo, node.StartDate, node.EndDate, node.Status, node.Description, node.Remarks, node.Progress, userId);
+            if (node.Level == 1) { lastSub = created; lastNested = null; }
+            else if (node.Level == 2) lastNested = created;
+            node.CreatedSubTaskId = created.Id;
+            result.SubTasks++;
+        }
+        await ApplyImportedDependenciesAsync(request.ProjectId, planned, userId);
+        return result;
+    }
+
+    private sealed record ImportNode(int Level, string Title, long? AssignedTo, DateOnly? StartDate, DateOnly? EndDate, string Status, long? MilestoneId, string? Description, string? Remarks, decimal Progress, string? Dependency, int RowNo)
+    {
+        public long? CreatedTaskId { get; set; }
+        public long? CreatedSubTaskId { get; set; }
+    }
+
+    private async Task ApplyImportedDependenciesAsync(long projectId, List<ImportNode> planned, long userId)
+    {
+        var linked = planned.Where(node => node.Dependency != null).ToList();
+        if (linked.Count == 0) return;
+        var existing = await _repository.GetTasksAsync(projectId);
+        foreach (var node in linked)
+        {
+            var targetName = node.Dependency!;
+            var importedMatches = planned.Where(item =>
+                item.Title.Equals(targetName, StringComparison.OrdinalIgnoreCase)
+                && item != node
+                && (item.CreatedTaskId.HasValue || item.CreatedSubTaskId.HasValue)).ToList();
+            long? dependsOnTaskId = null;
+            long? dependsOnSubTaskId = null;
+            if (importedMatches.Count == 1)
+            {
+                dependsOnTaskId = importedMatches[0].CreatedSubTaskId.HasValue ? null : importedMatches[0].CreatedTaskId;
+                dependsOnSubTaskId = importedMatches[0].CreatedSubTaskId;
+            }
+            else if (importedMatches.Count > 1)
+            {
+                throw new InvalidOperationException($"Row {node.RowNo}: dependency \"{targetName}\" matches more than one imported row.");
+            }
+            else
+            {
+                var taskMatches = existing.Where(task => task.Title.Equals(targetName, StringComparison.OrdinalIgnoreCase)).ToList();
+                var subMatches = existing.SelectMany(task => task.SubTasks ?? Array.Empty<SubTask>())
+                    .Where(sub => sub.Title.Equals(targetName, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (taskMatches.Count + subMatches.Count == 0)
+                    throw new InvalidOperationException($"Row {node.RowNo}: dependency \"{targetName}\" was not found. Use the exact task or sub-task title.");
+                if (taskMatches.Count + subMatches.Count > 1)
+                    throw new InvalidOperationException($"Row {node.RowNo}: dependency \"{targetName}\" matches more than one task.");
+                if (subMatches.Count == 1) dependsOnSubTaskId = subMatches[0].Id;
+                else dependsOnTaskId = taskMatches[0].Id;
+            }
+
+            var request = new SetTaskDependencyRequest { DependsOnTaskId = dependsOnTaskId, DependsOnSubTaskId = dependsOnSubTaskId };
+            if (node.CreatedSubTaskId.HasValue) await SetSubTaskDependencyAsync(node.CreatedSubTaskId.Value, request, userId);
+            else if (node.CreatedTaskId.HasValue) await SetTaskDependencyAsync(node.CreatedTaskId.Value, request, userId);
+        }
+    }
+
+    private async Task<SubTask> AddImportedSubTask(ProjectTask parent, long? parentSubTaskId, string title, long? assignedTo,
+        DateOnly? startDate, DateOnly? endDate, string status, string? description, string? remarks, decimal progress, long actorUserId)
+    {
+        var sub = await _repository.AddSubTaskAsync(new SubTask
+        {
+            TaskId = parent.Id,
+            ParentSubTaskId = parentSubTaskId,
+            Title = title,
+            Description = description,
+            AssignedTo = assignedTo ?? parent.AssignedTo,
+            StartDate = startDate,
+            DueDate = endDate,
+            Status = status,
+            CompletionPercent = progress,
+            Remarks = remarks,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _audit.LogAsync(actorUserId, "Import", parentSubTaskId == null ? "SubTask" : "ChildTask", sub.Id);
+        return sub;
+    }
+
+    private static long? ResolveImportUser(string? name, List<User> users, long fallbackUserId, int rowNo)
+    {
+        var text = Clean(name);
+        if (text == null) return fallbackUserId;
+        var matches = users.Where(u =>
+            u.FullName.Equals(text, StringComparison.OrdinalIgnoreCase) ||
+            u.Email.Equals(text, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (matches.Count == 1) return matches[0].Id;
+        if (matches.Count > 1)
+            throw new InvalidOperationException($"Row {rowNo}: more than one user matches \"{text}\". Use the email address.");
+        throw new InvalidOperationException($"Row {rowNo}: assigned user \"{text}\" was not found. Use the user's full name or email.");
+    }
+
+    private static decimal ParseImportProgress(string? value, int rowNo)
+    {
+        var text = Clean(value)?.TrimEnd('%').Trim();
+        if (text == null) return 0;
+        if (!decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var progress) || progress < 0 || progress > 100)
+            throw new InvalidOperationException($"Row {rowNo}: Progress \"{value}\" must be a number from 0 to 100.");
+        return progress;
+    }
+
+    private static DateOnly? ParseImportDate(string? value, int rowNo, string label)
+    {
+        var text = Clean(value);
+        if (text == null) return null;
+        var formats = new[] { "yyyy-MM-dd", "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "yyyy/MM/dd" };
+        if (DateOnly.TryParseExact(text, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            return date;
+        if (text.Length >= 10 && DateOnly.TryParseExact(text[..10], formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+            return date;
+        throw new InvalidOperationException($"Row {rowNo}: {label} \"{text}\" is not a valid date. Use YYYY-MM-DD.");
+    }
+
+    private static string? Clean(string? value)
+    {
+        var text = value?.Trim();
+        return string.IsNullOrEmpty(text) ? null : text;
     }
 
     public async Task<TaskBulkImportResultDto> BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId)
