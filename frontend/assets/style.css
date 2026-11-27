@@ -1019,6 +1019,12 @@ header.topbar {
   gap: 6px;
 }
 
+.kpi-log { grid-column: span 2; }
+.kpi-status-line { font-size: 15px; font-weight: 800; margin-top: 8px; }
+.kpi-status-meta { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+.perm-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.perm-action { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+
 /* ==========================================================================
    8. CARDS, GRIDS & CONTAINERS
    ========================================================================== */
@@ -3416,6 +3422,7 @@ button.btn[disabled] {
   .kpis {
     grid-template-columns: 1fr;
   }
+  .kpi-log { grid-column: auto; }
 }
 
 /* Keep the shared header controls on one horizontal row. */

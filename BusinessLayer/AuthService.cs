@@ -47,7 +47,8 @@ public class AuthService : IAuthService
                 CanView = p.CanView,
                 CanEdit = p.CanEdit,
                 CanUpdate = p.CanUpdate,
-                CanDelete = p.CanDelete
+                CanDelete = p.CanDelete,
+                FieldPermissions = string.IsNullOrWhiteSpace(p.FieldPermissionsJson) ? new() : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(p.FieldPermissionsJson) ?? new()
             }).ToList();
         return new LoginResponseDto
         {

@@ -140,8 +140,8 @@ public class BudgetService : IBudgetService
         var budget = await _repository.GetAsync(budgetId) ?? throw new InvalidOperationException("Budget not found");
         if (totalAmount <= 0) throw new InvalidOperationException("Approved budget must be greater than zero.");
         if (string.IsNullOrWhiteSpace(remarks)) throw new InvalidOperationException("Revision reason is required.");
-        if (userId.HasValue && !await _permissions.CanUpdateModuleAsync(userId.Value, budget.ProjectId, "Budgets"))
-            throw new UnauthorizedAccessException("No permission.");
+        if (userId.HasValue && !await _permissions.CanPerformActionAsync(userId.Value, budget.ProjectId, "Budgets", "revise"))
+            throw new UnauthorizedAccessException("No revise permission on Budgets.");
         var allocated = await _db.BudgetAllocations.Where(a => a.BudgetId == budgetId).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
         if (totalAmount < allocated) throw new InvalidOperationException("Approved budget cannot be lower than the amount already allocated.");
 
@@ -198,7 +198,7 @@ public class BudgetService : IBudgetService
         if (projectId <= 0) throw new InvalidOperationException("Project is required for a Cost Centre budget.");
         if (requests.Count == 0) throw new InvalidOperationException("Import file contains no Cost Centre rows.");
         if (requests.Any(row => row.BudgetAmount < 0)) throw new InvalidOperationException("Budget Amount cannot be negative.");
-        await _permissions.EnsureModuleAsync(userId, projectId, "Budgets", "edit");
+        await _permissions.EnsureActionAsync(userId, projectId, "Budgets", "import");
 
         await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         await EnsureCostCenterBudgetTotalAsync(projectId, requests.Sum(row => row.BudgetAmount));
@@ -305,7 +305,7 @@ public class BudgetService : IBudgetService
     {
         var cc = await _repository.GetCostCenterAsync(id);
         if (cc == null) return null;
-        if (cc.ProjectId.HasValue) await _permissions.EnsureModuleAsync(userId, cc.ProjectId.Value, "Budgets", "update");
+        if (cc.ProjectId.HasValue) await _permissions.EnsureActionAsync(userId, cc.ProjectId.Value, "Budgets", "revise");
         if (request.BudgetAmount < 0) throw new InvalidOperationException("Budget Amount cannot be negative.");
         var reason = request.Remarks?.Trim();
         if (string.IsNullOrWhiteSpace(reason)) throw new InvalidOperationException("Revision reason is required.");
@@ -408,7 +408,7 @@ public class BudgetService : IBudgetService
         if (!belongsToBudgetProject && !isChildProjectCenter)
             throw new InvalidOperationException("A budget can only be allocated to its project or a direct sub-project cost center.");
         if (request.AllocatedAmount <= 0) throw new InvalidOperationException("Allocated amount must be greater than zero.");
-        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, budget.ProjectId, "Budgets", "update");
+        if (userId.HasValue) await _permissions.EnsureActionAsync(userId.Value, budget.ProjectId, "Budgets", "allocate");
         var alreadyAllocated = await _db.BudgetAllocations.Where(a => a.BudgetId == budget.Id).SumAsync(a => (decimal?)a.AllocatedAmount) ?? 0;
         if (alreadyAllocated + request.AllocatedAmount > budget.ApprovedAmount)
             throw new InvalidOperationException("Allocations cannot exceed the approved budget baseline.");
@@ -504,7 +504,7 @@ public class BudgetService : IBudgetService
             ?? throw new InvalidOperationException("Target project not found.");
         if (target.ParentProjectId != source.Id)
             throw new InvalidOperationException("Budget can only be allocated to a direct child project.");
-        await _permissions.EnsureModuleAsync(userId, source.Id, "Budgets", "update");
+        await _permissions.EnsureActionAsync(userId, source.Id, "Budgets", "allocate");
 
         var summary = await GetProjectAllocationSummaryAsync(userId, source.Id);
         if (amount > summary.Available)

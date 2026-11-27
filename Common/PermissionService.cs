@@ -17,6 +17,8 @@ public interface IPermissionService
     Task<bool> CanViewAnyModuleAsync(long userId, string module);
     Task<Dictionary<string, string>> GetProjectFieldPermissionsAsync(long userId, long projectId);
     Task EnsureModuleAsync(long userId, long projectId, string module, string right);
+    Task<bool> CanPerformActionAsync(long userId, long projectId, string module, string action);
+    Task EnsureActionAsync(long userId, long projectId, string module, string action);
     Task<List<long>> GetAccessibleProjectIdsAsync(long userId);
     Task<bool> IsProjectManagerAsync(long userId, long projectId);
 }
@@ -108,6 +110,55 @@ public class PermissionService : IPermissionService
             throw new UnauthorizedAccessException($"No {right} permission on {module}.");
     }
 
+    public async Task<bool> CanPerformActionAsync(long userId, long projectId, string module, string action)
+    {
+        if (await IsAdminAsync(userId)) return true;
+        if (projectId > 0)
+        {
+            var resortId = await _db.Projects.Where(p => p.Id == projectId).Select(p => p.ResortId).FirstOrDefaultAsync();
+            if (resortId <= 0 || !await CanAccessResortAsync(userId, resortId)) return false;
+        }
+        if (!IsGlobalModule(module) && projectId > 0 && !await ExternalUserCanAccessProjectAsync(userId, projectId)) return false;
+        var rows = await MatchingPermissions(userId, projectId, module);
+        if (rows.Count == 0) return false;
+        var key = "action:" + action.Trim().ToLowerInvariant();
+        var anyAllow = false;
+        var anyDeny = false;
+        var anyInherit = false;
+        foreach (var row in rows)
+        {
+            anyInherit |= InheritsAction(row, action);
+            if (string.IsNullOrWhiteSpace(row.FieldPermissionsJson)) continue;
+            try
+            {
+                var fields = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(row.FieldPermissionsJson);
+                if (fields != null && fields.TryGetValue(key, out var value))
+                {
+                    if (string.Equals(value, "allow", StringComparison.OrdinalIgnoreCase)) anyAllow = true;
+                    if (string.Equals(value, "deny", StringComparison.OrdinalIgnoreCase)) anyDeny = true;
+                }
+            }
+            catch (System.Text.Json.JsonException) { }
+        }
+        if (anyAllow) return true;
+        if (anyDeny) return false;
+        return anyInherit;
+    }
+
+    public async Task EnsureActionAsync(long userId, long projectId, string module, string action)
+    {
+        if (!await CanPerformActionAsync(userId, projectId, module, action))
+            throw new UnauthorizedAccessException($"No {action} permission on {module}.");
+    }
+
+    private static bool InheritsAction(Models.Entities.ProjectPermission row, string action) =>
+        action.Trim().ToLowerInvariant() switch
+        {
+            "allocate" or "revise" => row.CanUpdate,
+            "export" => row.CanView,
+            _ => row.CanEdit
+        };
+
     public async Task<List<long>> GetAccessibleProjectIdsAsync(long userId)
     {
         if (await IsAdminAsync(userId))
@@ -168,14 +219,27 @@ public class PermissionService : IPermissionService
         }
         if (!IsGlobalModule(module) && projectId > 0 && !await ExternalUserCanAccessProjectAsync(userId, projectId)) return false;
 
+        var rows = await MatchingPermissions(userId, projectId, module);
+
+        return right.ToLowerInvariant() switch
+        {
+            "view" => rows.Any(p => p.CanView),
+            "edit" => rows.Any(p => p.CanEdit),
+            "update" => rows.Any(p => p.CanUpdate),
+            "delete" => rows.Any(p => p.CanDelete),
+            _ => false
+        };
+    }
+
+    private async Task<List<Models.Entities.ProjectPermission>> MatchingPermissions(long userId, long projectId, string module)
+    {
         IQueryable<Models.Entities.ProjectPermission> q = _db.ProjectPermissions
             .Where(p => p.UserId == userId && p.Module == module);
 
         if (IsGlobalModule(module))
-        {
             q = q.Where(p => p.ProjectId == null && p.ResortId == null);
-        }
-        else if (projectId <= 0) q = q.Where(p => false);
+        else if (projectId <= 0)
+            q = q.Where(p => false);
         else
         {
             var chain = await GetProjectAndAncestorIdsAsync(projectId);
@@ -184,14 +248,7 @@ public class PermissionService : IPermissionService
                 (p.ProjectId == null && p.ResortId == resortId));
         }
 
-        return right.ToLowerInvariant() switch
-        {
-            "view" => await q.AnyAsync(p => p.CanView),
-            "edit" => await q.AnyAsync(p => p.CanEdit),
-            "update" => await q.AnyAsync(p => p.CanUpdate),
-            "delete" => await q.AnyAsync(p => p.CanDelete),
-            _ => false
-        };
+        return await q.ToListAsync();
     }
 
     public async Task<Dictionary<string, string>> GetProjectFieldPermissionsAsync(long userId, long projectId)

@@ -532,8 +532,8 @@ public class ProjectService : IProjectService
 
     public async Task<List<Milestone>> CloneTemplateAsync(long userId, CloneTemplateRequest request)
     {
-        if (!await _permissions.CanEditModuleAsync(userId, request.ProjectId, "Tasks"))
-            throw new UnauthorizedAccessException("No permission.");
+        if (!await _permissions.CanPerformActionAsync(userId, request.ProjectId, "Tasks", "import"))
+            throw new UnauthorizedAccessException("No import permission on Tasks.");
         var templates = await _repository.GetTemplatesAsync();
         var template = templates.FirstOrDefault(t => t.Id == request.TemplateId)
             ?? throw new InvalidOperationException("Template not found");

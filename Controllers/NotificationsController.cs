@@ -28,7 +28,7 @@ public class NotificationsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Send([FromBody] CreateNotificationRequest request)
     {
-        if (!await _permissions.CanEditModuleAsync(UserId, 0, "Notifications")) return Forbid();
+        if (!await _permissions.CanPerformActionAsync(UserId, 0, "Notifications", "send")) return Forbid();
         return Ok(await _notificationService.SendAsync(request));
     }
 

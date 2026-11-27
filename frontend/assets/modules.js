@@ -454,6 +454,39 @@
     { id: 'update', label: 'Edit' },
     { id: 'delete', label: 'Delete' }
   ];
+  const MODULE_ACTIONS = {
+    Tasks: [{ id: 'import', label: 'Import' }, { id: 'export', label: 'Export', inherit: 'view' }],
+    BOQ: [{ id: 'import', label: 'Import' }],
+    Budgets: [{ id: 'import', label: 'Import' }, { id: 'allocate', label: 'Allocate', inherit: 'update' }, { id: 'revise', label: 'Revise', inherit: 'update' }],
+    Costs: [{ id: 'import', label: 'Import' }],
+    Reports: [{ id: 'export', label: 'Export', inherit: 'view' }],
+    Closure: [{ id: 'export', label: 'Handover report', inherit: 'view' }],
+    Notifications: [{ id: 'send', label: 'Send' }]
+  };
+
+  function moduleActions(module) {
+    return MODULE_ACTIONS[module] || [];
+  }
+
+  function actionIsOn(rights, fields, action) {
+    const stored = fields?.['action:' + action.id];
+    if (stored === 'allow') return true;
+    if (stored === 'deny') return false;
+    return !!(rights && rights[action.inherit || 'edit']);
+  }
+
+  function issueStatusCounts(rows) {
+    const order = ['Open', 'In Progress', 'Resolved', 'Closed'];
+    const counts = new Map(order.map(name => [name, 0]));
+    (rows || []).forEach(row => {
+      const raw = String(row.status || row.Status || 'Open').trim() || 'Open';
+      const known = order.find(name => name.toLowerCase() === raw.toLowerCase());
+      const label = known || raw;
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    const extras = [...counts.keys()].filter(name => !order.includes(name));
+    return [...order, ...extras].map(name => `${name} ${counts.get(name) || 0}`).join(' · ');
+  }
   const PROJECT_FIELDS = [
     { key: 'clientName', label: 'Client name' }, { key: 'sponsor', label: 'Sponsor' },
     { key: 'currency', label: 'Currency' }, { key: 'ownerId', label: 'Project owner' },
@@ -661,18 +694,22 @@
           <tr>
             <th>Category</th>
             ${PERM_RIGHTS.map(r => `<th class="center">${esc(r.label)}</th>`).join('')}
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(row => {
             const key = row.resortId ? resortPermKey(row.resortId, row.module) : permKey(row.projectId, row.module);
             const cur = st.rights[key] || { view: false, edit: false, update: false, delete: false, fields: {} };
+            const actions = moduleActions(row.module);
+            const actionCell = actions.length ? `<div class="perm-actions">${actions.map(action => `<label class="perm-action"><input type="checkbox" data-pid="${row.projectId}" data-resortid="${row.resortId || ''}" data-module="${row.module}" data-action="${action.id}" ${actionIsOn(cur, cur.fields, action) ? 'checked' : ''} onchange="WTPages.onUserPermToggle(this)"> ${esc(action.label)}</label>`).join('')}</div>` : '<span style="color:var(--text-muted)">—</span>';
             return `<tr>
               <td>${esc(row.name)}</td>
               ${PERM_RIGHTS.map(r => `<td class="center">
                 <input type="checkbox" class="perm-switch" data-pid="${row.projectId}" data-resortid="${row.resortId || ''}" data-module="${row.module}" data-right="${r.id}" ${cur[r.id] ? 'checked' : ''} onchange="WTPages.onUserPermToggle(this)">
               </td>`).join('')}
-            </tr>${row.module === 'Projects' && row.projectId ? `<tr><td colspan="${PERM_RIGHTS.length + 1}"><strong>Project field access</strong><div class="project-field-rights">${PROJECT_FIELDS.map(f => {
+              <td>${actionCell}</td>
+            </tr>${row.module === 'Projects' && row.projectId ? `<tr><td colspan="${PERM_RIGHTS.length + 2}"><strong>Project field access</strong><div class="project-field-rights">${PROJECT_FIELDS.map(f => {
               const value = cur.fields?.[f.key];
               const canView = value !== 'hidden';
               const canEdit = value === 'edit' || (!value && cur.update);
@@ -752,13 +789,23 @@
       st.assignedResorts.push(resortId);
       renderResortPermChips();
     }
-    if (!st.rights[key]) st.rights[key] = { view: false, edit: false, update: false, delete: false };
+    if (!st.rights[key]) st.rights[key] = { view: false, edit: false, update: false, delete: false, fields: {} };
+    if (!st.rights[key].fields) st.rights[key].fields = {};
+    if (el.dataset.action) {
+      st.rights[key].fields['action:' + el.dataset.action] = el.checked ? 'allow' : 'deny';
+      if (el.checked) st.rights[key].view = true;
+      renderPermTable();
+      return;
+    }
     st.rights[key][right] = !!el.checked;
     if (right !== 'view' && el.checked) st.rights[key].view = true;
     if (right === 'view' && !el.checked) {
       st.rights[key].edit = false;
       st.rights[key].update = false;
       st.rights[key].delete = false;
+      Object.keys(st.rights[key].fields).forEach(name => {
+        if (name.startsWith('action:')) st.rights[key].fields[name] = 'deny';
+      });
     }
     renderPermTable();
   }
@@ -901,15 +948,15 @@
         + '<div class="card"><p>You do not have access to permission management.</p></div>';
       return;
     }
-    el.innerHTML = pageHead('Permissions', 'Manage each user’s global and project permissions by module.')
+    el.innerHTML = pageHead('Permissions', 'Manage each user’s module rights, including Import, Export, Allocate, Revise, and Send in addition to view, create, edit, and delete.')
       + `<div class="card" style="margin-bottom:16px"><div class="form-grid">
           <div class="field"><label>User *</label><select id="permissionPageUser" onchange="WTPages.loadPermissionPageMatrix()"></select></div>
           <div class="field"><label>Project *</label><select id="permissionPageProject" onchange="WTPages.loadPermissionPageMatrix()"></select></div>
         </div></div>
         <div id="permissionPageAdminNotice"></div>
         <div class="grid g2">
-          <div class="card"><h3 class="card-title">Global modules</h3><p class="card-subtitle">These permissions apply across the system.</p><div class="table-wrap"><table class="table"><thead><tr><th>Module</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th></tr></thead><tbody id="permissionGlobalRows"></tbody></table></div></div>
-          <div class="card"><h3 class="card-title">Project modules</h3><p class="card-subtitle">Set rights for the selected project.</p><div class="table-wrap"><table class="table"><thead><tr><th>Module</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th></tr></thead><tbody id="permissionProjectRows"></tbody></table></div></div>
+          <div class="card"><h3 class="card-title">Global modules</h3><p class="card-subtitle">These permissions apply across the system.</p><div class="table-wrap"><table class="table"><thead><tr><th>Module</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th><th>Actions</th></tr></thead><tbody id="permissionGlobalRows"></tbody></table></div></div>
+          <div class="card"><h3 class="card-title">Project modules</h3><p class="card-subtitle">Set rights for the selected project. Action buttons stay with Create until you turn them off.</p><div class="table-wrap"><table class="table"><thead><tr><th>Module</th><th>View</th><th>Create</th><th>Edit</th><th>Delete</th><th>Actions</th></tr></thead><tbody id="permissionProjectRows"></tbody></table></div></div>
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:16px"><button id="permissionPageSave" class="btn primary" onclick="WTPages.savePermissionPageMatrix()">Save permissions</button></div>`;
     try {
@@ -941,7 +988,17 @@
         ? permFlag(row.grant, 'view') || permFlag(row.grant, 'edit') || permFlag(row.grant, 'update') || permFlag(row.grant, 'delete')
         : permFlag(row.grant, right.id);
       return `<td class="center"><input type="checkbox" class="permission-page-right" data-scope="${scope}" data-module="${esc(row.module)}" data-right="${right.id}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} onchange="WTPages.onPermissionPageToggle(this)"></td>`;
-    }).join('')}</tr>`).join('') || '<tr><td colspan="5">No modules available.</td></tr>';
+    }).join('')}<td>${(() => {
+      const actions = moduleActions(row.module);
+      if (!actions.length) return '<span style="color:var(--text-muted)">—</span>';
+      const fields = row.grant?.fieldPermissions || row.grant?.FieldPermissions || {};
+      const flags = {
+        view: permFlag(row.grant, 'view'),
+        edit: permFlag(row.grant, 'edit'),
+        update: permFlag(row.grant, 'update')
+      };
+      return `<div class="perm-actions">${actions.map(action => `<label class="perm-action"><input type="checkbox" class="permission-page-action" data-scope="${scope}" data-module="${esc(row.module)}" data-action="${action.id}" ${actionIsOn(flags, fields, action) ? 'checked' : ''} ${disabled ? 'disabled' : ''} onchange="WTPages.onPermissionPageToggle(this)"> ${esc(action.label)}</label>`).join('')}</div>`;
+    })()}</td></tr>`).join('') || '<tr><td colspan="6">No modules available.</td></tr>';
   }
 
   async function loadPermissionPageMatrix() {
@@ -977,15 +1034,28 @@
     const grants = new Map();
     document.querySelectorAll('.permission-page-right').forEach(input => {
       const key = `${input.dataset.scope}|${input.dataset.module}`;
-      if (!grants.has(key)) grants.set(key, { scope: input.dataset.scope, module: input.dataset.module, view: false, edit: false, update: false, delete: false });
+      if (!grants.has(key)) grants.set(key, { scope: input.dataset.scope, module: input.dataset.module, view: false, edit: false, update: false, delete: false, actions: {} });
       grants.get(key)[input.dataset.right] = input.checked;
+    });
+    document.querySelectorAll('.permission-page-action').forEach(input => {
+      const key = `${input.dataset.scope}|${input.dataset.module}`;
+      if (!grants.has(key)) grants.set(key, { scope: input.dataset.scope, module: input.dataset.module, view: false, edit: false, update: false, delete: false, actions: {} });
+      const row = grants.get(key);
+      row.actions['action:' + input.dataset.action] = input.checked ? 'allow' : 'deny';
+      if (input.checked) row.view = true;
     });
     let projectHasGrant = false;
     grants.forEach(row => {
-      if (!(row.view || row.edit || row.update || row.delete)) return;
+      const actionAllowed = Object.values(row.actions || {}).includes('allow');
+      if (!(row.view || row.edit || row.update || row.delete || actionAllowed)) return;
       if (row.edit || row.update || row.delete) row.view = true;
       const previous = oldPermissions.find(p => String(p.module || p.Module) === row.module &&
         (row.scope === 'global' ? (p.projectId ?? p.ProjectId) == null : Number(p.projectId ?? p.ProjectId) === projectId));
+      const fieldPermissions = { ...(previous?.fieldPermissions || previous?.FieldPermissions || {}) };
+      if (row.actions && Object.keys(row.actions).length) {
+        Object.keys(fieldPermissions).forEach(name => { if (name.startsWith('action:')) delete fieldPermissions[name]; });
+        Object.assign(fieldPermissions, row.actions);
+      }
       permissions.push({
         userId,
         projectId: row.scope === 'global' ? null : projectId,
@@ -994,7 +1064,7 @@
         canEdit: row.edit,
         canUpdate: row.update,
         canDelete: row.delete,
-        fieldPermissions: previous?.fieldPermissions || previous?.FieldPermissions || {}
+        fieldPermissions
       });
       if (row.scope === 'project') projectHasGrant = true;
     });
@@ -1013,8 +1083,8 @@
     const row = input.closest('tr');
     if (!row) return;
     if (input.dataset.right === 'view' && !input.checked) {
-      row.querySelectorAll('.permission-page-right').forEach(right => { right.checked = false; });
-    } else if (input.dataset.right !== 'view' && input.checked) {
+      row.querySelectorAll('.permission-page-right, .permission-page-action').forEach(right => { right.checked = false; });
+    } else if ((input.dataset.action || (input.dataset.right && input.dataset.right !== 'view')) && input.checked) {
       const view = row.querySelector('.permission-page-right[data-right="view"]');
       if (view) view.checked = true;
     }
@@ -2296,7 +2366,7 @@ WTPages.switchProjView = function(view) {
         ${card('BOQ Status', boqPanel)}
         ${card('Recent Activity', listOrEmpty(activities.map(a => `<li>${esc(a.label)} <small style="color:var(--text-muted)">${date(a.at)}</small></li>`), 'No recent project activity is available.'))}
         ${riskItems.length ? card('Automatic Task Alerts', `<small class="card-subtitle">Generated for overdue tasks or no progress update in 7 days. Update or complete the task to clear an alert.</small>${listOrEmpty(riskItems.map(x => `<li><span class="badge ${/overdue/i.test(x.type || x.Type || '') ? 'red' : 'amber'}">${esc(x.type || x.Type || 'Task alert')}</span> ${esc(x.title || x.Title || x.message || x.Message || 'Task alert')}</li>`), '')}`) : ''}
-        ${card('Risk / Issue', (() => { const logTypeOf = i => /risk/i.test(String(i.logType || i.LogType || '')) ? 'Risk' : 'Issue'; const riskCount = issueRows.filter(i => logTypeOf(i) === 'Risk').length; const issueCount = issueRows.length - riskCount; return `<div class="grid g2" style="margin-bottom:10px"><div><span class="kpi-label">Risk</span><div class="kpi-value">${riskCount}</div></div><div><span class="kpi-label">Issue</span><div class="kpi-value">${issueCount}</div></div></div>${listOrEmpty(openIssues.map(i => `<li><span class="badge ${logTypeOf(i) === 'Risk' ? 'red' : 'amber'}">${logTypeOf(i)}</span> ${esc(i.title || i.Title || 'Issue')}</li>`), 'No open risks or issues.')}`; })())}
+        ${card('Risk / Issue', (() => { const logTypeOf = i => /risk/i.test(String(i.logType || i.LogType || '')) ? 'Risk' : 'Issue'; const riskRows = issueRows.filter(i => logTypeOf(i) === 'Risk'); const issueOnly = issueRows.filter(i => logTypeOf(i) !== 'Risk'); return `<div class="grid g2" style="margin-bottom:10px"><div><span class="kpi-label">Risk</span><div class="kpi-value">${riskRows.length}</div><div class="kpi-sub">${esc(issueStatusCounts(riskRows))}</div></div><div><span class="kpi-label">Issue</span><div class="kpi-value">${issueOnly.length}</div><div class="kpi-sub">${esc(issueStatusCounts(issueOnly))}</div></div></div>${listOrEmpty(openIssues.map(i => `<li><span class="badge ${logTypeOf(i) === 'Risk' ? 'red' : 'amber'}">${logTypeOf(i)}</span> ${esc(i.title || i.Title || 'Issue')}</li>`), 'No open risks or issues.')}`; })())}
         ${card('Outstanding Actions', listOrEmpty(pendingTasks.slice(0,12).map(t => `<li>${esc(t.title || t.Title || 'Task')} · ${esc(t.status || t.Status || 'Not started')} · due ${date(t.dueDate || t.DueDate)}</li>`), 'No outstanding tasks.'))}
       </div>`;
   }
@@ -2436,6 +2506,9 @@ WTPages.switchProjView = function(view) {
     const pid = await selectedProjectId();
     const canCreateBudget = !wtCan || wtCan('Budgets', 'edit', Number(pid));
     const canUpdateBudget = !wtCan || wtCan('Budgets', 'update', Number(pid));
+    const canImportBudget = typeof wtCanAction !== 'function' || wtCanAction('Budgets', 'import', Number(pid));
+    const canAllocateBudget = typeof wtCanAction !== 'function' || wtCanAction('Budgets', 'allocate', Number(pid));
+    const canReviseBudget = typeof wtCanAction !== 'function' || wtCanAction('Budgets', 'revise', Number(pid));
     if (!WTPages.openProjectBudgetAllocation) {
       WTPages.openProjectBudgetAllocation = async (projectId) => {
         try {
@@ -2462,11 +2535,11 @@ WTPages.switchProjView = function(view) {
       };
     }
     el.innerHTML = pageHead('Budgets', '/api/budgets',
-      ` ${pid && canUpdateBudget ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
+      ` ${pid && canAllocateBudget ? `<button class="btn" onclick="WTPages.openProjectBudgetAllocation(${Number(pid)})"><i class="fa-solid fa-money-bill-transfer"></i> Allocate to Child Project</button>` : ''}
         ${canCreateBudget ? `<button class="btn primary" onclick="WTPages.openBudgetModal()">+ Budget</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><h3 class="card-title">Project Funding Position</h3><div id="projectFundingPosition" class="grid g4" style="margin-top:12px"><span class="card-subtitle">Loading project funding…</span></div></section>`
       + tableWrap(['ID', 'Name', 'Approved', 'Allocated', 'Remaining', 'Currency', 'Approved Version', 'Created At', 'Attachment', 'Actions'], 'budgetBody', 'budget-table-wrap')
-      + `<h3 style="margin:22px 0 10px">Cost Centre Budgets</h3><div style="display:flex;gap:8px;margin:8px 0">${canUpdateBudget ? '<button class="btn primary" onclick="WTPages.openCostCenterModal()">+ Add CC</button><button class="btn" onclick="WTPages.importCostCenters()">Import CC Details</button>' : ''}</div>`
+      + `<h3 style="margin:22px 0 10px">Cost Centre Budgets</h3><div style="display:flex;gap:8px;margin:8px 0">${canCreateBudget ? '<button class="btn primary" onclick="WTPages.openCostCenterModal()">+ Add CC</button>' : ''}${canImportBudget ? '<button class="btn" onclick="WTPages.importCostCenters()">Import CC Details</button>' : ''}</div>`
       + tableWrap(['CC Name', 'Budget Amount', 'Amount Used', 'Balance', 'Budget Status', 'Actions'], 'ccBody', 'cost-center-table-wrap');
     if (!pid) {
       $('#budgetBody').innerHTML = emptyRow(10, 'No project available.');
@@ -2519,7 +2592,7 @@ WTPages.switchProjView = function(view) {
         const canDelete = !wtCan || wtCan('Budgets', 'delete', Number(pid));
         const actions = b._projectFunding
           ? '<span class="badge">Parent allocation</span>'
-          : `<button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> ${canUpdate ? `<button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button> <button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button> <button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}`;
+          : `<button class="btn sm" title="View history" aria-label="View history" onclick="WTPages.openBudgetHistory(${b.id})"><i class="fa-solid fa-clock-rotate-left"></i></button> ${canReviseBudget ? `<button class="btn sm" title="Revise budget" aria-label="Revise budget" onclick="WTPages.openBudgetRevision(${b.id})"><i class="fa-solid fa-arrows-rotate"></i></button>` : ''} ${canAllocateBudget ? `<button class="btn sm" title="Allocate budget" aria-label="Allocate budget" onclick="WTPages.openAllocationModal(${b.id})"><i class="fa-solid fa-diagram-project"></i></button>` : ''} ${canUpdate ? `<button class="btn sm" title="Edit budget" aria-label="Edit budget" onclick="WTPages.openBudgetModal(${b.id})"><i class="fa-solid fa-pen"></i></button>` : ''} ${canDelete ? `<button class="btn sm danger" title="Delete budget" aria-label="Delete budget" onclick="WTPages.deleteBudget(${b.id}, '${esc(b.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}`;
         return `<tr><td>${b.id || '—'}</td><td>${esc(b.name)}</td>
           <td>${esc(b.currency || 'USD')} ${Number(b.approvedAmount || 0).toLocaleString('en-US')}</td>
           <td>${esc(b.currency || 'USD')} ${allocated.toLocaleString('en-US')}</td><td>${esc(b.currency || 'USD')} ${remaining.toLocaleString('en-US')}</td>
@@ -2568,7 +2641,7 @@ WTPages.switchProjView = function(view) {
         const used = Number(rollup.actualSpend ?? rollup.ActualSpend ?? 0);
         const balance = budgetAmount - used;
         const budgetStatus = used > budgetAmount ? 'Over Budget' : used < budgetAmount ? 'Under Budget' : 'On Budget';
-        const ccActions = `${canEditCenter ? `<button class="btn sm" type="button" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i> Edit</button><button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetRevision(${c.id})"><i class="fa-solid fa-arrows-rotate"></i> Revise budget</button>` : ''}<button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetHistory(${c.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>${canDeleteCenter ? `<button class="btn sm danger" type="button" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}`;
+        const ccActions = `${canEditCenter ? `<button class="btn sm" type="button" onclick="WTPages.openCostCenterModal(${c.id})"><i class="fa-solid fa-pen"></i> Edit</button>` : ''}${canReviseBudget ? `<button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetRevision(${c.id})"><i class="fa-solid fa-arrows-rotate"></i> Revise budget</button>` : ''}<button class="btn sm" type="button" onclick="WTPages.openCostCenterBudgetHistory(${c.id})"><i class="fa-solid fa-clock-rotate-left"></i> History</button>${canDeleteCenter ? `<button class="btn sm danger" type="button" onclick="WTPages.deleteCC(${c.id})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}`;
         return `<tr><td>${esc(costCenterDisplayName(c.name))}</td><td>${esc(budgets?.[0]?.currency || fundingCurrency || 'USD')} ${budgetAmount.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${used.toLocaleString('en-US')}</td><td>${esc(budgets?.[0]?.currency || 'USD')} ${balance.toLocaleString('en-US')}</td><td><span class="badge ${budgetStatus === 'Over Budget' ? 'red' : budgetStatus === 'Under Budget' ? 'green' : 'amber'}">${esc(budgetStatus)}</span></td><td class="table-actions">${taskRowActionMenu(ccActions)}</td></tr>`;
       }).join('') || emptyRow(6, 'No cost centres. Add one to get started.');
     } catch (e) {
@@ -3156,9 +3229,11 @@ WTPages.switchProjView = function(view) {
   async function pageCosts() {
     const el = root();
     const pid = await selectedProjectId();
+    const canCreateCost = !wtCan || wtCan('Costs', 'edit', Number(pid));
+    const canImportCost = typeof wtCanAction !== 'function' || wtCanAction('Costs', 'import', Number(pid));
     el.innerHTML = pageHead('Purchases, Actuals & Variance', '/api/costs',
-      ` ${(!wtCan || wtCan('Costs', 'edit', Number(pid))) ? `<button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>
-        <button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>` : ''}`)
+      ` ${canImportCost ? `<button class="btn" onclick="WTPages.openCostImportModal()">Import CSV Template</button>` : ''}
+        ${canCreateCost ? `<button class="btn primary" onclick="WTPages.openActualModal()">+ Actual</button>` : ''}`)
       + `<div class="card" id="varianceBox">Variance loading...</div>`
       + '<h3 style="margin:22px 0 10px">Actual Spent by CC</h3>'
       + tableWrap(['CC Name', 'Budget Amount', 'Actual Cost', 'Balance', 'Budget Status'], 'actualSpendByCcBody')
@@ -3703,12 +3778,13 @@ WTPages.switchProjView = function(view) {
     const el = root();
     const pid = await selectedProjectId();
     const canCreateBoq = !wtCan || wtCan('BOQ', 'edit', Number(pid));
+    const canImportBoq = typeof wtCanAction !== 'function' || wtCanAction('BOQ', 'import', Number(pid));
     const canUpdateBoq = !wtCan || wtCan('BOQ', 'update', Number(pid));
     const canDeleteBoq = !wtCan || wtCan('BOQ', 'delete', Number(pid));
     const isAdmin = typeof wtIsAdmin === 'function' && wtIsAdmin();
     el.innerHTML = pageHead('Bill of Quantities', '/api/boq',
-      ` ${canCreateBoq ? `<button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>
-        <button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>` : ''}`)
+      ` ${canCreateBoq ? `<button class="btn" id="boqFromMasterButton" disabled onclick="WTPages.boqFromMaster()">From Master Items</button>` : ''}
+        ${canImportBoq ? `<button class="btn primary" id="boqImportButton" disabled onclick="WTPages.boqImport()">Import vendor file (CSV)</button>` : ''}`)
       + tableWrap(['SR NO', 'Title', 'Status', 'BOQ Version (First / Baseline)', 'Created', 'Actions'], 'boqBody')
       + '<h3 style="margin:22px 0 10px">BOQ Version History</h3>'
       + tableWrap(['BOQ', 'Version', 'Created', 'Revision Notes', 'Baseline', 'Actions'], 'boqVersionsBody');
@@ -4506,6 +4582,8 @@ WTPages.switchProjView = function(view) {
     const canCreateTask = typeof wtCan !== 'function' || wtCan('Tasks', 'edit', Number(pid));
     const canEditTask = typeof wtCan !== 'function' || wtCan('Tasks', 'update', Number(pid));
     const canCreateMilestone = typeof wtCan !== 'function' || wtCan('Tasks', 'edit', Number(pid));
+    const canImportTask = typeof wtCanAction !== 'function' || wtCanAction('Tasks', 'import', Number(pid));
+    const canExportTask = typeof wtCanAction !== 'function' || wtCanAction('Tasks', 'export', Number(pid));
     const selectedLabel = kind === 'daily'
       ? (dailyResortIds.map(id => resorts.find(r => String(r.id) === id)?.name || `Resort ${id}`).join(', ') || 'No resorts selected')
       : selectedMeta
@@ -4514,7 +4592,7 @@ WTPages.switchProjView = function(view) {
 
     el.innerHTML = pageHead(title, `Showing ${selectedLabel} `,
       (kind === 'milestones'
-        ? ` ${canCreateMilestone ? `<button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button><button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>` : ''}`
+        ? ` ${canImportTask ? `<button class="btn" onclick="WTPages.openMilestoneTemplateModal()">Templates / Excel import</button>` : ''}${canCreateMilestone ? `<button class="btn primary" onclick="WTPages.openMilestoneModal()">+ Milestone</button>` : ''}`
         : kind === 'daily'
         ? ` <div class="daily-resort-filter" style="position:relative;display:inline-block;margin-right:6px;">
               <button class="btn" type="button" onclick="WTPages.toggleDailyResortMenu()"><i class="fa-solid fa-hotel"></i> Resorts (${dailyResortIds.length}) <i class="fa-solid fa-chevron-down"></i></button>
@@ -4522,13 +4600,13 @@ WTPages.switchProjView = function(view) {
                 ${resorts.map(r => `<label style="display:flex;align-items:center;gap:8px;padding:7px 8px;cursor:pointer;white-space:nowrap;"><input type="checkbox" value="${esc(r.id)}" ${dailyResortIds.includes(String(r.id)) ? 'checked' : ''} onchange="WTPages.setDailyResort('${esc(r.id)}',this.checked)"><span>${esc(r.name || r.resortName || `Resort ${r.id}`)}</span></label>`).join('')}
               </div>
             </div>
-            <button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>
+            ${canImportTask ? `<button class="btn" onclick="openExcelDsrImportModal()"><i class="fa-solid fa-file-excel"></i> Upload Excel CSV</button>` : ''}
             <input id="dailyReportDate" type="date" value="${wtMaldivesDateInput()}" style="max-width:150px">
             <select id="dailyReportMode" style="max-width:210px"><option value="daily">Updates on date</option><option value="cumulative">Progress as of date</option></select>
             <button class="btn" onclick="WTPages.loadDailyTaskReport()">Load report</button>
-            <button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>
-            <button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>`
-        : ` ${canCreateTask ? `<button class="btn" onclick="WTPages.openTaskImportModal()"><i class="fa-solid fa-file-import"></i> Import</button><button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}`))
+            ${canExportTask ? `<button class="btn" onclick="openReportExportModal('daily')">Export / PDF</button>` : ''}
+            ${canEditTask ? `<button class="btn primary" onclick="openAddDailyReportModal()"><i class="fa-solid fa-plus"></i> Submit Daily Update</button>` : ''}`
+        : ` ${canImportTask ? `<button class="btn" onclick="WTPages.openTaskImportModal()"><i class="fa-solid fa-file-import"></i> Import</button>` : ''}${canCreateTask ? `<button class="btn primary" onclick="WTPages.openTaskModal()">+ Task</button>` : ''}`))
       + (kind === 'daily' ? `<div id="dailyVisualCharts" style="margin-bottom:16px;"></div>` : '')
       + (kind === 'daily' ? `<div class="card" style="margin-bottom:16px"><h3 class="card-title">Daily progress report</h3><div id="dailyReportContent">Loading report...</div></div>` : '')
       + tableWrap(kind === 'milestones'
@@ -5074,12 +5152,12 @@ WTPages.switchProjView = function(view) {
 
   function taskImportTemplate() {
     return [
-      'SR No,Task,Sub-task,Nested sub-task,Further nested task,Assigned To,Start Date,End Date,Status,Progress,Issues,Dependency',
-      '1,Site preparation,,,,System Admin,2026-12-01,2026-12-15,Not Started,0,0,',
-      '2,,Excavation,,,System Admin,2026-12-01,2026-12-10,Not Started,0,0,Site preparation',
-      '3,,,Set out levels,,System Admin,2026-12-02,2026-12-04,Not Started,0,0,Excavation',
-      '4,,,,Confirm soil,System Admin,2026-12-03,2026-12-04,Not Started,0,0,Set out levels',
-      '5,MEP rough-in,,,,System Admin,2026-12-16,2027-01-15,In Progress,10,0,'
+      'Task,Sub-task,Nested sub-task,Further nested task,Assigned To,Start Date,End Date,Status,Progress,Issues,Dependency',
+      'Site preparation,,,,System Admin,2026-12-01,2026-12-15,Not Started,0,0,',
+      ',Excavation,,,System Admin,2026-12-01,2026-12-10,Not Started,0,0,',
+      ',,Set out levels,,System Admin,2026-12-02,2026-12-04,Not Started,0,0,',
+      ',,,Confirm soil,System Admin,2026-12-03,2026-12-04,Not Started,0,0,',
+      'MEP rough-in,,,,System Admin,2026-12-16,2027-01-15,In Progress,10,0,Site preparation'
     ].join('\n');
   }
 
@@ -5179,9 +5257,9 @@ WTPages.switchProjView = function(view) {
           <li>Required: Task on the first row of each task. Sub-tasks belong to the task above them.</li>
           <li>Assigned To is the user's full name or email. Leave it blank to assign the row to you.</li>
           <li>Dates use YYYY-MM-DD. End Date is the due date and cannot be before Start Date.</li>
-          <li>Columns match the table: SR No, Task, Sub-task, Nested sub-task, Further nested task, Assigned To, Start Date, End Date, Status, Progress, Issues, Dependency.</li>
+          <li>Columns: Task, Sub-task, Nested sub-task, Further nested task, Assigned To, Start Date, End Date, Status, Progress, Issues, Dependency.</li>
           <li>Status: Not Started, In Progress, Delayed, or Completed. Blank means Not Started.</li>
-          <li>Progress is 0 to 100. Dependency is the title of another task or sub-task in this file. Issues is left blank; the table shows the project's open issue count.</li>
+          <li>Progress is 0 to 100. Dependency is another task title, not the parent of this row. A sub-task already waits when its parent is blocked.</li>
         </ul>
         <div style="margin-top:10px"><button class="btn sm" type="button" onclick="WTPages.downloadTaskImportTemplate()">Download CSV template</button></div>
         <div class="modalfoot" style="padding:0;margin-top:12px"><button class="btn primary" type="submit">Import tasks</button></div>
@@ -5842,10 +5920,11 @@ WTPages.switchProjView = function(view) {
     const el = root();
     const canCreateNotifications = !wtCan || wtCan('Notifications', 'edit');
     const canUpdateNotifications = !wtCan || wtCan('Notifications', 'update');
+    const canSendNotifications = typeof wtCanAction !== 'function' || wtCanAction('Notifications', 'send');
     el.innerHTML = pageHead('Notification Master & Escalation Rules', 'Schedule project, task, and milestone notifications with email delivery.',
       `${canCreateNotifications ? `<button class="btn" onclick="WTPages.openEscRuleModal()">+ Escalation Rule</button>
-       <button class="btn" onclick="WTPages.openNotifyModal()">Send Now</button>
-       <button class="btn primary" onclick="WTPages.openScheduledNotificationModal()">+ Schedule Notification</button>` : ''}`)
+       <button class="btn primary" onclick="WTPages.openScheduledNotificationModal()">+ Schedule Notification</button>` : ''}
+       ${canSendNotifications ? `<button class="btn" onclick="WTPages.openNotifyModal()">Send Now</button>` : ''}`)
       + `<section class="card" style="margin-bottom:16px"><div class="card-header"><div><h3 class="card-title">Scheduled notification master</h3><div class="card-subtitle">Select a project, task, or milestone, set the delivery date and choose recipients. Showing latest 100 records.</div></div></div>`
       + tableWrap(['ID', 'Project / Target', 'Notification', 'Scheduled for', 'Recipients', 'Delivery', 'Status', 'Action'], 'scheduledNotificationsBody')
       + `</section>`
@@ -6119,12 +6198,15 @@ WTPages.switchProjView = function(view) {
   // ---------- REPORTS ----------
   async function pageReports() {
     const el = root();
+    const canViewReports = typeof wtCan !== 'function' || wtCan('Reports', 'view');
+    const canCreateReports = typeof wtCan !== 'function' || wtCan('Reports', 'edit');
+    const canExportReports = typeof wtCanAction !== 'function' || wtCanAction('Reports', 'export');
     el.innerHTML = pageHead('Executive Reports & Exports (PM-28)', '/api/reports',
-      `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>
-       <button class="btn primary" onclick="WTPages.openMonthlyReport()"><i class="fa-solid fa-calendar-days"></i> Monthly Project Report</button>
+      `${canExportReports ? `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>` : ''}
+       ${canViewReports ? `<button class="btn primary" onclick="WTPages.openMonthlyReport()"><i class="fa-solid fa-calendar-days"></i> Monthly Project Report</button>
        <button class="btn" onclick="WTPages.loadPortfolio()"><i class="fa-solid fa-chart-pie"></i> View Portfolio</button>
-       <button class="btn" onclick="WTPages.loadComparable()">Comparable projects</button>
-       <button class="btn primary" onclick="WTPages.openReportModal()">+ Report Config</button>`)
+       <button class="btn" onclick="WTPages.loadComparable()">Comparable projects</button>` : ''}
+       ${canCreateReports ? `<button class="btn primary" onclick="WTPages.openReportModal()">+ Report Config</button>` : ''}`)
       + tableWrap(['ID', 'Name', 'Type', 'Actions'], 'reportsBody')
       + `<div class="card" id="reportOut" style="margin-top:12px"><em>Generate a Monthly Project Report, customize an export, or view the live portfolio status.</em></div>`;
     try {
@@ -6132,7 +6214,7 @@ WTPages.switchProjView = function(view) {
       const rows = Array.isArray(list) ? list : (list?.items || list?.data || []);
       $('#reportsBody').innerHTML = rows.length ? rows.map(r => `
         <tr><td>${r.id}</td><td>${esc(r.name || r.title)}</td><td>${esc(r.reportType || r.type || '—')}</td>
-        <td><button class="btn sm primary" onclick="openReportExportModal('${esc(r.reportType || 'portfolio').toLowerCase()}')">Export ➔</button></td></tr>`
+        <td>${canExportReports ? `<button class="btn sm primary" onclick="openReportExportModal('${esc(r.reportType || 'portfolio').toLowerCase()}')">Export ➔</button>` : '—'}</td></tr>`
       ).join('') : emptyRow(4, 'No saved report configs');
     } catch (e) { $('#reportsBody').innerHTML = errRow(4, e); }
   }
@@ -6413,8 +6495,9 @@ WTPages.switchProjView = function(view) {
     const pid = await selectedProjectId();
     const canViewClosure = !wtCan || wtCan('Closure', 'view', Number(pid));
     const canUpdateClosure = !wtCan || wtCan('Closure', 'update', Number(pid));
+    const canExportClosure = typeof wtCanAction !== 'function' || wtCanAction('Closure', 'export', Number(pid));
     el.innerHTML = pageHead('Project Closure', 'Complete the handover requirements before closing the selected project.',
-      ` ${canViewClosure ? '<button class="btn" onclick="WTPages.generateHandoverReport()">Generate Handover Report</button>' : ''}
+      ` ${canExportClosure ? '<button class="btn" onclick="WTPages.generateHandoverReport()">Generate Handover Report</button>' : ''}
         ${canUpdateClosure ? '<button class="btn danger" onclick="WTPages.closeProject()">Close Project</button>' : ''}`)
       + `<div class="card" style="max-width:900px">
           <div class="card-header"><div><h3 class="card-title">Mandatory closure checklist</h3><div class="card-subtitle">Project closure is available to an authorized Project Manager.</div></div></div>
@@ -6551,7 +6634,7 @@ WTPages.switchProjView = function(view) {
 
   async function generateHandoverReport() {
     const selectedId = await selectedProjectId();
-    if (typeof wtCan === 'function' && !wtCan('Closure', 'view', Number(selectedId))) { showToast('You do not have permission to view project closure.', 'danger'); return; }
+    if (typeof wtCanAction === 'function' && !wtCanAction('Closure', 'export', Number(selectedId))) { showToast('You do not have permission to generate the handover report.', 'danger'); return; }
     const pid = await selectedProjectId();
     try {
       const project = await WisetrackAPI.getProject(Number(pid));
@@ -7040,7 +7123,7 @@ WTPages.switchProjView = function(view) {
           <div class="kpi success"><span class="kpi-label">On Track</span><span class="kpi-value" id="pm25OnTrack">…</span></div>
           <div class="kpi warning"><span class="kpi-label">Schedule Risk</span><span class="kpi-value" id="pm25Risk">…</span></div>
           <div class="kpi danger"><span class="kpi-label">Active Alerts</span><span class="kpi-value" id="pm25Exceptions">…</span></div>
-          <div class="kpi warning"><span class="kpi-label">Risk / Issue</span><span class="kpi-value" id="pm25LogTypes">…</span><span class="kpi-sub" id="pm25LogTypesSub">Risk · Issue</span></div>
+          <div class="kpi warning kpi-log"><span class="kpi-label">Risk / Issue</span><div id="pm25LogTypes"><span class="kpi-value">…</span></div></div>
         </div>
         <section class="card" style="margin-top:18px">
           <div class="card-header"><div><h3 class="card-title">Portfolio totals &amp; reports</h3><div class="card-subtitle">Summary across all projects you are authorized to view.</div></div><a class="btn sm" href="reports.html">Open Reports</a></div>
@@ -7113,9 +7196,7 @@ WTPages.switchProjView = function(view) {
       const riskLogCount = issueRows.filter(isRiskLog).length;
       const issueLogCount = issueRows.length - riskLogCount;
       const logTypesNode = $('#pm25LogTypes');
-      const logTypesSub = $('#pm25LogTypesSub');
-      if (logTypesNode) logTypesNode.textContent = `${riskLogCount} / ${issueLogCount}`;
-      if (logTypesSub) logTypesSub.textContent = `${riskLogCount} Risk · ${issueLogCount} Issue`;
+      if (logTypesNode) logTypesNode.innerHTML = `<div class="kpi-status-line">Risk ${riskLogCount}</div><div class="kpi-status-meta">${esc(issueStatusCounts(issueRows.filter(isRiskLog)))}</div><div class="kpi-status-line">Issue ${issueLogCount}</div><div class="kpi-status-meta">${esc(issueStatusCounts(issueRows.filter(row => !isRiskLog(row))))}</div>`;
       let baselineItems = [];
       boqRows.forEach(boq => {
         const versions = rows(boq.versions || boq.Versions);

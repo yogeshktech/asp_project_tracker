@@ -50,6 +50,8 @@ public class ReportService : IReportService
     {
         if (userId.HasValue && request.ProjectId.HasValue)
             await _permissions.EnsureModuleAsync(userId.Value, request.ProjectId.Value, "Reports", "edit");
+        if (userId.HasValue && request.ProjectId.HasValue && request.RecipientUserIds.Count > 0)
+            await _permissions.EnsureActionAsync(userId.Value, request.ProjectId.Value, "Reports", "export");
         var internalEmails = request.ProjectId.HasValue
             ? await _repository.GetProjectInternalUserEmailsAsync(request.ProjectId.Value, request.RecipientUserIds)
             : await _repository.GetInternalUserEmailsAsync(request.RecipientUserIds);
@@ -129,6 +131,8 @@ public class ReportService : IReportService
     public async Task<(byte[] Content, string FileName)> ExportCsvAsync(long userId, long reportId)
     {
         var report = await _repository.GetAsync(reportId) ?? throw new InvalidOperationException("Report not found.");
+        if (report.ProjectId.HasValue)
+            await _permissions.EnsureActionAsync(userId, report.ProjectId.Value, "Reports", "export");
         if (report.CreatedBy != userId && !await _permissions.IsAdminAsync(userId))
             throw new UnauthorizedAccessException("You cannot export this report.");
         var accessible = await _permissions.GetAccessibleProjectIdsAsync(userId);

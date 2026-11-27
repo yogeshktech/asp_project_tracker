@@ -82,6 +82,42 @@ function wtCan(module, right, projectId) {
   });
 }
 
+function wtCanAction(module, action, projectId) {
+  if (wtIsAdmin()) return true;
+  const perms = JSON.parse(localStorage.getItem('WISETRACK_PERMISSIONS') || '[]');
+  const key = 'action:' + action;
+  const inherit = action === 'allocate' || action === 'revise' ? 'update' : action === 'export' ? 'view' : 'edit';
+  const inheritKeys = {
+    view: ['canView', 'CanView'],
+    edit: ['canEdit', 'CanEdit'],
+    update: ['canUpdate', 'CanUpdate']
+  }[inherit];
+  const matches = perms.filter(p => {
+    if (String(p.module || p.Module) !== module) return false;
+    if (projectId && Number(p.projectId || p.ProjectId || 0) !== Number(projectId)) return false;
+    return true;
+  });
+  if (!matches.length) return false;
+  if (!projectId) {
+    return matches.some(p => {
+      const fields = p.fieldPermissions || p.FieldPermissions || {};
+      if (fields[key] === 'deny') return false;
+      if (fields[key] === 'allow') return true;
+      return inheritKeys.some(name => p[name]);
+    });
+  }
+  let allow = false, deny = false, inherited = false;
+  matches.forEach(p => {
+    if (inheritKeys.some(name => p[name])) inherited = true;
+    const fields = p.fieldPermissions || p.FieldPermissions || {};
+    if (fields[key] === 'allow') allow = true;
+    if (fields[key] === 'deny') deny = true;
+  });
+  if (allow) return true;
+  if (deny) return false;
+  return inherited;
+}
+
 function wtCanCreateProjectInResort(resortId) {
   if (wtIsAdmin()) return true;
   const accessibleResorts = JSON.parse(localStorage.getItem('WISETRACK_RESORT_IDS') || '[]').map(Number);

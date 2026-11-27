@@ -93,7 +93,11 @@ public class BOQService : IBOQService
 
     public async Task<BOQValidationResultDto> ImportAsync(BOQImportDto dto, long? userId)
     {
-        if (userId.HasValue) await _permissions.EnsureModuleAsync(userId.Value, dto.ProjectId, "BOQ", dto.Commit ? "edit" : "view");
+        if (userId.HasValue)
+        {
+            if (dto.Commit) await _permissions.EnsureActionAsync(userId.Value, dto.ProjectId, "BOQ", "import");
+            else await _permissions.EnsureModuleAsync(userId.Value, dto.ProjectId, "BOQ", "view");
+        }
         var result = new BOQValidationResultDto { TotalRows = dto.Lines.Count };
 
         for (var i = 0; i < dto.Lines.Count; i++)

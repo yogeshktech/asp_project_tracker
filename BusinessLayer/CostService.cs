@@ -38,9 +38,12 @@ public class CostService : ICostService
         _db = db;
     }
 
-    public async Task<PurchaseCost> AddPurchaseAsync(CreatePurchaseCostRequest request, long? userId)
+    public Task<PurchaseCost> AddPurchaseAsync(CreatePurchaseCostRequest request, long? userId) =>
+        AddPurchaseAsync(request, userId, enforceCreate: true);
+
+    private async Task<PurchaseCost> AddPurchaseAsync(CreatePurchaseCostRequest request, long? userId, bool enforceCreate)
     {
-        if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
+        if (enforceCreate && userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
             throw new UnauthorizedAccessException("No permission.");
         await ValidateCostDimensionsAsync(request.ProjectId, request.BoqItemId, request.CostCenterId);
         if (request.Amount <= 0) throw new InvalidOperationException("Amount must be greater than zero.");
@@ -60,9 +63,12 @@ public class CostService : ICostService
         return cost;
     }
 
-    public async Task<ActualCost> AddActualAsync(CreateActualCostRequest request, long? userId)
+    public Task<ActualCost> AddActualAsync(CreateActualCostRequest request, long? userId) =>
+        AddActualAsync(request, userId, enforceCreate: true);
+
+    private async Task<ActualCost> AddActualAsync(CreateActualCostRequest request, long? userId, bool enforceCreate)
     {
-        if (userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
+        if (enforceCreate && userId.HasValue && !await _permissions.CanEditModuleAsync(userId.Value, request.ProjectId, "Costs"))
             throw new UnauthorizedAccessException("No permission.");
         var canChangeDate = userId.HasValue && await _permissions.IsAdminAsync(userId.Value);
         var boqItemIds = await ValidateActualBoqItemsAsync(request);
@@ -146,6 +152,7 @@ public class CostService : ICostService
             && !string.Equals(request.Type, "Actual", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Type must be Purchase or Actual.");
         if (request.Rows.Count == 0) throw new InvalidOperationException("Import file contains no cost rows.");
+        await _permissions.EnsureActionAsync(userId, request.ProjectId, "Costs", "import");
         var result = new CostImportResultDto();
         for (var index = 0; index < request.Rows.Count; index++)
         {
@@ -157,7 +164,7 @@ public class CostService : ICostService
                     {
                         ProjectId = request.ProjectId, BoqItemId = row.BoqItemId, CostCenterId = row.CostCenterId,
                         Amount = row.Amount, PurchaseDate = row.CostDate, Vendor = row.Vendor, Description = row.Description
-                    }, userId);
+                    }, userId, enforceCreate: false);
                 else
                 {
                     if (!row.CostCenterId.HasValue) throw new InvalidOperationException("Cost Centre is required for actual cost imports.");
@@ -165,7 +172,7 @@ public class CostService : ICostService
                     {
                         ProjectId = request.ProjectId, BoqItemId = row.BoqItemId, CostCenterId = row.CostCenterId,
                         Amount = row.Amount, CostDate = row.CostDate, Vendor = row.Vendor, Description = row.Description
-                    }, userId);
+                    }, userId, enforceCreate: false);
                 }
                 result.Imported++;
             }

@@ -549,7 +549,7 @@ public class TaskService : ITaskService
     public async Task<ImportTasksResultDto> ImportTasksAsync(ImportTasksRequest request, long userId)
     {
         if (request.ProjectId <= 0) throw new InvalidOperationException("Select a project before importing tasks.");
-        await _permissions.EnsureModuleAsync(userId, request.ProjectId, "Tasks", "edit");
+        await _permissions.EnsureActionAsync(userId, request.ProjectId, "Tasks", "import");
         var rows = request.Rows ?? new List<ImportTaskRowRequest>();
         if (rows.Count == 0) throw new InvalidOperationException("The import file has no task rows.");
         if (rows.Count > 2000) throw new InvalidOperationException("Import up to 2000 rows at a time.");
@@ -711,6 +711,12 @@ public class TaskService : ITaskService
                 else dependsOnTaskId = taskMatches[0].Id;
             }
 
+            if (node.CreatedSubTaskId.HasValue && dependsOnTaskId.HasValue)
+            {
+                var owner = existing.FirstOrDefault(task => (task.SubTasks ?? Array.Empty<SubTask>()).Any(sub => sub.Id == node.CreatedSubTaskId));
+                if (owner != null && owner.Id == dependsOnTaskId)
+                    continue;
+            }
             var request = new SetTaskDependencyRequest { DependsOnTaskId = dependsOnTaskId, DependsOnSubTaskId = dependsOnSubTaskId };
             if (node.CreatedSubTaskId.HasValue) await SetSubTaskDependencyAsync(node.CreatedSubTaskId.Value, request, userId);
             else if (node.CreatedTaskId.HasValue) await SetTaskDependencyAsync(node.CreatedTaskId.Value, request, userId);
@@ -780,6 +786,7 @@ public class TaskService : ITaskService
 
     public async Task<TaskBulkImportResultDto> BulkImportUpdatesAsync(TaskBulkImportRequest request, long? userId)
     {
+        if (userId.HasValue) await _permissions.EnsureActionAsync(userId.Value, request.ProjectId, "Tasks", "import");
         var result = new TaskBulkImportResultDto();
         foreach (var update in request.Updates)
         {
