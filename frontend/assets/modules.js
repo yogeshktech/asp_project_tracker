@@ -6205,7 +6205,7 @@ WTPages.switchProjView = function(view) {
   // ---------- REPORTS ----------
   const MASTER_SECTIONS = [
     ['running', 'What is running'],
-    ['overview', 'Overview'], ['budget', 'Budget'], ['drawings', 'Drawing Upload'], ['boq', 'BOQ'],
+    ['overview', 'Overview'], ['budget', 'Budget'],
     ['milestones', 'Milestones'], ['tasks', 'Tasks'], ['costs', 'Costs'], ['issues', 'Risk/Issue'],
     ['daily', 'Daily Reports'], ['inventory', 'Inventory'], ['closure', 'Project Closure']
   ];
@@ -6315,7 +6315,7 @@ WTPages.switchProjView = function(view) {
     const monthEnd = masterDateText(today);
     box.innerHTML = `<div id="masterReport">
       <h3 class="card-title">Master Report</h3>
-      <p class="card-subtitle">Select one or more resorts. Leave every resort unchecked to include all projects. The report follows Overview, Budget, Drawing Upload, BOQ, Milestones, Tasks, Costs, Risk/Issue, Daily Reports, Inventory, and Project Closure.</p>
+      <p class="card-subtitle">Select one or more resorts. Leave every resort unchecked to include all projects. The report follows Overview, Budget, Milestones, Tasks, Costs, Risk/Issue, Daily Reports, Inventory, and Project Closure.</p>
       <form onsubmit="WTPages.generateMasterReport(event)" style="margin-top:14px">
         <div class="field"><label>Resorts</label>
           <div style="display:flex;gap:8px;margin-bottom:8px"><button type="button" class="btn sm" onclick="document.querySelectorAll('.master-resort').forEach(box => box.checked = true)">Select all</button><button type="button" class="btn sm" onclick="document.querySelectorAll('.master-resort').forEach(box => box.checked = false)">Clear</button></div>
@@ -6515,8 +6515,6 @@ WTPages.switchProjView = function(view) {
       const sheetDefs = [
         ['overview', 'Overview', ['Resort', 'Project', 'Code', 'Status', 'Start', 'End', 'Owner', 'Tasks running', 'Milestones open', 'Approved', 'Not approved', 'Tasks in range', 'Risk/Issue in range'], overviewRows],
         ['budget', 'Budget', ['Resort', 'Project', 'Code', 'Budget', 'Status', 'Approved', 'Not approved', 'Allocated', 'Not allocated', 'Currency', 'Created'], budgetRows],
-        ['drawings', 'Drawing Upload', ['Resort', 'Project', 'Code', 'Name', 'Description', 'Files', 'Uploaded'], drawingRows],
-        ['boq', 'BOQ', ['Resort', 'Project', 'Code', 'Title', 'Status', 'Baseline', 'Lines', 'Created'], boqRows],
         ['milestones', 'Milestones', ['Resort', 'Project', 'Code', 'Milestone', 'Status', 'Start', 'Due', 'Progress %'], milestoneRows],
         ['tasks', 'Tasks', ['Resort', 'Project', 'Code', 'Level', 'Title', 'Parent', 'Assigned to', 'Start', 'End', 'Status', 'Progress %'], taskRows],
         ['costs', 'Costs', ['Resort', 'Project', 'Code', 'Type', 'Amount', 'Date', 'Vendor', 'Remarks'], costRows],
@@ -6574,8 +6572,6 @@ WTPages.switchProjView = function(view) {
       'What is running': [select('section', 'Section', 'Section'), select('status', 'Status', 'Status'), select('assigned', 'Assigned to', 'Assigned to'), date('due', 'Due date', 'Due')],
       'Overview': [select('status', 'Status', 'Status'), select('owner', 'Owner', 'Owner')],
       'Budget': [select('status', 'Status', 'Status')],
-      'Drawing Upload': [date('uploaded', 'Uploaded', 'Uploaded')],
-      'BOQ': [select('status', 'Status', 'Status')],
       'Milestones': [select('status', 'Status', 'Status'), date('due', 'Due date', 'Due')],
       'Tasks': [select('level', 'Level', 'Level'), select('status', 'Status', 'Status'), select('assigned', 'Assigned to', 'Assigned to'), date('end', 'End date', 'End')],
       'Costs': [select('type', 'Type', 'Type'), date('date', 'Date', 'Date')],
@@ -6604,20 +6600,76 @@ WTPages.switchProjView = function(view) {
     };
   }
 
+  function masterBudgetRange() {
+    const values = masterFilterState().values;
+    const parse = value => {
+      if (value == null || String(value).trim() === '') return null;
+      const number = Number(String(value).replace(/,/g, ''));
+      return Number.isFinite(number) ? number : null;
+    };
+    const from = parse(values['Budget:amountFrom']);
+    const to = parse(values['Budget:amountTo']);
+    if (from == null && to == null) return null;
+    return { from, to };
+  }
+
+  function masterAmountInRange(amount, range) {
+    if (!range) return true;
+    if (!Number.isFinite(amount)) return false;
+    if (range.from != null && amount < range.from) return false;
+    if (range.to != null && amount > range.to) return false;
+    return true;
+  }
+
+  function masterProjectBudgetTotals() {
+    const totals = new Map();
+    const report = window._wtMasterReport;
+    const blocks = report?.blocks || [];
+    if (blocks.length) {
+      blocks.forEach(block => {
+        const key = String(block.projectName || '').trim().toLowerCase();
+        if (key) totals.set(key, Number(block.approved) || 0);
+      });
+      return totals;
+    }
+    const add = (name, amount) => {
+      const key = String(name || '').trim().toLowerCase();
+      const number = Number(String(amount ?? '').replace(/,/g, ''));
+      if (!key || !Number.isFinite(number)) return;
+      totals.set(key, (totals.get(key) || 0) + number);
+    };
+    const budget = report?.sheets?.find(sheet => sheet.name === 'Budget');
+    const overview = budget || report?.sheets?.find(sheet => sheet.name === 'Overview');
+    if (overview) {
+      const projectIndex = overview.headers.indexOf('Project');
+      const amountIndex = overview.headers.indexOf('Approved');
+      if (projectIndex >= 0 && amountIndex >= 0) overview.rows.forEach(row => add(row[projectIndex], row[amountIndex]));
+    }
+    return totals;
+  }
+
+  function masterChoiceMatch(chosen, actual) {
+    if (chosen == null || chosen === '' || chosen === 'all') return true;
+    const compact = text => String(text ?? '').toLowerCase().replace(/[\s_-]/g, '');
+    const list = Array.isArray(chosen) ? chosen : [chosen];
+    if (!list.length) return false;
+    const cell = compact(actual);
+    return list.some(item => compact(item) === cell);
+  }
+
   function masterFilteredRows(sheet) {
     const spec = masterTabFilters(sheet);
     const values = masterFilterState().values;
     const prefix = sheet.name + ':';
+    const budgetRange = masterBudgetRange();
+    const budgetTotals = budgetRange ? masterProjectBudgetTotals() : null;
+    const projectIndex = sheet.headers.indexOf('Project');
     let rows = sheet.rows.filter(row => {
+      if (budgetRange && projectIndex >= 0 && budgetTotals.size && !masterAmountInRange(budgetTotals.get(String(row[projectIndex] || '').trim().toLowerCase()), budgetRange)) return false;
       const search = String(values[prefix + 'search'] || '').trim().toLowerCase();
       if (search && !row.some(cell => String(cell ?? '').toLowerCase().includes(search))) return false;
       return spec.fields.every(field => {
-        if (field.type === 'select') {
-          const chosen = values[prefix + field.id];
-          if (!chosen || chosen === 'all') return true;
-          const compact = text => String(text ?? '').toLowerCase().replace(/[\s_-]/g, '');
-          return compact(row[field.column]) === compact(chosen);
-        }
+        if (field.type === 'select') return masterChoiceMatch(values[prefix + field.id], row[field.column]);
         if (field.type === 'date') {
           const from = masterDay(values[prefix + field.id + 'From']);
           const to = masterDay(values[prefix + field.id + 'To']);
@@ -6689,12 +6741,12 @@ WTPages.switchProjView = function(view) {
         </div>
         ${active.name === 'What is running' ? running.filter(block => {
           const values = state.values;
-          const resort = values['What is running:resort'];
-          const project = values['What is running:project'];
-          const status = values['What is running:status'];
-          if (resort && resort !== 'all' && block.resort !== resort) return false;
-          if (project && project !== 'all' && block.projectName !== project) return false;
-          if (status && status !== 'all' && block.status !== status) return false;
+          if (!masterChoiceMatch(values['What is running:resort'], block.resort)) return false;
+          if (!masterChoiceMatch(values['What is running:project'], block.projectName)) return false;
+          if (!masterChoiceMatch(values['What is running:status'], block.status)) return false;
+          const budgetRange = masterBudgetRange();
+          const budgetTotals = budgetRange ? masterProjectBudgetTotals() : null;
+          if (budgetRange && budgetTotals?.size && !masterAmountInRange(budgetTotals.get(String(block.projectName || '').trim().toLowerCase()), budgetRange)) return false;
           return true;
         }).map(block => `<article class="master-project">
           <header><div><h3>${esc(block.projectName)}${block.code ? ` · ${esc(block.code)}` : ''}</h3><div class="card-subtitle">${esc(block.resort || 'Resort')} · ${esc(block.status || 'Draft')}</div></div></header>
@@ -6738,9 +6790,7 @@ WTPages.switchProjView = function(view) {
       { id: 'status', label: 'Status', options: ['Draft', 'Active', 'Inactive', 'On Hold', 'Completed', 'Closed'] },
       { id: 'owner', label: 'Owner', source: 'users' }
     ]},
-    { name: 'Budget', fields: [{ id: 'status', label: 'Status', options: ['Draft', 'Approved', 'Not approved'] }] },
-    { name: 'Drawing Upload', date: 'uploaded', fields: [] },
-    { name: 'BOQ', fields: [{ id: 'status', label: 'Status', options: ['Draft', 'Imported', 'Under Review', 'Submitted', 'Approved', 'Rejected', 'Completed', 'Cancelled', 'Baseline'] }] },
+    { name: 'Budget', range: { id: 'amount', label: 'Price range' }, fields: [] },
     { name: 'Milestones', date: 'due', fields: [{ id: 'status', label: 'Status', options: ['Not Started', 'In Progress', 'Delayed', 'Completed'] }] },
     { name: 'Tasks', date: 'end', fields: [
       { id: 'level', label: 'Level', options: ['Task', 'Sub-task', 'Nested sub-task', 'Further nested task'] },
@@ -6766,6 +6816,103 @@ WTPages.switchProjView = function(view) {
     return [...seen].filter(Boolean);
   }
 
+  function reportFilterChecks(kind, label, items, selected) {
+    const chosen = selected == null || selected === '' || selected === 'all' ? null : (Array.isArray(selected) ? selected : [selected]);
+    const rows = items.map(item => {
+      const name = item.name || item;
+      const resort = item.resort || '';
+      const on = !chosen || chosen.includes(name);
+      return `<label class="check-list-item mf-check-row" data-kind="${kind}" data-text="${esc(String(name).toLowerCase())}" data-resort="${esc(resort)}"><input type="checkbox" class="mf-check" data-kind="${kind}" value="${esc(name)}" ${on ? 'checked' : ''}><span>${esc(name)}${resort ? `<small>${esc(resort)}</small>` : ''}</span></label>`;
+    }).join('');
+    return `<div class="field mf-drop" data-kind="${kind}"><label>${esc(label)}</label>
+      <button type="button" class="mf-drop-toggle" data-kind="${kind}" aria-expanded="false"><span class="mf-drop-label" data-kind="${kind}">All</span><i class="fa-solid fa-chevron-down"></i></button>
+      <div class="mf-drop-panel" hidden>
+        <input class="mf-check-search" data-kind="${kind}" type="text" placeholder="Search ${esc(label).toLowerCase()}">
+        <label class="mf-check-all"><input type="checkbox" class="mf-check-all-box" data-kind="${kind}"> Select all</label>
+        <div class="check-list mf-check-list">${rows || '<p class="card-subtitle">None available.</p>'}</div>
+      </div>
+    </div>`;
+  }
+
+  function bindReportFilterChecks(drawer) {
+    const rowsOf = kind => [...drawer.querySelectorAll(`.mf-check-row[data-kind="${kind}"]`)];
+    const syncSelectAll = kind => {
+      const boxes = [...drawer.querySelectorAll(`.mf-check[data-kind="${kind}"]`)];
+      const picked = boxes.filter(box => box.checked).map(box => box.value);
+      const all = drawer.querySelector(`.mf-check-all-box[data-kind="${kind}"]`);
+      if (all) {
+        all.checked = boxes.length > 0 && picked.length === boxes.length;
+        all.indeterminate = picked.length > 0 && picked.length < boxes.length;
+      }
+      const label = drawer.querySelector(`.mf-drop-label[data-kind="${kind}"]`);
+      if (!label) return;
+      if (!boxes.length) label.textContent = 'None available';
+      else if (!picked.length) label.textContent = 'None';
+      else if (picked.length === boxes.length) label.textContent = 'All';
+      else if (picked.length <= 2) label.textContent = picked.join(', ');
+      else label.textContent = `${picked.length} selected`;
+    };
+    const visibleRows = kind => rowsOf(kind).filter(row => !row.classList.contains('mf-search-hidden') && !row.classList.contains('mf-resort-hidden'));
+    const syncProjects = () => {
+      const resortBoxes = [...drawer.querySelectorAll('.mf-check[data-kind="resort"]')];
+      const picked = resortBoxes.filter(box => box.checked).map(box => box.value);
+      const allResorts = !resortBoxes.length || picked.length === resortBoxes.length;
+      rowsOf('project').forEach(row => {
+        const resort = row.dataset.resort || '';
+        row.classList.toggle('mf-resort-hidden', !allResorts && Boolean(resort) && !picked.includes(resort));
+      });
+    };
+    drawer.querySelectorAll('.mf-check-search').forEach(input => {
+      input.addEventListener('input', () => {
+        const query = input.value.trim().toLowerCase();
+        rowsOf(input.dataset.kind).forEach(row => row.classList.toggle('mf-search-hidden', Boolean(query) && !String(row.dataset.text || '').includes(query)));
+      });
+    });
+    drawer.querySelectorAll('.mf-check-all-box').forEach(box => {
+      box.addEventListener('change', () => {
+        visibleRows(box.dataset.kind).forEach(row => {
+          const input = row.querySelector('.mf-check');
+          if (input) input.checked = box.checked;
+        });
+        if (box.dataset.kind === 'resort') syncProjects();
+        syncSelectAll(box.dataset.kind);
+        if (box.dataset.kind === 'resort') syncSelectAll('project');
+      });
+    });
+    drawer.querySelectorAll('.mf-check').forEach(input => {
+      input.addEventListener('change', () => {
+        if (input.dataset.kind === 'resort') syncProjects();
+        syncSelectAll(input.dataset.kind);
+      });
+    });
+    const closeDrops = except => {
+      drawer.querySelectorAll('.mf-drop').forEach(drop => {
+        if (drop === except) return;
+        const panel = drop.querySelector('.mf-drop-panel');
+        const toggle = drop.querySelector('.mf-drop-toggle');
+        if (panel) panel.hidden = true;
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+      });
+    };
+    drawer.querySelectorAll('.mf-drop-toggle').forEach(button => {
+      button.addEventListener('click', () => {
+        const drop = button.closest('.mf-drop');
+        const panel = drop?.querySelector('.mf-drop-panel');
+        const open = Boolean(panel?.hidden);
+        closeDrops(open ? drop : null);
+        if (panel) panel.hidden = !open;
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) panel.querySelector('.mf-check-search')?.focus();
+      });
+    });
+    drawer.addEventListener('click', event => {
+      if (!event.target.closest('.mf-drop')) closeDrops(null);
+    });
+    syncProjects();
+    syncSelectAll('resort');
+    syncSelectAll('project');
+  }
+
   async function openMasterFilter() {
     closeMasterFilter();
     const values = masterFilterState().values;
@@ -6788,18 +6935,44 @@ WTPages.switchProjView = function(view) {
       return index < 0 ? [] : sheet.rows.map(row => row[index]);
     };
     const select = (id, label, options, selected) => `<div class="field"><label>${esc(label)}</label><select id="${id}"><option value="all">All</option>${options.map(item => `<option value="${esc(item)}" ${selected === item ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></div>`;
+    const resortById = new Map((resorts || []).map(resort => [Number(resort.id ?? resort.Id), resort.name || resort.Name || '']));
+    const resortItems = names((resorts || []).map(resort => resort.name || resort.Name), sheetValues('Overview', 'Resort'), sheetValues('What is running', 'Resort')).map(name => ({ name }));
+    const projectSeen = new Set();
+    const projectItems = [];
+    const addProject = (name, resort) => {
+      const clean = String(name || '').trim();
+      if (!clean || projectSeen.has(clean.toLowerCase())) return;
+      projectSeen.add(clean.toLowerCase());
+      projectItems.push({ name: clean, resort: String(resort || '').trim() });
+    };
+    (projects || []).forEach(project => addProject(project.name || project.Name, resortById.get(Number(project.resortId ?? project.ResortId)) || ''));
+    (window._wtMasterReport?.sheets || []).forEach(sheet => {
+      const resortIndex = sheet.headers.indexOf('Resort');
+      const projectIndex = sheet.headers.indexOf('Project');
+      if (projectIndex < 0) return;
+      sheet.rows.forEach(row => addProject(row[projectIndex], resortIndex >= 0 ? row[resortIndex] : ''));
+    });
+    projectItems.sort((left, right) => left.name.localeCompare(right.name));
+    const tabMarkup = tab => {
+      const slug = tab.name.replace(/\s/g, '-');
+      const fields = tab.fields.map(field => select('mf-' + slug + '-' + field.id, field.label, reportFilterOptions(field, field.source === 'users' ? userNames.concat(sheetValues(tab.name, field.label === 'Owner' ? 'Owner' : 'Assigned to')) : sheetValues(tab.name, field.label)), current(tab.name + ':' + field.id))).join('');
+      const range = tab.range ? `<div class="field"><label>${esc(tab.range.label)}</label><div class="mf-price-range"><div class="field"><label>From</label><input id="mf-${slug}-${tab.range.id}-from" type="number" min="0" step="0.01" placeholder="10000" value="${esc(current(tab.name + ':' + tab.range.id + 'From'))}"></div><div class="field"><label>To</label><input id="mf-${slug}-${tab.range.id}-to" type="number" min="0" step="0.01" placeholder="20000" value="${esc(current(tab.name + ':' + tab.range.id + 'To'))}"></div></div><small class="card-subtitle">Projects whose approved budget is inside this range.</small></div>` : '';
+      const note = !fields && !range ? '<p class="card-subtitle">Uses the resort, project, search, and date range above.</p>' : '';
+      return `<h4 class="report-filter-group">${esc(tab.name)}</h4>${fields}${range}${note}`;
+    };
     const body = `
-      ${select('mf-shared-resort', 'Resort', names((resorts || []).map(resort => resort.name || resort.Name)), current('shared:resort'))}
-      ${select('mf-shared-project', 'Project', names((projects || []).map(project => project.name || project.Name)), current('shared:project'))}
+      ${reportFilterChecks('resort', 'Resort', resortItems, current('shared:resort'))}
+      ${reportFilterChecks('project', 'Project', projectItems, current('shared:project'))}
       <div class="field"><label>Search</label><input id="mf-shared-search" value="${esc(current('shared:search'))}" placeholder="Search every tab"></div>
       <div class="field"><label>Date range</label><div class="form-grid"><div class="field"><label>From date</label><input id="mf-shared-from" type="date" value="${esc(current('shared:from'))}"></div><div class="field"><label>To date</label><input id="mf-shared-to" type="date" value="${esc(current('shared:to'))}"></div></div></div>
-      ${REPORT_FILTER_TABS.map(tab => `<h4 class="report-filter-group">${esc(tab.name)}</h4>${tab.fields.length ? tab.fields.map(field => select('mf-' + tab.name.replace(/\s/g, '-') + '-' + field.id, field.label, reportFilterOptions(field, field.source === 'users' ? userNames.concat(sheetValues(tab.name, field.label === 'Owner' ? 'Owner' : 'Assigned to')) : sheetValues(tab.name, field.label)), current(tab.name + ':' + field.id))).join('') : '<p class="card-subtitle">Uses the resort, project, search, and date range above.</p>'}`).join('')}`;
+      ${REPORT_FILTER_TABS.map(tabMarkup).join('')}`;
     document.body.insertAdjacentHTML('beforeend', `<div class="report-filter-backdrop" id="masterFilterBackdrop" onclick="WTPages.closeMasterFilter()"></div>
       <aside class="report-filter-drawer" id="masterFilterDrawer" role="dialog" aria-label="Filter">
         <header><strong><i class="fa-solid fa-filter"></i> Filter</strong><button type="button" class="close-btn" onclick="WTPages.closeMasterFilter()" aria-label="Close">✕</button></header>
         <div class="report-filter-body">${body}</div>
         <footer><button type="button" class="btn" onclick="WTPages.resetMasterFilter()">Reset all</button><button type="button" class="btn primary" onclick="WTPages.applyMasterFilter()">Apply</button></footer>
       </aside>`);
+    bindReportFilterChecks(document.getElementById('masterFilterDrawer'));
   }
 
   function applyMasterFilter() {
@@ -6807,9 +6980,18 @@ WTPages.switchProjView = function(view) {
     const read = id => document.getElementById(id)?.value || '';
     const from = read('mf-shared-from');
     const to = read('mf-shared-to');
+    const readChecks = kind => {
+      const boxes = [...document.querySelectorAll(`#masterFilterDrawer .mf-check[data-kind="${kind}"]`)];
+      const picked = boxes.filter(box => box.checked).map(box => box.value);
+      if (!boxes.length || picked.length === boxes.length) return 'all';
+      return picked;
+    };
+    const budgetFrom = read('mf-Budget-amount-from');
+    const budgetTo = read('mf-Budget-amount-to');
     if (from && to && from > to) { showToast('The From date must be on or before the To date.', 'danger'); return; }
-    values['shared:resort'] = read('mf-shared-resort') || 'all';
-    values['shared:project'] = read('mf-shared-project') || 'all';
+    if (budgetFrom !== '' && budgetTo !== '' && Number(budgetFrom) > Number(budgetTo)) { showToast('The budget From amount must be less than or equal to the To amount.', 'danger'); return; }
+    values['shared:resort'] = readChecks('resort');
+    values['shared:project'] = readChecks('project');
     values['shared:search'] = read('mf-shared-search').trim();
     values['shared:from'] = from;
     values['shared:to'] = to;
@@ -6824,7 +7006,13 @@ WTPages.switchProjView = function(view) {
       tab.fields.forEach(field => {
         values[tab.name + ':' + field.id] = read('mf-' + tab.name.replace(/\s/g, '-') + '-' + field.id) || 'all';
       });
+      if (tab.range) {
+        const slug = tab.name.replace(/\s/g, '-');
+        values[tab.name + ':' + tab.range.id + 'From'] = read(`mf-${slug}-${tab.range.id}-from`);
+        values[tab.name + ':' + tab.range.id + 'To'] = read(`mf-${slug}-${tab.range.id}-to`);
+      }
     });
+    values['Budget:status'] = 'all';
     closeMasterFilter();
     if (window._wtMasterReport?.sheets?.length) renderMasterReportView();
     else showToast('Filters saved. Generate the report and every tab will use them.');
@@ -6833,11 +7021,10 @@ WTPages.switchProjView = function(view) {
   }
 
   function reportFilterCount() {
-    return Object.entries(masterFilterState().values).filter(([key, value]) => key.startsWith('shared:') && value && value !== 'all').length
-      + REPORT_FILTER_TABS.reduce((sum, tab) => sum + tab.fields.filter(field => {
-        const value = masterFilterState().values[tab.name + ':' + field.id];
-        return value && value !== 'all';
-      }).length, 0);
+    const values = masterFilterState().values;
+    const active = value => Array.isArray(value) ? value.length > 0 : Boolean(value) && value !== 'all';
+    return Object.entries(values).filter(([key, value]) => key.startsWith('shared:') && active(value)).length
+      + REPORT_FILTER_TABS.reduce((sum, tab) => sum + tab.fields.filter(field => active(values[tab.name + ':' + field.id])).length + (tab.range && (values[tab.name + ':' + tab.range.id + 'From'] || values[tab.name + ':' + tab.range.id + 'To']) ? 1 : 0), 0);
   }
 
   function resetMasterFilter() {
@@ -6894,7 +7081,7 @@ WTPages.switchProjView = function(view) {
     const canViewReports = typeof wtCan !== 'function' || wtCan('Reports', 'view');
     const canCreateReports = typeof wtCan !== 'function' || wtCan('Reports', 'edit');
     const canExportReports = typeof wtCanAction !== 'function' || wtCanAction('Reports', 'export');
-    el.innerHTML = pageHead('Executive Reports & Exports (PM-28)', '/api/reports',
+    el.innerHTML = pageHead('All Reports', '/api/reports',
       `<button class="btn" id="reportFilterButton" type="button" onclick="WTPages.openMasterFilter()"><i class="fa-solid fa-filter"></i> Filter</button>
        ${canUseMasterReport() ? `<button class="btn primary" onclick="WTPages.openMasterReport()"><i class="fa-solid fa-layer-group"></i> Master Report</button>` : ''}
        ${canExportReports ? `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>` : ''}
