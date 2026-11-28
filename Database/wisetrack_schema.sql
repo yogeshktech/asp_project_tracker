@@ -179,7 +179,7 @@ CREATE TABLE variance_explanations (
 CREATE TABLE milestone_templates (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name            VARCHAR(200) NOT NULL,
-    project_type_id BIGINT REFERENCES project_types(id),
+    project_type_id BIGINT REFERENCES project_types(id) ON DELETE CASCADE,
     template_json   TEXT NOT NULL DEFAULT '[]',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

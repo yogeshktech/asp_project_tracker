@@ -116,6 +116,15 @@ public class ProjectRepository : IProjectRepository
     public async Task DeleteProjectTypeAsync(long id)
     {
         var type = await _db.ProjectTypes.FindAsync(id) ?? throw new InvalidOperationException("Project type not found");
+        var usedBy = await _db.Projects.Where(p => p.ProjectTypeId == id).Select(p => p.Name).ToListAsync();
+        if (usedBy.Count > 0)
+        {
+            var shown = string.Join(", ", usedBy.Take(3));
+            var more = usedBy.Count > 3 ? $" and {usedBy.Count - 3} more" : "";
+            throw new InvalidOperationException($"This type is still assigned to {shown}{more}. Change those projects to another type before deleting it.");
+        }
+        var templates = await _db.MilestoneTemplates.Where(t => t.ProjectTypeId == id).ToListAsync();
+        if (templates.Count > 0) _db.MilestoneTemplates.RemoveRange(templates);
         _db.ProjectTypes.Remove(type);
         await _db.SaveChangesAsync();
     }
