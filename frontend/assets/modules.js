@@ -7549,25 +7549,37 @@ WTPages.switchProjView = function(view) {
   }
 
   // PM-25: use the permission-filtered portfolio report as the dashboard source.
+  function statusChips(rows, order, read) {
+    const counts = new Map(order.map(name => [name, 0]));
+    (rows || []).forEach(row => {
+      const raw = String(read(row) ?? '').trim();
+      const compact = raw.toLowerCase().replace(/[\s_-]/g, '');
+      const known = order.find(name => name.toLowerCase().replace(/[\s_-]/g, '') === compact);
+      const label = known || raw;
+      if (!label) return;
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    const extras = [...counts.keys()].filter(name => !order.includes(name) && counts.get(name) > 0);
+    return [...order, ...extras].map(name => `<span class="kpi-status-chip">${esc(name)} <b>${counts.get(name) || 0}</b></span>`).join('');
+  }
+
+  function statusCard(label, total, chips, tone) {
+    return `<div class="kpi ${tone || ''}"><span class="kpi-label">${esc(label)}</span><span class="kpi-value">${esc(total)}</span>${chips ? `<div class="kpi-statuses">${chips}</div>` : ''}</div>`;
+  }
+
+  function workStatusLabel(row) {
+    const raw = String(row.status || row.Status || 'NotStarted').replace(/[\s_-]/g, '').toLowerCase();
+    if (raw === 'inprogress') return 'In Progress';
+    if (raw === 'delayed') return 'Delayed';
+    if (raw === 'completed' || raw === 'complete' || raw === 'done' || raw === 'closed') return 'Completed';
+    return 'Not Started';
+  }
+
   async function pageDashboard() {
     const el = root();
-    el.innerHTML = pageHead('Portfolio Dashboard', 'Authorized projects · status, milestone, schedule risk, budget position, and active alerts',
+    el.innerHTML = pageHead('Portfolio Dashboard', 'Counts by status for resorts, projects, tasks, milestones, budget, BOQ, and risks',
       `<a class="btn" href="reports.html">Reports</a> ${typeof wtCanCreateProjectInResort === 'function' && wtCanCreateProjectInResort(localStorage.getItem('WISETRACK_SELECTED_RESORT')) ? `<button class="btn primary" onclick="openCreateProjectModal()">+ Create Project</button>` : ''}`)
-      + `<div class="kpis">
-          <div class="kpi"><span class="kpi-label">Authorized Projects</span><span class="kpi-value" id="pm25ProjectCount">…</span></div>
-          <div class="kpi success"><span class="kpi-label">On Track</span><span class="kpi-value" id="pm25OnTrack">…</span></div>
-          <div class="kpi warning"><span class="kpi-label">Schedule Risk</span><span class="kpi-value" id="pm25Risk">…</span></div>
-          <div class="kpi danger"><span class="kpi-label">Active Alerts</span><span class="kpi-value" id="pm25Exceptions">…</span></div>
-          <div class="kpi warning kpi-log"><span class="kpi-label">Risk / Issue</span><div id="pm25LogTypes"><span class="kpi-value">…</span></div></div>
-        </div>
-        <section class="card" style="margin-top:18px">
-          <div class="card-header"><div><h3 class="card-title">Portfolio totals &amp; reports</h3><div class="card-subtitle">Summary across all projects you are authorized to view.</div></div><a class="btn sm" href="reports.html">Open Reports</a></div>
-          <div id="pm25Portfolio" class="grid g4" style="margin-top:12px"></div>
-        </section>
-        <section class="card" style="margin-top:18px">
-          <div class="card-header"><div><h3 class="card-title">Work &amp; material totals</h3><div class="card-subtitle">Tasks, milestones, issues, master items, BOQ baseline quantities, and inventory across projects you can view.</div></div></div>
-          <div id="pm25WorkTotals" class="grid g4" style="margin-top:12px"><p>Loading totals…</p></div>
-        </section>
+      + `<div class="kpis" id="pm25StatusCards"><div class="kpi"><span class="kpi-label">Loading</span><span class="kpi-value">…</span></div></div>
         <section class="card" id="pm25UserAccessSection" style="margin-top:18px;display:none">
           <div class="card-header"><div><h3 class="card-title">Users &amp; permissions</h3><div class="card-subtitle">Active user count and each user’s module and project access.</div></div><a class="btn sm" href="users.html">Manage users</a></div>
           <div id="pm25UserTotals" class="grid g4" style="margin-top:12px"></div>
@@ -7578,31 +7590,17 @@ WTPages.switchProjView = function(view) {
           <div id="pm25AttentionCards" class="grid g3" style="margin-top:12px"></div>
         </section>`;
     try {
-      const report = await WisetrackAPI.getPortfolioReport();
+      const [report, resortRows] = await Promise.all([
+        WisetrackAPI.getPortfolioReport(),
+        WisetrackAPI.getResorts().catch(() => [])
+      ]);
       const projects = report?.projects || report?.Projects || (Array.isArray(report) ? report : []);
+      const resorts = Array.isArray(resortRows) ? resortRows : (resortRows?.items || resortRows?.Items || []);
       const riskCount = projects.filter(p => /high|medium|risk|overdue/i.test(p.scheduleRisk || p.ScheduleRisk || '')).length;
+      const onTrack = projects.length - riskCount;
       const exceptions = projects.reduce((sum, p) => sum + Number(p.unresolvedExceptions ?? p.UnresolvedExceptions ?? p.openIssues ?? p.OpenIssues ?? 0), 0);
-      $('#pm25ProjectCount').textContent = String(projects.length);
-      $('#pm25OnTrack').textContent = String(projects.filter(p => !/high|medium|risk|overdue/i.test(p.scheduleRisk || p.ScheduleRisk || '')).length);
-      $('#pm25Risk').textContent = String(riskCount);
-      $('#pm25Exceptions').textContent = String(exceptions);
       const showBudget = typeof wtCanViewModule !== 'function' || wtCanViewModule('Budgets') || wtCanViewModule('Costs');
-      const statusCounts = new Map();
-      projects.forEach(project => {
-        const status = String(project.status || project.Status || 'Unknown');
-        statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
-      });
-      const averageProgress = projects.length
-        ? Math.round(projects.reduce((sum, project) => sum + Number(project.progressPercent ?? project.ProgressPercent ?? 0), 0) / projects.length)
-        : 0;
       const budgetRiskProjects = projects.filter(project => /red|amber/i.test(project.budgetRag || project.BudgetRag || ''));
-      const statusCards = [['Total projects', projects.length, 'blue']]
-        .concat([...statusCounts.entries()].map(([status, count]) => [status, count, /closed|complete/i.test(status) ? 'success' : '']))
-        .concat([['Average progress', averageProgress + '%', 'success']]);
-      if (showBudget) statusCards.push(['Budget alerts', budgetRiskProjects.length, budgetRiskProjects.length ? 'warning' : 'success']);
-      $('#pm25Portfolio').innerHTML = statusCards.map(card =>
-        '<div class="kpi ' + card[2] + '"><span class="kpi-label">' + esc(card[0]) + '</span><span class="kpi-value">' + esc(card[1]) + '</span></div>'
-      ).join('') || '<p>No authorized projects are available.</p>';
       const rows = value => Array.isArray(value) ? value : (value?.items || value?.Items || value?.data || value?.Data || []);
       const canSee = (module, projectId) => typeof wtCan !== 'function' || wtCan(module, 'view', Number(projectId));
       const projectModules = await Promise.all(projects.map(async project => {
@@ -7612,7 +7610,7 @@ WTPages.switchProjView = function(view) {
           canSee('Tasks', projectId) ? WisetrackAPI.getMilestones(projectId).catch(() => []) : Promise.resolve([]),
           canSee('Issues', projectId) ? WisetrackAPI.getIssues(projectId).catch(() => []) : Promise.resolve([]),
           canSee('BOQ', projectId) ? WisetrackAPI.getBoqs(projectId).catch(() => []) : Promise.resolve([]),
-          canSee('Inventory', projectId) ? WisetrackAPI.getInventory(projectId).catch(() => []) : Promise.resolve([])
+          showBudget && canSee('Budgets', projectId) ? WisetrackAPI.getBudgets(projectId).catch(() => []) : Promise.resolve([])
         ];
         return Promise.all(requests);
       }));
@@ -7620,41 +7618,26 @@ WTPages.switchProjView = function(view) {
       const milestoneRows = projectModules.flatMap(batch => rows(batch[1]));
       const issueRows = projectModules.flatMap(batch => rows(batch[2]));
       const boqRows = projectModules.flatMap(batch => rows(batch[3]));
-      const inventoryRows = projectModules.flatMap(batch => rows(batch[4]));
-      const isDone = row => /complete|closed|done|resolved/i.test(row.status || row.Status || '') || Number(row.completionPercent ?? row.CompletionPercent ?? 0) >= 100;
-      const countSubtasks = task => rows(task.subTasks || task.SubTasks).reduce((count, subtask) => count + 1 + countSubtasks(subtask), 0);
-      const countCompletedSubtasks = task => rows(task.subTasks || task.SubTasks).reduce((count, subtask) => count + (isDone(subtask) ? 1 : 0) + countCompletedSubtasks(subtask), 0);
-      const allTaskCount = taskRows.reduce((count, task) => count + 1 + countSubtasks(task), 0);
-      const completeTaskCount = taskRows.reduce((count, task) => count + (isDone(task) ? 1 : 0) + countCompletedSubtasks(task), 0);
-      const openIssues = issueRows.filter(row => !/closed|resolved|complete/i.test(row.status || row.Status || ''));
+      const budgetRows = projectModules.flatMap(batch => rows(batch[4]));
+      const flattenWork = node => [node, ...rows(node.subTasks || node.SubTasks || node.children || node.Children).flatMap(flattenWork)];
+      const taskNodes = taskRows.flatMap(flattenWork);
+      const workOrder = ['Not Started', 'In Progress', 'Delayed', 'Completed'];
+      const issueOrder = ['Open', 'In Progress', 'Resolved', 'Closed'];
       const isRiskLog = row => /^risk$/i.test(String(row.logType || row.LogType || ''));
-      const riskLogCount = issueRows.filter(isRiskLog).length;
-      const issueLogCount = issueRows.length - riskLogCount;
-      const logTypesNode = $('#pm25LogTypes');
-      if (logTypesNode) logTypesNode.innerHTML = `<div class="kpi-status-line">Risk ${riskLogCount}</div><div class="kpi-status-meta">${esc(issueStatusCounts(issueRows.filter(isRiskLog)))}</div><div class="kpi-status-line">Issue ${issueLogCount}</div><div class="kpi-status-meta">${esc(issueStatusCounts(issueRows.filter(row => !isRiskLog(row))))}</div>`;
-      let baselineItems = [];
-      boqRows.forEach(boq => {
-        const versions = rows(boq.versions || boq.Versions);
-        const baseline = versions.find(v => v.isCurrentBaseline || v.IsCurrentBaseline);
-        if (baseline) baselineItems.push(...rows(baseline.items || baseline.Items));
-      });
-      const boqQty = baselineItems.reduce((sum, row) => sum + Number(row.quantity ?? row.Quantity ?? 0), 0);
-      const inventoryQty = inventoryRows.reduce((sum, row) => sum + Number(row.quantity ?? row.Quantity ?? row.orderQuantity ?? row.OrderQuantity ?? 0), 0);
-      const workCards = [
-        ['Tasks & subtasks', allTaskCount, completeTaskCount + ' complete'],
-        ['Milestones', milestoneRows.length, milestoneRows.filter(isDone).length + ' complete'],
-        ['Open issues', openIssues.length, issueRows.length + ' total'],
-        ['Item Master', '—', 'Not available'],
-        ['BOQ baseline items', baselineItems.length, boqQty.toLocaleString() + ' total quantity'],
-        ['Inventory records', inventoryRows.length, inventoryQty.toLocaleString() + ' total quantity']
+      const riskRows = issueRows.filter(isRiskLog);
+      const issueOnly = issueRows.filter(row => !isRiskLog(row));
+      const budgetStatus = row => /approv/i.test(String(row.status || row.Status || '')) ? 'Approved' : (String(row.status || row.Status || 'Draft').trim() || 'Draft');
+      const cards = [
+        statusCard('Projects', projects.length, statusChips(projects, ['Draft', 'Active', 'Inactive', 'On Hold', 'Completed', 'Closed'], project => project.status || project.Status || 'Draft') + `<span class="kpi-status-chip">On track <b>${onTrack}</b></span><span class="kpi-status-chip">Schedule risk <b>${riskCount}</b></span>`),
+        statusCard('Resorts', resorts.length, statusChips(resorts, ['Active', 'Inactive'], resort => (resort.isActive ?? resort.IsActive) === false ? 'Inactive' : 'Active')),
+        statusCard('Tasks', taskNodes.length, statusChips(taskNodes, workOrder, workStatusLabel)),
+        statusCard('Milestones', milestoneRows.length, statusChips(milestoneRows, workOrder, workStatusLabel)),
+        statusCard('Risk', riskRows.length, statusChips(riskRows, issueOrder, row => row.status || row.Status || 'Open'), 'warning'),
+        statusCard('Issues', issueOnly.length, statusChips(issueOnly, issueOrder, row => row.status || row.Status || 'Open'), 'warning'),
+        statusCard('BOQ', boqRows.length, statusChips(boqRows, ['Draft', 'Imported', 'Under Review', 'Submitted', 'Approved', 'Rejected', 'Completed', 'Cancelled', 'Baseline'], row => row.status || row.Status || 'Draft'))
       ];
-      if ((typeof wtCanViewModule !== 'function' || wtCanViewModule('Module') || wtCanViewModule('BOQ')) && WisetrackAPI.getItems) {
-        try {
-          const masterItems = rows(await WisetrackAPI.getItems());
-          workCards[3] = ['Item Master', masterItems.length, 'Reusable catalog items'];
-        } catch (_) { workCards[3] = ['Item Master', '—', 'Permission unavailable']; }
-      }
-      $('#pm25WorkTotals').innerHTML = workCards.map((card, index) => '<div class="kpi ' + (index === 2 && openIssues.length ? 'warning' : '') + '"><span class="kpi-label">' + esc(card[0]) + '</span><span class="kpi-value">' + esc(card[1]) + '</span><small style="color:var(--text-muted)">' + esc(card[2]) + '</small></div>').join('');
+      if (showBudget) cards.push(statusCard('Budget', budgetRows.length, statusChips(budgetRows, ['Draft', 'Approved'], budgetStatus) + `<span class="kpi-status-chip">Budget alert <b>${budgetRiskProjects.length}</b></span>`, budgetRiskProjects.length ? 'warning' : 'success'));
+      $('#pm25StatusCards').innerHTML = cards.join('');
       if (typeof wtIsAdmin === 'function' && wtIsAdmin()) {
         $('#pm25UserAccessSection').style.display = '';
         try {
@@ -7665,11 +7648,9 @@ WTPages.switchProjView = function(view) {
             const projectIds = new Set(grants.map(grant => grant.projectId ?? grant.ProjectId).filter(id => id != null));
             return { user, grants, modules, projectIds };
           }));
-          $('#pm25UserTotals').innerHTML = [
-            ['Users', users.length], ['Active users', users.filter(user => user.isActive ?? user.IsActive).length],
-            ['Modules assigned', new Set(accessRows.flatMap(row => [...row.modules])).size],
-            ['User-project grants', accessRows.reduce((sum, row) => sum + row.grants.length, 0)]
-          ].map(card => '<div class="kpi"><span class="kpi-label">' + esc(card[0]) + '</span><span class="kpi-value">' + esc(card[1]) + '</span></div>').join('');
+          $('#pm25UserTotals').innerHTML = statusCard('Users', users.length, statusChips(users, ['Active', 'Inactive'], user => (user.isActive ?? user.IsActive) === false ? 'Inactive' : 'Active'))
+            + statusCard('Modules assigned', new Set(accessRows.flatMap(row => [...row.modules])).size, '')
+            + statusCard('User-project grants', accessRows.reduce((sum, row) => sum + row.grants.length, 0), '');
           $('#pm25UserAccessBody').innerHTML = accessRows.length ? accessRows.map(({ user, grants, modules, projectIds }) => '<tr><td>' + esc(user.fullName || user.FullName || user.email || user.Email || 'User') + '</td><td>' + ((user.isActive ?? user.IsActive) ? '<span class="badge green">Active</span>' : '<span class="badge">Inactive</span>') + '</td><td>' + modules.size + (modules.size ? ' · ' + esc([...modules].sort().join(', ')) : '') + '</td><td>' + projectIds.size + '</td><td>' + grants.length + '</td></tr>').join('') : '<tr><td colspan="5">No users found.</td></tr>';
         } catch (_) {
           $('#pm25UserTotals').innerHTML = '<p>User totals are unavailable.</p>';
@@ -7688,9 +7669,8 @@ WTPages.switchProjView = function(view) {
         attentionCard('Active task alerts & issues', exceptionProjects, exceptions, exceptions ? 'red' : 'green', 'unresolvedExceptions') +
         (showBudget ? attentionCard('Budget alerts', budgetRiskProjects, budgetRiskProjects.length, budgetRiskProjects.length ? 'amber' : 'green', null) : '');
     } catch (err) {
-      $('#pm25Portfolio').innerHTML = `<p style="padding:16px;color:var(--danger,#b91c1c)">Portfolio could not be loaded: ${esc(err.message || 'Request failed')}</p>`;
+      $('#pm25StatusCards').innerHTML = `<p style="padding:16px;color:var(--danger,#b91c1c)">Dashboard counts could not be loaded: ${esc(err.message || 'Request failed')}</p>`;
       $('#pm25AttentionCards').innerHTML = '<p style="padding:12px;color:var(--text-muted)">Attention summary is unavailable.</p>';
-      ['pm25ProjectCount','pm25OnTrack','pm25Risk','pm25Exceptions','pm25LogTypes'].forEach(id => { const node = document.getElementById(id); if (node) node.textContent = '—'; });
     }
   }
 
