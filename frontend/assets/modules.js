@@ -6543,27 +6543,157 @@ WTPages.switchProjView = function(view) {
       const resortLabel = selectedResorts.length ? selectedResorts.map(id => resortName.get(id) || `Resort ${id}`).join(', ') : 'All resorts';
       const periodLabel = `${fromText || 'Beginning'} to ${toText || 'Today'}`;
       window._wtMasterReport = { sheets: sheetDefs, blocks: runningBlocks, resortLabel, periodLabel, generatedAt: new Date().toLocaleString() };
-      const canExport = canUseMasterReport();
-      const taskCount = taskRows.length;
-      const openIssues = issueRows.filter(row => !/closed|resolved/i.test(String(row[6] || ''))).length;
+      if (!window._wtMasterFilter || !sheetDefs.some(sheet => sheet.name === window._wtMasterFilter.tab)) {
+        window._wtMasterFilter = { tab: sheetDefs[0]?.name || '', values: window._wtMasterFilter?.values || {} };
+      }
       status.textContent = '';
-      result.innerHTML = `<div id="masterReportPrint">
+      renderMasterReportView();
+      showToast('Master report ready.');
+    } catch (error) {
+      status.textContent = '';
+      result.innerHTML = `<p style="color:var(--danger,#b91c1c)">Could not build the master report: ${esc(error.message || 'Request failed')}</p>`;
+    }
+  }
+
+  function masterFilterState() {
+    if (!window._wtMasterFilter) window._wtMasterFilter = { tab: '', values: {} };
+    return window._wtMasterFilter;
+  }
+
+  function masterTabFilters(sheet) {
+    const columnOf = header => sheet.headers.findIndex(name => name === header);
+    const select = (id, label, header) => {
+      const column = columnOf(header);
+      return column < 0 ? null : { id, label, type: 'select', column };
+    };
+    const date = (id, label, header) => {
+      const column = columnOf(header);
+      return column < 0 ? null : { id, label, type: 'date', column };
+    };
+    const specific = {
+      'What is running': [select('section', 'Section', 'Section'), select('status', 'Status', 'Status'), select('assigned', 'Assigned to', 'Assigned to'), date('due', 'Due date', 'Due')],
+      'Overview': [select('status', 'Status', 'Status'), select('owner', 'Owner', 'Owner')],
+      'Budget': [select('status', 'Status', 'Status')],
+      'Drawing Upload': [date('uploaded', 'Uploaded', 'Uploaded')],
+      'BOQ': [select('status', 'Status', 'Status')],
+      'Milestones': [select('status', 'Status', 'Status'), date('due', 'Due date', 'Due')],
+      'Tasks': [select('level', 'Level', 'Level'), select('status', 'Status', 'Status'), select('assigned', 'Assigned to', 'Assigned to'), date('end', 'End date', 'End')],
+      'Costs': [select('type', 'Type', 'Type'), date('date', 'Date', 'Date')],
+      'Risk-Issue': [select('log', 'Log type', 'Log type'), select('status', 'Status', 'Status'), select('priority', 'Priority', 'Priority'), date('when', 'When', 'When')],
+      'Daily Reports': [select('status', 'Status', 'Status'), date('date', 'Date', 'Date')],
+      'Project Closure': [select('status', 'Project status', 'Project status'), select('closure', 'Closure', 'Closure')]
+    };
+    const sorts = {
+      'What is running': [['Due date, soonest', 'Due', 'asc'], ['Due date, latest', 'Due', 'desc'], ['Status', 'Status', 'asc'], ['Project', 'Project', 'asc']],
+      'Overview': [['Start date', 'Start', 'asc'], ['End date', 'End', 'asc'], ['Project', 'Project', 'asc']],
+      'Budget': [['Approved, highest', 'Approved', 'desc'], ['Approved, lowest', 'Approved', 'asc'], ['Status', 'Status', 'asc']],
+      'Drawing Upload': [['Uploaded, newest', 'Uploaded', 'desc'], ['Uploaded, oldest', 'Uploaded', 'asc']],
+      'BOQ': [['Title', 'Title', 'asc'], ['Lines, most', 'Lines', 'desc']],
+      'Milestones': [['Due date, soonest', 'Due', 'asc'], ['Progress, highest', 'Progress %', 'desc'], ['Status', 'Status', 'asc']],
+      'Tasks': [['End date, soonest', 'End', 'asc'], ['End date, latest', 'End', 'desc'], ['Progress, highest', 'Progress %', 'desc'], ['Status', 'Status', 'asc']],
+      'Costs': [['Date, newest', 'Date', 'desc'], ['Amount, highest', 'Amount', 'desc']],
+      'Risk-Issue': [['When, newest', 'When', 'desc'], ['When, oldest', 'When', 'asc'], ['Status', 'Status', 'asc']],
+      'Daily Reports': [['Date, newest', 'Date', 'desc'], ['Date, oldest', 'Date', 'asc'], ['Progress, highest', 'Progress %', 'desc']],
+      'Inventory': [['Quantity, highest', 'Quantity', 'desc'], ['Item', 'Item', 'asc']],
+      'Project Closure': [['Project', 'Project', 'asc'], ['Leftover quantity', 'Leftover quantity', 'desc']]
+    };
+    return {
+      fields: [select('resort', 'Resort', 'Resort'), select('project', 'Project', 'Project'), ...((specific[sheet.name] || []).filter(Boolean))].filter(Boolean),
+      sorts: (sorts[sheet.name] || [['Project', 'Project', 'asc']]).filter(([, header]) => columnOf(header) >= 0)
+    };
+  }
+
+  function masterFilteredRows(sheet) {
+    const spec = masterTabFilters(sheet);
+    const values = masterFilterState().values;
+    const prefix = sheet.name + ':';
+    let rows = sheet.rows.filter(row => {
+      const search = String(values[prefix + 'search'] || '').trim().toLowerCase();
+      if (search && !row.some(cell => String(cell ?? '').toLowerCase().includes(search))) return false;
+      return spec.fields.every(field => {
+        if (field.type === 'select') {
+          const chosen = values[prefix + field.id];
+          return !chosen || chosen === 'all' || String(row[field.column] ?? '') === chosen;
+        }
+        if (field.type === 'date') {
+          const from = masterDay(values[prefix + field.id + 'From']);
+          const to = masterDay(values[prefix + field.id + 'To']);
+          if (from && to && from > to) return true;
+          if (!from && !to) return true;
+          return masterInRange(row[field.column], from, to);
+        }
+        return true;
+      });
+    });
+    const [header, dir] = String(values[prefix + 'sort'] || '').split('|');
+    const index = sheet.headers.indexOf(header);
+    if (index >= 0) {
+      rows = rows.slice().sort((left, right) => {
+        const a = left[index];
+        const b = right[index];
+        const an = Number(a);
+        const bn = Number(b);
+        const cmp = a !== '' && b !== '' && Number.isFinite(an) && Number.isFinite(bn)
+          ? an - bn
+          : String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true });
+        return dir === 'desc' ? -cmp : cmp;
+      });
+    }
+    return rows;
+  }
+
+  function masterActiveFilterCount(sheet) {
+    const values = masterFilterState().values;
+    const prefix = sheet.name + ':';
+    return Object.entries(values).filter(([key, value]) => key.startsWith(prefix) && value && value !== 'all').length;
+  }
+
+  function renderMasterReportView() {
+    const report = window._wtMasterReport;
+    const result = $('#masterReportResult');
+    if (!report || !result) return;
+    const state = masterFilterState();
+    const active = report.sheets.find(sheet => sheet.name === state.tab) || report.sheets[0];
+    if (!active) { result.innerHTML = '<p>No sections were selected.</p>'; return; }
+    state.tab = active.name;
+    const rows = masterFilteredRows(active);
+    const visible = { ...active, rows };
+    const filterCount = masterActiveFilterCount(active);
+    const taskCount = (report.sheets.find(sheet => sheet.name === 'Tasks')?.rows || []).length;
+    const issueSheet = report.sheets.find(sheet => sheet.name === 'Risk-Issue');
+    const issueCount = issueSheet?.rows.length || 0;
+    const openIssues = (issueSheet?.rows || []).filter(row => !/closed|resolved/i.test(String(row[issueSheet.headers.indexOf('Status')] || ''))).length;
+    const running = report.blocks || [];
+    result.innerHTML = `<div id="masterReportPrint">
         <div class="master-cover">
           <h2>Master Report</h2>
-          <p>${esc(resortLabel)} · ${esc(periodLabel)}</p>
-          <p style="margin-top:4px">Generated ${esc(window._wtMasterReport.generatedAt)} · ${overviewRows.length} project(s)</p>
+          <p>${esc(report.resortLabel)} · ${esc(report.periodLabel)}</p>
+          <p style="margin-top:4px">Generated ${esc(report.generatedAt)} · ${esc(active.name)} · ${rows.length} of ${active.rows.length} row(s)</p>
           <div class="master-kpis">
-            <div class="master-kpi"><b>${overviewRows.length}</b><span>Projects</span></div>
+            <div class="master-kpi"><b>${running.length}</b><span>Projects</span></div>
             <div class="master-kpi"><b>${taskCount}</b><span>Tasks</span></div>
-            <div class="master-kpi"><b>${issueRows.length}</b><span>Risk / Issue</span></div>
+            <div class="master-kpi"><b>${issueCount}</b><span>Risk / Issue</span></div>
             <div class="master-kpi"><b>${openIssues}</b><span>Still open</span></div>
-            <div class="master-kpi"><b>${runningBlocks.reduce((sum, block) => sum + block.tasks.length, 0)}</b><span>Tasks running</span></div>
-            <div class="master-kpi"><b>${runningBlocks.reduce((sum, block) => sum + block.approved, 0).toLocaleString('en-US')}</b><span>Approved</span></div>
-            <div class="master-kpi"><b>${runningBlocks.reduce((sum, block) => sum + block.notApproved, 0).toLocaleString('en-US')}</b><span>Not approved</span></div>
+            <div class="master-kpi"><b>${running.reduce((sum, block) => sum + block.tasks.length, 0)}</b><span>Tasks running</span></div>
+            <div class="master-kpi"><b>${running.reduce((sum, block) => sum + block.approved, 0).toLocaleString('en-US')}</b><span>Approved</span></div>
+            <div class="master-kpi"><b>${running.reduce((sum, block) => sum + block.notApproved, 0).toLocaleString('en-US')}</b><span>Not approved</span></div>
           </div>
         </div>
-        ${canExport ? `<div class="master-actions"><button type="button" class="btn primary" onclick="WTPages.downloadMasterReport()"><i class="fa-solid fa-file-excel"></i> Download Excel</button><button type="button" class="btn" onclick="WTPages.printMasterReport()"><i class="fa-solid fa-print"></i> Print / PDF</button></div>` : ''}
-        ${sections.has('running') ? runningBlocks.map(block => `<article class="master-project">
+        <div class="master-actions">
+          <div class="report-tabs">${report.sheets.map(sheet => `<button type="button" class="report-tab${sheet.name === active.name ? ' active' : ''}" onclick="WTPages.showMasterTab(${JSON.stringify(sheet.name).replace(/"/g, '&quot;')})">${esc(sheet.name)}</button>`).join('')}</div>
+          <button type="button" class="btn" onclick="WTPages.openMasterFilter()"><i class="fa-solid fa-filter"></i> Filter &amp; Sort${filterCount ? ` (${filterCount})` : ''}</button>
+          ${canUseMasterReport() ? `<button type="button" class="btn primary" onclick="WTPages.downloadMasterReport()"><i class="fa-solid fa-file-excel"></i> Download Excel</button><button type="button" class="btn" onclick="WTPages.printMasterReport()"><i class="fa-solid fa-print"></i> Print / PDF</button>` : ''}
+        </div>
+        ${active.name === 'What is running' ? running.filter(block => {
+          const values = state.values;
+          const resort = values['What is running:resort'];
+          const project = values['What is running:project'];
+          const status = values['What is running:status'];
+          if (resort && resort !== 'all' && block.resort !== resort) return false;
+          if (project && project !== 'all' && block.projectName !== project) return false;
+          if (status && status !== 'all' && block.status !== status) return false;
+          return true;
+        }).map(block => `<article class="master-project">
           <header><div><h3>${esc(block.projectName)}${block.code ? ` · ${esc(block.code)}` : ''}</h3><div class="card-subtitle">${esc(block.resort || 'Resort')} · ${esc(block.status || 'Draft')}</div></div></header>
           <div class="master-mini">
             <span><b>${block.tasks.length}</b>Tasks running</span>
@@ -6580,13 +6710,70 @@ WTPages.switchProjView = function(view) {
           <h4>Budget — approved and not approved</h4>
           ${masterSheetTable({ name: 'Budget', headers: ['Budget', 'Status', 'Approved', 'Not approved', 'Allocated', 'Not allocated'], rows: block.budgets }, true)}
         </article>`).join('') : ''}
-        ${sheetDefs.filter(sheet => sheet.name !== 'What is running').map(masterSheetTable).join('')}
+        ${masterSheetTable(visible)}
       </div>`;
-      showToast('Master report ready.');
-    } catch (error) {
-      status.textContent = '';
-      result.innerHTML = `<p style="color:var(--danger,#b91c1c)">Could not build the master report: ${esc(error.message || 'Request failed')}</p>`;
-    }
+  }
+
+  function showMasterTab(name) {
+    masterFilterState().tab = name;
+    closeMasterFilter();
+    renderMasterReportView();
+  }
+
+  function closeMasterFilter() {
+    document.getElementById('masterFilterBackdrop')?.remove();
+    document.getElementById('masterFilterDrawer')?.remove();
+  }
+
+  function openMasterFilter() {
+    const report = window._wtMasterReport;
+    const sheet = report?.sheets?.find(item => item.name === masterFilterState().tab) || report?.sheets?.[0];
+    if (!sheet) return;
+    closeMasterFilter();
+    const spec = masterTabFilters(sheet);
+    const values = masterFilterState().values;
+    const prefix = sheet.name + ':';
+    const choices = field => [...new Set(sheet.rows.map(row => String(row[field.column] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const current = id => values[prefix + id] || '';
+    const body = `
+      <div class="field"><label>Search</label><input id="mfSearch" value="${esc(current('search'))}" placeholder="Search this tab"></div>
+      ${spec.fields.map(field => field.type === 'select' ? `<div class="field"><label>${esc(field.label)}</label><select id="mf-${field.id}"><option value="all">All</option>${choices(field).map(item => `<option value="${esc(item)}" ${current(field.id) === item ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></div>` : `<div class="field"><label>${esc(field.label)}</label><div class="form-grid"><div class="field"><label>From</label><input id="mf-${field.id}From" type="date" value="${esc(current(field.id + 'From'))}"></div><div class="field"><label>To</label><input id="mf-${field.id}To" type="date" value="${esc(current(field.id + 'To'))}"></div></div></div>`).join('')}
+      <div class="field"><label>Sort by</label><select id="mfSort"><option value="">Original order</option>${spec.sorts.map(([label, header, dir]) => { const value = header + '|' + dir; return `<option value="${esc(value)}" ${current('sort') === value ? 'selected' : ''}>${esc(label)}</option>`; }).join('')}</select></div>`;
+    document.body.insertAdjacentHTML('beforeend', `<div class="report-filter-backdrop" id="masterFilterBackdrop" onclick="WTPages.closeMasterFilter()"></div>
+      <aside class="report-filter-drawer" id="masterFilterDrawer">
+        <header><strong>Filter &amp; Sort</strong><button type="button" class="close-btn" onclick="WTPages.closeMasterFilter()">✕</button></header>
+        <div class="report-filter-body"><p class="card-subtitle" style="margin-top:0">${esc(sheet.name)}. These filters stay on this tab.</p>${body}</div>
+        <footer><button type="button" class="btn" onclick="WTPages.resetMasterFilter()">Reset all</button><button type="button" class="btn primary" onclick="WTPages.applyMasterFilter()">Apply</button></footer>
+      </aside>`);
+  }
+
+  function applyMasterFilter() {
+    const sheet = window._wtMasterReport?.sheets?.find(item => item.name === masterFilterState().tab);
+    if (!sheet) return;
+    const spec = masterTabFilters(sheet);
+    const prefix = sheet.name + ':';
+    const values = masterFilterState().values;
+    values[prefix + 'search'] = $('#mfSearch')?.value.trim() || '';
+    values[prefix + 'sort'] = $('#mfSort')?.value || '';
+    spec.fields.forEach(field => {
+      if (field.type === 'select') values[prefix + field.id] = document.getElementById('mf-' + field.id)?.value || 'all';
+      if (field.type === 'date') {
+        values[prefix + field.id + 'From'] = document.getElementById('mf-' + field.id + 'From')?.value || '';
+        values[prefix + field.id + 'To'] = document.getElementById('mf-' + field.id + 'To')?.value || '';
+      }
+    });
+    const invalidDate = spec.fields.find(field => field.type === 'date' && values[prefix + field.id + 'From'] && values[prefix + field.id + 'To'] && values[prefix + field.id + 'From'] > values[prefix + field.id + 'To']);
+    if (invalidDate) { showToast('The From date must be on or before the To date.', 'danger'); return; }
+    closeMasterFilter();
+    renderMasterReportView();
+  }
+
+  function resetMasterFilter() {
+    const name = masterFilterState().tab;
+    const values = masterFilterState().values;
+    Object.keys(values).forEach(key => { if (key.startsWith(name + ':')) delete values[key]; });
+    closeMasterFilter();
+    renderMasterReportView();
   }
 
   async function downloadMasterReport() {
@@ -6596,8 +6783,9 @@ WTPages.switchProjView = function(view) {
     if (!window.XLSX) await loadMilestoneImportScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
     const book = window.XLSX.utils.book_new();
     report.sheets.forEach(sheet => {
-      const worksheet = window.XLSX.utils.aoa_to_sheet([sheet.headers, ...sheet.rows]);
-      worksheet['!cols'] = sheet.headers.map((header, index) => ({ wch: Math.min(42, Math.max(header.length + 2, ...sheet.rows.map(row => String(row[index] ?? '').length).concat([12]))) }));
+      const rows = masterFilteredRows(sheet);
+      const worksheet = window.XLSX.utils.aoa_to_sheet([sheet.headers, ...rows]);
+      worksheet['!cols'] = sheet.headers.map((header, index) => ({ wch: Math.min(42, Math.max(header.length + 2, ...rows.map(row => String(row[index] ?? '').length).concat([12]))) }));
       window.XLSX.utils.book_append_sheet(book, worksheet, sheet.name.slice(0, 31));
     });
     window.XLSX.writeFile(book, `WiseTrack-Master-Report.xlsx`);
@@ -7577,25 +7765,54 @@ WTPages.switchProjView = function(view) {
 
   async function pageDashboard() {
     const el = root();
-    el.innerHTML = pageHead('Portfolio Dashboard', 'Counts by status for resorts, projects, tasks, milestones, budget, BOQ, and risks',
+    el.innerHTML = pageHead('Portfolio Dashboard', 'Showing the resort selected in the top bar. Choose another resort to see its data.',
       `<a class="btn" href="reports.html">Reports</a> ${typeof wtCanCreateProjectInResort === 'function' && wtCanCreateProjectInResort(localStorage.getItem('WISETRACK_SELECTED_RESORT')) ? `<button class="btn primary" onclick="openCreateProjectModal()">+ Create Project</button>` : ''}`)
-      + `<div class="kpis" id="pm25StatusCards"><div class="kpi"><span class="kpi-label">Loading</span><span class="kpi-value">…</span></div></div>
-        <section class="card" id="pm25UserAccessSection" style="margin-top:18px;display:none">
-          <div class="card-header"><div><h3 class="card-title">Users &amp; permissions</h3><div class="card-subtitle">Active user count and each user’s module and project access.</div></div><a class="btn sm" href="users.html">Manage users</a></div>
-          <div id="pm25UserTotals" class="grid g4" style="margin-top:12px"></div>
-          <div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr><th>User</th><th>Status</th><th>Modules permitted</th><th>Projects permitted</th><th>Access grants</th></tr></thead><tbody id="pm25UserAccessBody"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
+      + `<section class="dash-attention">
+          <div class="dash-attention-head">
+            <div>
+              <h3><i class="fa-solid fa-triangle-exclamation"></i> Need Your Attention</h3>
+              <p>Schedule, budget, and unresolved issues for the selected resort.</p>
+            </div>
+            <a class="btn sm" href="reports.html">View report</a>
+          </div>
+          <div id="pm25AttentionCards" class="dash-attention-grid"><p class="dash-muted">Checking the selected resort…</p></div>
         </section>
-        <section class="card" style="margin-top:18px;border-color:#f5c66a">
-          <div class="card-header"><div><h3 class="card-title"><i class="fa-solid fa-triangle-exclamation" style="color:#d97706"></i> Need Your Attention</h3><div class="card-subtitle">Schedule, budget, and unresolved issue totals across the portfolio.</div></div><a class="btn sm" href="reports.html">View report</a></div>
-          <div id="pm25AttentionCards" class="grid g3" style="margin-top:12px"></div>
+        <section class="dash-block">
+          <div class="dash-block-head"><h3>Status counts</h3><p>Each card is the selected resort, split by status.</p></div>
+          <div class="kpis" id="pm25StatusCards"><div class="kpi"><span class="kpi-label">Loading</span><span class="kpi-value">…</span></div></div>
+        </section>
+        <section class="card dash-block">
+          <div class="card-header"><div><h3 class="card-title">Projects in this resort</h3><div class="card-subtitle" id="pm25ResortLabel">Authorized projects in the selected resort.</div></div></div>
+          <div id="pm25Management" class="table-wrap" style="margin-top:12px"><p class="dash-muted">Loading projects…</p></div>
+        </section>
+        <section class="card dash-block" id="pm25UserAccessSection" style="display:none">
+          <div class="card-header"><div><h3 class="card-title">Users on this resort</h3><div class="card-subtitle">People with access to the selected resort.</div></div><a class="btn sm" href="users.html">Manage users</a></div>
+          <div id="pm25UserTotals" class="kpis" style="margin-top:12px"></div>
+          <div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr><th>User</th><th>Status</th><th>Modules permitted</th><th>Projects permitted</th><th>Access grants</th></tr></thead><tbody id="pm25UserAccessBody"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
         </section>`;
     try {
       const [report, resortRows] = await Promise.all([
         WisetrackAPI.getPortfolioReport(),
         WisetrackAPI.getResorts().catch(() => [])
       ]);
-      const projects = report?.projects || report?.Projects || (Array.isArray(report) ? report : []);
-      const resorts = Array.isArray(resortRows) ? resortRows : (resortRows?.items || resortRows?.Items || []);
+      const selectedResortId = Number(localStorage.getItem('WISETRACK_SELECTED_RESORT') || 0);
+      const resortList = Array.isArray(resortRows) ? resortRows : (resortRows?.items || resortRows?.Items || []);
+      const selectedResort = resortList.find(resort => Number(resort.id ?? resort.Id) === selectedResortId);
+      if (!selectedResort) {
+        const message = '<p style="padding:16px;color:var(--text-muted);margin:0">Select a resort in the top bar. This dashboard shows only that resort. Choose another resort to see its data.</p>';
+        $('#pm25StatusCards').innerHTML = message;
+        if ($('#pm25Management')) $('#pm25Management').innerHTML = message;
+        $('#pm25AttentionCards').innerHTML = message;
+        return;
+      }
+      const resortName = selectedResort.name || selectedResort.Name || 'Selected resort';
+      const resortLabel = $('#pm25ResortLabel');
+      if (resortLabel) resortLabel.textContent = `${resortName}: status, next critical milestone, schedule risk, budget position, and unresolved exceptions.`;
+      const asList = value => Array.isArray(value) ? value : (value?.items || value?.Items || value?.data || value?.Data || []);
+      const resortProjects = asList(await WisetrackAPI.getProjects(selectedResortId).catch(() => []));
+      const resortProjectIds = new Set(resortProjects.map(project => Number(project.id ?? project.Id)));
+      const projects = (report?.projects || report?.Projects || (Array.isArray(report) ? report : [])).filter(project => resortProjectIds.has(Number(project.projectId ?? project.ProjectId ?? project.id ?? project.Id)));
+      const resorts = [selectedResort];
       const riskCount = projects.filter(p => /high|medium|risk|overdue/i.test(p.scheduleRisk || p.ScheduleRisk || '')).length;
       const onTrack = projects.length - riskCount;
       const exceptions = projects.reduce((sum, p) => sum + Number(p.unresolvedExceptions ?? p.UnresolvedExceptions ?? p.openIssues ?? p.OpenIssues ?? 0), 0);
@@ -7638,20 +7855,45 @@ WTPages.switchProjView = function(view) {
       ];
       if (showBudget) cards.push(statusCard('Budget', budgetRows.length, statusChips(budgetRows, ['Draft', 'Approved'], budgetStatus) + `<span class="kpi-status-chip">Budget alert <b>${budgetRiskProjects.length}</b></span>`, budgetRiskProjects.length ? 'warning' : 'success'));
       $('#pm25StatusCards').innerHTML = cards.join('');
+      const management = $('#pm25Management');
+      if (management) {
+        management.innerHTML = projects.length ? `<table class="table"><thead><tr>
+            <th>Project</th><th>Status</th><th>Next critical milestone</th><th>Schedule risk</th>${showBudget ? '<th>Budget position</th>' : ''}<th>Unresolved exceptions</th>
+          </tr></thead><tbody>${projects.map(row => {
+            const rag = row.budgetRag || row.BudgetRag || 'Green';
+            const risk = row.scheduleRisk || row.ScheduleRisk || 'Low';
+            const ragCls = /red/i.test(rag) ? 'red' : /amber|yellow/i.test(rag) ? 'amber' : 'green';
+            const riskCls = /high|overdue/i.test(risk) ? 'red' : /medium|risk/i.test(risk) ? 'amber' : 'green';
+            const unresolved = Number(row.unresolvedExceptions ?? row.UnresolvedExceptions ?? row.openIssues ?? row.OpenIssues ?? 0);
+            const budgetText = `${row.currency || row.Currency || 'USD'} ${Number(row.approvedBudget ?? row.ApprovedBudget ?? 0).toLocaleString('en-US')}`;
+            return `<tr>
+              <td><strong>${esc(row.name || row.Name || 'Project')}</strong></td>
+              <td><span class="badge blue">${esc(row.status || row.Status || '—')}</span></td>
+              <td>${esc(row.nextMilestone || row.NextMilestone || '—')}${row.nextMilestoneDueDate || row.NextMilestoneDueDate ? `<small style="display:block;color:var(--text-muted)">${esc(String(row.nextMilestoneDueDate || row.NextMilestoneDueDate).slice(0, 10))}</small>` : ''}</td>
+              <td><span class="badge ${riskCls}">${esc(risk)}</span></td>
+              ${showBudget ? `<td><span class="badge ${ragCls}">${esc(rag)}</span><small style="display:block;color:var(--text-muted)">${esc(budgetText)}</small></td>` : ''}
+              <td>${unresolved}</td>
+            </tr>`;
+          }).join('')}</tbody></table>` : '<p style="color:var(--text-muted);margin:0">No authorized projects are available.</p>';
+      }
       if (typeof wtIsAdmin === 'function' && wtIsAdmin()) {
         $('#pm25UserAccessSection').style.display = '';
         try {
           const users = rows(await WisetrackAPI.getUsers());
           const accessRows = await Promise.all(users.map(async user => {
-            const grants = rows(await WisetrackAPI.getUserProjectPermissions(user.id ?? user.Id).catch(() => []));
+            const grants = rows(await WisetrackAPI.getUserProjectPermissions(user.id ?? user.Id).catch(() => [])).filter(grant => {
+              const projectId = grant.projectId ?? grant.ProjectId;
+              return projectId != null && resortProjectIds.has(Number(projectId));
+            });
             const modules = new Set(grants.map(grant => grant.module || grant.Module).filter(Boolean));
             const projectIds = new Set(grants.map(grant => grant.projectId ?? grant.ProjectId).filter(id => id != null));
             return { user, grants, modules, projectIds };
           }));
-          $('#pm25UserTotals').innerHTML = statusCard('Users', users.length, statusChips(users, ['Active', 'Inactive'], user => (user.isActive ?? user.IsActive) === false ? 'Inactive' : 'Active'))
-            + statusCard('Modules assigned', new Set(accessRows.flatMap(row => [...row.modules])).size, '')
-            + statusCard('User-project grants', accessRows.reduce((sum, row) => sum + row.grants.length, 0), '');
-          $('#pm25UserAccessBody').innerHTML = accessRows.length ? accessRows.map(({ user, grants, modules, projectIds }) => '<tr><td>' + esc(user.fullName || user.FullName || user.email || user.Email || 'User') + '</td><td>' + ((user.isActive ?? user.IsActive) ? '<span class="badge green">Active</span>' : '<span class="badge">Inactive</span>') + '</td><td>' + modules.size + (modules.size ? ' · ' + esc([...modules].sort().join(', ')) : '') + '</td><td>' + projectIds.size + '</td><td>' + grants.length + '</td></tr>').join('') : '<tr><td colspan="5">No users found.</td></tr>';
+          const resortAccess = accessRows.filter(row => row.projectIds.size || row.user.isAdmin || row.user.IsAdmin);
+          $('#pm25UserTotals').innerHTML = statusCard('Users', resortAccess.length, statusChips(resortAccess.map(row => row.user), ['Active', 'Inactive'], user => (user.isActive ?? user.IsActive) === false ? 'Inactive' : 'Active'))
+            + statusCard('Modules assigned', new Set(resortAccess.flatMap(row => [...row.modules])).size, '')
+            + statusCard('User-project grants', resortAccess.reduce((sum, row) => sum + row.grants.length, 0), '');
+          $('#pm25UserAccessBody').innerHTML = resortAccess.length ? resortAccess.map(({ user, grants, modules, projectIds }) => '<tr><td>' + esc(user.fullName || user.FullName || user.email || user.Email || 'User') + '</td><td>' + ((user.isActive ?? user.IsActive) ? '<span class="badge green">Active</span>' : '<span class="badge">Inactive</span>') + '</td><td>' + modules.size + (modules.size ? ' · ' + esc([...modules].sort().join(', ')) : '') + '</td><td>' + projectIds.size + '</td><td>' + grants.length + '</td></tr>').join('') : '<tr><td colspan="5">No users are assigned to this resort.</td></tr>';
         } catch (_) {
           $('#pm25UserTotals').innerHTML = '<p>User totals are unavailable.</p>';
           $('#pm25UserAccessBody').innerHTML = '<tr><td colspan="5">User permission data is unavailable.</td></tr>';
@@ -7659,17 +7901,21 @@ WTPages.switchProjView = function(view) {
       }
       const riskProjects = projects.filter(project => /high|medium|risk|overdue/i.test(project.scheduleRisk || project.ScheduleRisk || ''));
       const exceptionProjects = projects.filter(project => Number(project.unresolvedExceptions ?? project.UnresolvedExceptions ?? project.openIssues ?? project.OpenIssues ?? 0) > 0);
-      const attentionCard = (title, projectRows, count, tone, countField) =>
-        '<article class="card" style="padding:16px"><div style="display:flex;justify-content:space-between;gap:10px"><strong>' + esc(title) +
-        '</strong><span class="badge ' + tone + '">' + count + '</span></div><div style="margin-top:10px;color:var(--text-muted);font-size:13px">' +
-        (projectRows.length ? projectRows.slice(0, 4).map(project => '<div style="padding:4px 0">' + esc(project.name || project.Name || 'Project') +
-          (countField ? ' (' + Number(project[countField] ?? project[countField[0].toUpperCase() + countField.slice(1)] ?? project.openIssues ?? project.OpenIssues ?? 0) + ')' : '') + '</div>').join('') : 'No projects need attention.') +
-        (projectRows.length > 4 ? '<small>+' + (projectRows.length - 4) + ' more projects</small>' : '') + '</div></article>';
-      $('#pm25AttentionCards').innerHTML = attentionCard('Schedule risk', riskProjects, riskCount, riskCount ? 'red' : 'green', null) +
-        attentionCard('Active task alerts & issues', exceptionProjects, exceptions, exceptions ? 'red' : 'green', 'unresolvedExceptions') +
-        (showBudget ? attentionCard('Budget alerts', budgetRiskProjects, budgetRiskProjects.length, budgetRiskProjects.length ? 'amber' : 'green', null) : '');
+      const attentionCard = (title, detail, icon, projectRows, count, countField) => {
+        const tone = count > 0 ? 'attn-hot' : 'attn-clear';
+        const names = projectRows.slice(0, 4).map(project => {
+          const extra = countField ? Number(project[countField] ?? project.openIssues ?? project.OpenIssues ?? 0) : 0;
+          return `<li><span>${esc(project.name || project.Name || 'Project')}</span>${countField ? `<b>${extra}</b>` : ''}</li>`;
+        }).join('');
+        return `<article class="attn-card ${tone}"><div class="attn-top"><span class="attn-icon"><i class="fa-solid ${icon}"></i></span><div><div class="attn-label">${esc(title)}</div><div class="attn-value">${count}</div></div></div><p>${esc(detail)}</p>${projectRows.length ? `<ul>${names}</ul>${projectRows.length > 4 ? `<small>+${projectRows.length - 4} more</small>` : ''}` : '<p class="attn-ok">Nothing needs attention.</p>'}</article>`;
+      };
+      $('#pm25AttentionCards').innerHTML = attentionCard('Schedule risk', 'Projects that are behind or at risk.', 'fa-calendar-xmark', riskProjects, riskCount, null) +
+        attentionCard('Open alerts', 'Overdue tasks and unresolved issues.', 'fa-bell', exceptionProjects, exceptions, 'unresolvedExceptions') +
+        (showBudget ? attentionCard('Budget alerts', 'Projects over or near the budget line.', 'fa-coins', budgetRiskProjects, budgetRiskProjects.length, null) : '');
     } catch (err) {
       $('#pm25StatusCards').innerHTML = `<p style="padding:16px;color:var(--danger,#b91c1c)">Dashboard counts could not be loaded: ${esc(err.message || 'Request failed')}</p>`;
+      const management = $('#pm25Management');
+      if (management) management.innerHTML = '<p style="color:var(--text-muted)">Portfolio management view is unavailable.</p>';
       $('#pm25AttentionCards').innerHTML = '<p style="padding:12px;color:var(--text-muted)">Attention summary is unavailable.</p>';
     }
   }
@@ -7768,7 +8014,7 @@ WTPages.switchProjView = function(view) {
     refreshNotifications: () => pageNotifications(),
     loadPortfolio, loadComparable, runComparable, openReportModal, saveReport,
     openMonthlyReport, generateMonthlyReport, printMonthlyReport,
-    openMasterReport, generateMasterReport, downloadMasterReport, printMasterReport,
+    openMasterReport, generateMasterReport, downloadMasterReport, printMasterReport, showMasterTab, openMasterFilter, closeMasterFilter, applyMasterFilter, resetMasterFilter,
     openReportExportModal: (t) => typeof openReportExportModal === 'function' && openReportExportModal(t),
     openAddDailyReportModal: (s) => typeof openAddDailyReportModal === 'function' && openAddDailyReportModal(s),
     openInventoryModal, saveInventory, viewInventoryAttachment, generateHandoverReport, closeProject, saveCloseProject,
