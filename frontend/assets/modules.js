@@ -6581,6 +6581,7 @@ WTPages.switchProjView = function(view) {
       'Costs': [select('type', 'Type', 'Type'), date('date', 'Date', 'Date')],
       'Risk-Issue': [select('log', 'Log type', 'Log type'), select('status', 'Status', 'Status'), select('priority', 'Priority', 'Priority'), date('when', 'When', 'When')],
       'Daily Reports': [select('status', 'Status', 'Status'), date('date', 'Date', 'Date')],
+      'Inventory': [date('updated', 'Updated', 'Updated')],
       'Project Closure': [select('status', 'Project status', 'Project status'), select('closure', 'Closure', 'Closure')]
     };
     const sorts = {
@@ -6613,7 +6614,9 @@ WTPages.switchProjView = function(view) {
       return spec.fields.every(field => {
         if (field.type === 'select') {
           const chosen = values[prefix + field.id];
-          return !chosen || chosen === 'all' || String(row[field.column] ?? '') === chosen;
+          if (!chosen || chosen === 'all') return true;
+          const compact = text => String(text ?? '').toLowerCase().replace(/[\s_-]/g, '');
+          return compact(row[field.column]) === compact(chosen);
         }
         if (field.type === 'date') {
           const from = masterDay(values[prefix + field.id + 'From']);
@@ -6681,7 +6684,7 @@ WTPages.switchProjView = function(view) {
         </div>
         <div class="master-actions">
           <div class="report-tabs">${report.sheets.map(sheet => `<button type="button" class="report-tab${sheet.name === active.name ? ' active' : ''}" onclick="WTPages.showMasterTab(${JSON.stringify(sheet.name).replace(/"/g, '&quot;')})">${esc(sheet.name)}</button>`).join('')}</div>
-          <button type="button" class="btn" onclick="WTPages.openMasterFilter()"><i class="fa-solid fa-filter"></i> Filter &amp; Sort${filterCount ? ` (${filterCount})` : ''}</button>
+          <button type="button" class="btn" onclick="WTPages.openMasterFilter()"><i class="fa-solid fa-filter"></i> Filter${filterCount ? ` (${filterCount})` : ''}</button>
           ${canUseMasterReport() ? `<button type="button" class="btn primary" onclick="WTPages.downloadMasterReport()"><i class="fa-solid fa-file-excel"></i> Download Excel</button><button type="button" class="btn" onclick="WTPages.printMasterReport()"><i class="fa-solid fa-print"></i> Print / PDF</button>` : ''}
         </div>
         ${active.name === 'What is running' ? running.filter(block => {
@@ -6725,55 +6728,124 @@ WTPages.switchProjView = function(view) {
     document.getElementById('masterFilterDrawer')?.remove();
   }
 
-  function openMasterFilter() {
-    const report = window._wtMasterReport;
-    const sheet = report?.sheets?.find(item => item.name === masterFilterState().tab) || report?.sheets?.[0];
-    if (!sheet) return;
+  const REPORT_FILTER_TABS = [
+    { name: 'What is running', date: 'due', fields: [
+      { id: 'section', label: 'Section', options: ['Project', 'Task running', 'Milestone', 'Budget', 'Note'] },
+      { id: 'status', label: 'Status', options: ['Draft', 'Active', 'Inactive', 'Not Started', 'In Progress', 'Delayed', 'Completed', 'Approved', 'Open'] },
+      { id: 'assigned', label: 'Assigned to', source: 'users' }
+    ]},
+    { name: 'Overview', fields: [
+      { id: 'status', label: 'Status', options: ['Draft', 'Active', 'Inactive', 'On Hold', 'Completed', 'Closed'] },
+      { id: 'owner', label: 'Owner', source: 'users' }
+    ]},
+    { name: 'Budget', fields: [{ id: 'status', label: 'Status', options: ['Draft', 'Approved', 'Not approved'] }] },
+    { name: 'Drawing Upload', date: 'uploaded', fields: [] },
+    { name: 'BOQ', fields: [{ id: 'status', label: 'Status', options: ['Draft', 'Imported', 'Under Review', 'Submitted', 'Approved', 'Rejected', 'Completed', 'Cancelled', 'Baseline'] }] },
+    { name: 'Milestones', date: 'due', fields: [{ id: 'status', label: 'Status', options: ['Not Started', 'In Progress', 'Delayed', 'Completed'] }] },
+    { name: 'Tasks', date: 'end', fields: [
+      { id: 'level', label: 'Level', options: ['Task', 'Sub-task', 'Nested sub-task', 'Further nested task'] },
+      { id: 'status', label: 'Status', options: ['Not Started', 'In Progress', 'Delayed', 'Completed'] },
+      { id: 'assigned', label: 'Assigned to', source: 'users' }
+    ]},
+    { name: 'Costs', date: 'date', fields: [{ id: 'type', label: 'Type', options: ['Purchase', 'Actual'] }] },
+    { name: 'Risk-Issue', date: 'when', fields: [
+      { id: 'log', label: 'Log type', options: ['Risk', 'Issue'] },
+      { id: 'status', label: 'Status', options: ['Open', 'In Progress', 'Resolved', 'Closed'] },
+      { id: 'priority', label: 'Priority', options: ['Low', 'Medium', 'High', 'Critical'] }
+    ]},
+    { name: 'Daily Reports', date: 'date', fields: [{ id: 'status', label: 'Status', options: ['Not Started', 'In Progress', 'Delayed', 'Completed'] }] },
+    { name: 'Inventory', date: 'updated', fields: [] },
+    { name: 'Project Closure', fields: [
+      { id: 'status', label: 'Project status', options: ['Draft', 'Active', 'Inactive', 'Completed', 'Closed'] },
+      { id: 'closure', label: 'Closure', options: ['Open', 'Closed'] }
+    ]}
+  ];
+
+  function reportFilterOptions(field, extra) {
+    const seen = new Set([...(field.options || []), ...(extra || [])]);
+    return [...seen].filter(Boolean);
+  }
+
+  async function openMasterFilter() {
     closeMasterFilter();
-    const spec = masterTabFilters(sheet);
     const values = masterFilterState().values;
-    const prefix = sheet.name + ':';
-    const choices = field => [...new Set(sheet.rows.map(row => String(row[field.column] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    const current = id => values[prefix + id] || '';
+    const current = key => values[key] || '';
+    let resorts = [];
+    let projects = [];
+    let users = [];
+    try {
+      [resorts, projects, users] = await Promise.all([
+        WisetrackAPI.getResorts().catch(() => []),
+        WisetrackAPI.getProjects().catch(() => []),
+        WisetrackAPI.getUsers().catch(() => [])
+      ]);
+    } catch (_) { /* dropdowns still open with the fixed status values */ }
+    const names = (...lists) => [...new Set(lists.flat().map(item => String(item || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const userNames = names((users || []).filter(user => (user.isActive ?? user.IsActive) !== false).map(user => user.fullName || user.FullName || user.name));
+    const sheetValues = (sheetName, header) => {
+      const sheet = window._wtMasterReport?.sheets?.find(item => item.name === sheetName);
+      const index = sheet?.headers?.indexOf(header) ?? -1;
+      return index < 0 ? [] : sheet.rows.map(row => row[index]);
+    };
+    const select = (id, label, options, selected) => `<div class="field"><label>${esc(label)}</label><select id="${id}"><option value="all">All</option>${options.map(item => `<option value="${esc(item)}" ${selected === item ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></div>`;
     const body = `
-      <div class="field"><label>Search</label><input id="mfSearch" value="${esc(current('search'))}" placeholder="Search this tab"></div>
-      ${spec.fields.map(field => field.type === 'select' ? `<div class="field"><label>${esc(field.label)}</label><select id="mf-${field.id}"><option value="all">All</option>${choices(field).map(item => `<option value="${esc(item)}" ${current(field.id) === item ? 'selected' : ''}>${esc(item)}</option>`).join('')}</select></div>` : `<div class="field"><label>${esc(field.label)}</label><div class="form-grid"><div class="field"><label>From</label><input id="mf-${field.id}From" type="date" value="${esc(current(field.id + 'From'))}"></div><div class="field"><label>To</label><input id="mf-${field.id}To" type="date" value="${esc(current(field.id + 'To'))}"></div></div></div>`).join('')}
-      <div class="field"><label>Sort by</label><select id="mfSort"><option value="">Original order</option>${spec.sorts.map(([label, header, dir]) => { const value = header + '|' + dir; return `<option value="${esc(value)}" ${current('sort') === value ? 'selected' : ''}>${esc(label)}</option>`; }).join('')}</select></div>`;
+      ${select('mf-shared-resort', 'Resort', names((resorts || []).map(resort => resort.name || resort.Name)), current('shared:resort'))}
+      ${select('mf-shared-project', 'Project', names((projects || []).map(project => project.name || project.Name)), current('shared:project'))}
+      <div class="field"><label>Search</label><input id="mf-shared-search" value="${esc(current('shared:search'))}" placeholder="Search every tab"></div>
+      <div class="field"><label>Date range</label><div class="form-grid"><div class="field"><label>From date</label><input id="mf-shared-from" type="date" value="${esc(current('shared:from'))}"></div><div class="field"><label>To date</label><input id="mf-shared-to" type="date" value="${esc(current('shared:to'))}"></div></div></div>
+      ${REPORT_FILTER_TABS.map(tab => `<h4 class="report-filter-group">${esc(tab.name)}</h4>${tab.fields.length ? tab.fields.map(field => select('mf-' + tab.name.replace(/\s/g, '-') + '-' + field.id, field.label, reportFilterOptions(field, field.source === 'users' ? userNames.concat(sheetValues(tab.name, field.label === 'Owner' ? 'Owner' : 'Assigned to')) : sheetValues(tab.name, field.label)), current(tab.name + ':' + field.id))).join('') : '<p class="card-subtitle">Uses the resort, project, search, and date range above.</p>'}`).join('')}`;
     document.body.insertAdjacentHTML('beforeend', `<div class="report-filter-backdrop" id="masterFilterBackdrop" onclick="WTPages.closeMasterFilter()"></div>
-      <aside class="report-filter-drawer" id="masterFilterDrawer">
-        <header><strong>Filter &amp; Sort</strong><button type="button" class="close-btn" onclick="WTPages.closeMasterFilter()">✕</button></header>
-        <div class="report-filter-body"><p class="card-subtitle" style="margin-top:0">${esc(sheet.name)}. These filters stay on this tab.</p>${body}</div>
+      <aside class="report-filter-drawer" id="masterFilterDrawer" role="dialog" aria-label="Filter">
+        <header><strong><i class="fa-solid fa-filter"></i> Filter</strong><button type="button" class="close-btn" onclick="WTPages.closeMasterFilter()" aria-label="Close">✕</button></header>
+        <div class="report-filter-body">${body}</div>
         <footer><button type="button" class="btn" onclick="WTPages.resetMasterFilter()">Reset all</button><button type="button" class="btn primary" onclick="WTPages.applyMasterFilter()">Apply</button></footer>
       </aside>`);
   }
 
   function applyMasterFilter() {
-    const sheet = window._wtMasterReport?.sheets?.find(item => item.name === masterFilterState().tab);
-    if (!sheet) return;
-    const spec = masterTabFilters(sheet);
-    const prefix = sheet.name + ':';
     const values = masterFilterState().values;
-    values[prefix + 'search'] = $('#mfSearch')?.value.trim() || '';
-    values[prefix + 'sort'] = $('#mfSort')?.value || '';
-    spec.fields.forEach(field => {
-      if (field.type === 'select') values[prefix + field.id] = document.getElementById('mf-' + field.id)?.value || 'all';
-      if (field.type === 'date') {
-        values[prefix + field.id + 'From'] = document.getElementById('mf-' + field.id + 'From')?.value || '';
-        values[prefix + field.id + 'To'] = document.getElementById('mf-' + field.id + 'To')?.value || '';
+    const read = id => document.getElementById(id)?.value || '';
+    const from = read('mf-shared-from');
+    const to = read('mf-shared-to');
+    if (from && to && from > to) { showToast('The From date must be on or before the To date.', 'danger'); return; }
+    values['shared:resort'] = read('mf-shared-resort') || 'all';
+    values['shared:project'] = read('mf-shared-project') || 'all';
+    values['shared:search'] = read('mf-shared-search').trim();
+    values['shared:from'] = from;
+    values['shared:to'] = to;
+    REPORT_FILTER_TABS.forEach(tab => {
+      values[tab.name + ':resort'] = values['shared:resort'];
+      values[tab.name + ':project'] = values['shared:project'];
+      values[tab.name + ':search'] = values['shared:search'];
+      if (tab.date) {
+        values[tab.name + ':' + tab.date + 'From'] = from;
+        values[tab.name + ':' + tab.date + 'To'] = to;
       }
+      tab.fields.forEach(field => {
+        values[tab.name + ':' + field.id] = read('mf-' + tab.name.replace(/\s/g, '-') + '-' + field.id) || 'all';
+      });
     });
-    const invalidDate = spec.fields.find(field => field.type === 'date' && values[prefix + field.id + 'From'] && values[prefix + field.id + 'To'] && values[prefix + field.id + 'From'] > values[prefix + field.id + 'To']);
-    if (invalidDate) { showToast('The From date must be on or before the To date.', 'danger'); return; }
     closeMasterFilter();
-    renderMasterReportView();
+    if (window._wtMasterReport?.sheets?.length) renderMasterReportView();
+    else showToast('Filters saved. Generate the report and every tab will use them.');
+    const button = document.getElementById('reportFilterButton');
+    if (button) button.innerHTML = `<i class="fa-solid fa-filter"></i> Filter${reportFilterCount() ? ` (${reportFilterCount()})` : ''}`;
+  }
+
+  function reportFilterCount() {
+    return Object.entries(masterFilterState().values).filter(([key, value]) => key.startsWith('shared:') && value && value !== 'all').length
+      + REPORT_FILTER_TABS.reduce((sum, tab) => sum + tab.fields.filter(field => {
+        const value = masterFilterState().values[tab.name + ':' + field.id];
+        return value && value !== 'all';
+      }).length, 0);
   }
 
   function resetMasterFilter() {
-    const name = masterFilterState().tab;
-    const values = masterFilterState().values;
-    Object.keys(values).forEach(key => { if (key.startsWith(name + ':')) delete values[key]; });
+    masterFilterState().values = {};
     closeMasterFilter();
-    renderMasterReportView();
+    if (window._wtMasterReport?.sheets?.length) renderMasterReportView();
+    const button = document.getElementById('reportFilterButton');
+    if (button) button.innerHTML = '<i class="fa-solid fa-filter"></i> Filter';
   }
 
   async function downloadMasterReport() {
@@ -6823,7 +6895,8 @@ WTPages.switchProjView = function(view) {
     const canCreateReports = typeof wtCan !== 'function' || wtCan('Reports', 'edit');
     const canExportReports = typeof wtCanAction !== 'function' || wtCanAction('Reports', 'export');
     el.innerHTML = pageHead('Executive Reports & Exports (PM-28)', '/api/reports',
-      `${canUseMasterReport() ? `<button class="btn primary" onclick="WTPages.openMasterReport()"><i class="fa-solid fa-layer-group"></i> Master Report</button>` : ''}
+      `<button class="btn" id="reportFilterButton" type="button" onclick="WTPages.openMasterFilter()"><i class="fa-solid fa-filter"></i> Filter</button>
+       ${canUseMasterReport() ? `<button class="btn primary" onclick="WTPages.openMasterReport()"><i class="fa-solid fa-layer-group"></i> Master Report</button>` : ''}
        ${canExportReports ? `<button class="btn" onclick="openReportExportModal('portfolio')"><i class="fa-solid fa-sliders"></i> Custom Export & Send</button>` : ''}
        ${canViewReports ? `<button class="btn" onclick="WTPages.openMonthlyReport()"><i class="fa-solid fa-calendar-days"></i> Monthly Project Report</button>
        <button class="btn" onclick="WTPages.loadPortfolio()"><i class="fa-solid fa-chart-pie"></i> View Portfolio</button>
@@ -6831,6 +6904,8 @@ WTPages.switchProjView = function(view) {
        ${canCreateReports ? `<button class="btn primary" onclick="WTPages.openReportModal()">+ Report Config</button>` : ''}`)
       + tableWrap(['ID', 'Name', 'Type', 'Actions'], 'reportsBody')
       + `<div class="card" id="reportOut" style="margin-top:12px"><em>Open Master Report to choose resorts, a date range, and export every project section.</em></div>`;
+    const filterButton = document.getElementById('reportFilterButton');
+    if (filterButton && reportFilterCount()) filterButton.innerHTML = `<i class="fa-solid fa-filter"></i> Filter (${reportFilterCount()})`;
     try {
       const list = await WisetrackAPI.getReports();
       const rows = Array.isArray(list) ? list : (list?.items || list?.data || []);
