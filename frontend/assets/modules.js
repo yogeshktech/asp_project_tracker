@@ -62,7 +62,7 @@
 
   function pageHead(title, sub, actionsHtml = '') {
     return `<div class="head">
-      <div style="min-width:0;flex:1">
+      <div style="min-width:0;">
         
         <h1>${esc(title)}</h1>
         ${sub ? `<p>${esc(sub)}</p>` : ''}
